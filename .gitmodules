@@ -1,0 +1,3 @@
+[submodule "services/cloudflare-ddns"]
+	path = services/cloudflare-ddns
+	url = git@github.com:Jaewoook/cloudflare-ddns
