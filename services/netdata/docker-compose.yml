@@ -25,3 +25,7 @@ volumes:
   netdataconfig:
   netdatalib:
   netdatacache:
+networks:
+  default:
+    external: true
+    name: nginx_network
