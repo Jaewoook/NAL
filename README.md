@@ -12,6 +12,11 @@
 ## Services
 
 - cloudflare-ddns
+- nginx-proxy-manager
+  - endpoints
+    - https://nginx.home.jaewook.me
+    - https://home.jaewook.me:81
 - netdata
+  - endpoint: https://status.home.jaewook.me
 - dduksangbot
 - for_jaewook_bot
