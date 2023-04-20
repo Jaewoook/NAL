@@ -6,9 +6,9 @@ services:
     hostname: home.jaewook.me
     ports:
       - 19999:19999
-#    networks:
-#      default:
-#        ipv4_address: 172.22.0.3
+    networks:
+      default:
+        ipv4_address: 172.22.0.2
     restart: unless-stopped
     cap_add:
       - SYS_PTRACE
