@@ -13,10 +13,15 @@
 
 - cloudflare-ddns
 - nginx-proxy-manager
-  - endpoints
+  - service urls:
     - https://nginx.home.jaewook.me
-    - https://home.jaewook.me:81
 - netdata
-  - endpoint: https://status.home.jaewook.me
+  - service url: https://status.home.jaewook.me
+- portainer
+  - service url: https://docker.home.jaewook.me
+- nextcloud
+  - service urls:
+    - https://status.drive.home.jaewook.me
+    - https://drive.home.jaewook.me
 - dduksangbot
 - for_jaewook_bot
