@@ -1,3 +1,9 @@
+volumes:
+  nginx_proxy_data:
+    external: true
+  nginx_proxy_letsencrypt:
+    external: true
+
 services:
   proxy:
     image: 'jc21/nginx-proxy-manager:latest'
@@ -6,14 +12,18 @@ services:
     networks:
       default:
         ipv4_address: 172.22.0.3
+      nextcloud-aio:
     ports:
       - '80:80'
       - '81:81'
       - '443:443'
     volumes:
-      - ./data:/data
-      - ./letsencrypt:/etc/letsencrypt
+       - nginx_proxy_data:/data
+       - nginx_proxy_letsencrypt:/etc/letsencrypt
+
 networks:
   default:
     external: true
     name: nginx_network
+  nextcloud-aio:
+    external: true
