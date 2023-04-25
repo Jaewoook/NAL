@@ -1,8 +1,10 @@
 # Network Attached Laboratory Server
 
-> server fqdn: home.jaewook.me
+A set of configurations for my home server. All sensitive data is stored in docker volume so this repository does not have private files. Since there is only one server running, all of this configurations are written in docker compose.
 
 ## Server Information
+
+> server fqdn: home.jaewook.me
 
 - Apple M2 Mac mini
 - 16GM RAM
@@ -25,3 +27,10 @@
     - https://drive.home.jaewook.me
 - dduksangbot
 - for_jaewook_bot
+
+## Networks
+
+| name | description |
+|------|-------------|
+| nginx_network | Nginx uses this network to proxy other services |
+| nextcloud-aio | All of the Nextcloud services use this network |
