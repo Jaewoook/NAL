@@ -12,25 +12,24 @@ A set of configurations for my home server. All sensitive data is stored in dock
 - 500Mbps internet connected
 
 ## Services
-
-- cloudflare-ddns
-- nginx-proxy-manager
-  - service urls:
-    - https://nginx.home.jaewook.me
-- netdata
-  - service url: https://status.home.jaewook.me
-- portainer
-  - service url: https://docker.home.jaewook.me
-- nextcloud
-  - service urls:
-    - https://status.drive.home.jaewook.me
-    - https://drive.home.jaewook.me
-- dduksangbot
-- for_jaewook_bot
+| Service name        | Service URL                                      |
+|---------------------|:------------------------------------------------:|
+| nginx-proxy-manager | <ul><li>https://nginx.home.jaewook.me</li><ul>   |
+| netdata             | <ul><li>https://status.home.jaewook.me</li></ul> |
+| portainer           | <ul><li>https://docker.home.jaewook.me</li></ul> |
+| nextcloud           | <ul><li>https://status.drive.home.jaewook.me</li><li>https://drive.home.jaewook.me</li></ul> |
+| wireguard           | X |
+| cloudflare-ddns     | X |
+| dduksangbot         | X |
+| for_jaewook_bot     | X |
 
 ## Networks
 
-| name | description |
+| Name | Description |
 |------|-------------|
 | nginx_network | Nginx uses this network to proxy other services |
 | nextcloud-aio | All of the Nextcloud services use this network |
+
+## Volumes and data
+
+For security reasons, I don't use bind mount. All data is stored in docker volume and the volume is listed in docker compose configuration file.
