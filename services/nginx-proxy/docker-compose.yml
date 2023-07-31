@@ -12,7 +12,6 @@ services:
     networks:
       default:
         ipv4_address: 172.22.0.3
-      nextcloud-aio:
       logistics-backoffice-api_poled_net:
     ports:
       - '80:80'
