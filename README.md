@@ -1,4 +1,4 @@
-# Network Attached Laboratory Server
+# Network Attached Laboratory (NAL) Server
 
 A set of configurations for my home server. All sensitive data is stored in docker volume so this repository does not have private files. Since there is only one server running, all of this configurations are written in docker compose.
 
@@ -12,6 +12,7 @@ A set of configurations for my home server. All sensitive data is stored in dock
 - 500Mbps internet connected
 
 ## Services
+
 | Service name        | Service URL                                      |
 |---------------------|:------------------------------------------------:|
 | nginx-proxy-manager | <ul><li>https://nginx.home.jaewook.me</li><ul>   |
@@ -33,3 +34,9 @@ A set of configurations for my home server. All sensitive data is stored in dock
 ## Volumes and data
 
 For security reasons, I don't use bind mount. All data is stored in docker volume and the volume is listed in docker compose configuration file.
+
+## Batch Tasks
+
+### *prune-docker.sh*
+
+This script will delete builder cache and dangling images to free up space.
