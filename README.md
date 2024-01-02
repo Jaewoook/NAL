@@ -22,7 +22,6 @@ A set of configurations for my home server. All sensitive data is stored in dock
 | wireguard           | X |
 | cloudflare-ddns     | X |
 | dduksangbot         | X |
-| for_jaewook_bot     | X |
 
 ## Networks
 
