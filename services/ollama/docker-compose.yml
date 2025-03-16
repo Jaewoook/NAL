@@ -1,5 +1,3 @@
-version: '3'
-
 services:
   ollama-core:
     image: 'ollama/ollama'
@@ -9,13 +7,29 @@ services:
       default:
         ipv4_address: 172.22.0.20
     ports:
-      - '11434:11434'
+      - 11434:11434
     volumes:
-      - 'ollama-data:/root/.ollama'
+      - ollama-data:/root/.ollama
+  open-webui:
+    image: 'ghcr.io/open-webui/open-webui:main'
+    container_name: 'ollama-webui'
+    restart: unless-stopped
+    depends_on:
+      - ollama-core
+    networks:
+      default:
+        ipv4_address: 172.22.0.21
+    ports:
+      - 3000:8080
+    volumes:
+      - ollama-web-data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://ollama-core:11434
 
 volumes:
   ollama-data:
     external: true
+  ollama-web-data:
 
 networks:
   default:
