@@ -20,7 +20,8 @@ services:
       default:
         ipv4_address: 172.22.0.21
     ports:
-      - 3000:8080
+      # To avoid port conflicts, this uses simillar ports to ollama.
+      - 11435:8080
     volumes:
       - ollama-web-data:/app/backend/data
     environment:
