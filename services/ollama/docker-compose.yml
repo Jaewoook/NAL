@@ -1,0 +1,23 @@
+version: '3'
+
+services:
+  ollama-core:
+    image: 'ollama/ollama'
+    container_name: 'ollama-core'
+    restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.22.0.20
+    ports:
+      - '11434:11434'
+    volumes:
+      - 'ollama-data:/root/.ollama'
+
+volumes:
+  ollama-data:
+    external: true
+
+networks:
+  default:
+    external: true
+    name: nginx_network
