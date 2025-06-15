@@ -34,17 +34,25 @@ Setup docker environment by running the command:
 | Docker Registry | | Private docker image registry | Planned |
 | Storage         | <ul><li>https://status.drive.home.jaewook.me</li><li>https://drive.home.jaewook.me</li></ul> | Personal NAS solution | No |
 
-
 ## Networks
 
-| Name | Description |
-|------|-------------|
-| nginx_network | Nginx uses this network to proxy other services |
-| nextcloud-aio | All of the Nextcloud services use this network |
+**Externally created networks**
+
+| Name | Description | Status |
+|------|-------------|:------:|
+| nginx_network | Nginx uses this network to proxy other services | Current |
+| nextcloud-aio | All of the Nextcloud services use this network | Obsolete |
 
 ## Volumes and data
 
-For security reasons, I don't use bind mount. All data is stored in docker volume and the volume is listed in docker compose configuration file.
+Bind mount is not used for security reason. All data are stored in docker volume and the volume is listed in docker compose configuration file.
+
+**Externally created volumes**
+
+| Name | Description | Status |
+|------|-------------|:------:|
+| nginx_proxy_data | Nginx configuration data | Current |
+| nginx_proxy_letsencrypt | Nginx SSL/TLS data | Current |
 
 ## Batch Tasks
 
