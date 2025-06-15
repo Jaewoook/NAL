@@ -35,7 +35,7 @@ fi
 
 if ! docker volume ls | grep -q "git-volume"; then
     echo "Creating git-volume..."
-    docker volume create nginx_volume
+    docker volume create git-volume
 else
     echo "git-volume already exists, skipping creation."
 fi
