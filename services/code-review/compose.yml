@@ -1,0 +1,27 @@
+version: "3"
+
+services:
+  gerrit:
+    image: gerritcodereview/gerrit
+    container_name: gerrit
+    restart: unless-stop
+    ports:
+      - 8080:8080
+      - 29418:29418
+    volumes:
+      - git-volume:/var/gerrit/git
+      - gerrit_cache:/var/gerrit/cache
+      - gerrit_index:/var/gerrit/index
+    environment:
+      - CANONICAL_WEB_URL=https://code-review.home.jaewook.me
+
+volumes:
+  git-volume:
+    external: true
+  gerrit_index:
+  gerrit_cache:
+
+networks:
+  default:
+    external: true
+    name: nginx_network
