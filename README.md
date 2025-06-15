@@ -4,24 +4,36 @@ A set of configurations for my home server. All sensitive data is stored in dock
 
 ## Server Information
 
-> server fqdn: home.jaewook.me
+> fqdn: home.jaewook.me
 
 - Apple M2 Mac mini
 - 16GM RAM
 - 256GB Internal SSD
 - 500Mbps internet connected
 
+## Get Started
+
+Setup docker environment by running the command:
+
+```sh
+./setup-docker-env.sh
+```
+
 ## Services
 
-| Service name        | Service URL                                      |
-|---------------------|:------------------------------------------------:|
-| nginx-proxy-manager | <ul><li>https://nginx.home.jaewook.me</li><ul>   |
-| netdata             | <ul><li>https://status.home.jaewook.me</li></ul> |
-| portainer           | <ul><li>https://docker.home.jaewook.me</li></ul> |
-| nextcloud           | <ul><li>https://status.drive.home.jaewook.me</li><li>https://drive.home.jaewook.me</li></ul> |
-| wireguard           | X |
-| cloudflare-ddns     | X |
-| dduksangbot         | X |
+| Service name | Endpoint | Description | Availability |
+|-----------------|:---:|---|:---:|
+| VPN             | X | Wireguard VPN Proxy | Yes |
+| DDNS            | X | Cloudflare DDNS Updater | Yes |
+| Proxy           | <ul><li>https://nginx.home.jaewook.me</li><ul>   | Nginx web management console | Yes |
+| Virt            | <ul><li>https://docker.home.jaewook.me</li></ul> | Docker stack management console | Yes |
+| Metrics         | <ul><li>https://status.home.jaewook.me</li></ul> | Metrics for server | Need maintenance |
+| LDAP            | | LDAP Server | Planned |
+| DNS             | | DNS Service | Planned |
+| Code Review     | | Gerrit code review system | Experimental |
+| Docker Registry | | Private docker image registry | Planned |
+| Storage         | <ul><li>https://status.drive.home.jaewook.me</li><li>https://drive.home.jaewook.me</li></ul> | Personal NAS solution | No |
+
 
 ## Networks
 
