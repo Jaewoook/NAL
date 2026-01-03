@@ -3,3 +3,6 @@
 
 node_modules
 build
+
+# config for cloudflare-ddns
+services/cloudflare-ddns/config.json

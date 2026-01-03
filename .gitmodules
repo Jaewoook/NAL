@@ -1,6 +1,3 @@
-[submodule "services/cloudflare-ddns"]
-	path = services/cloudflare-ddns
-	url = git@github.com:Jaewoook/cloudflare-ddns
 [submodule "services/dduksangbot"]
 	path = services/dduksangbot
 	url = git@github.com:OnlyWorkingLate/dduksangbot.git
