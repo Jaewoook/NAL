@@ -1,5 +1,3 @@
-version: '3'
-
 services:
   cloudflare-ddns:
     image: timothyjmiller/cloudflare-ddns:latest
