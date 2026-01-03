@@ -21,27 +21,28 @@ Setup docker environment by running the command:
 
 ## Services
 
-| Service name | Endpoint | Description | Availability |
-|-----------------|:---:|---|:---:|
-| VPN             | X | Wireguard VPN Proxy | Yes |
-| DDNS            | X | Cloudflare DDNS Updater | Yes |
-| Proxy           | <ul><li>https://nginx.home.jaewook.me</li><ul>   | Nginx web management console | Yes |
-| Virt            | <ul><li>https://docker.home.jaewook.me</li></ul> | Docker stack management console | Yes |
-| Metrics         | <ul><li>https://status.home.jaewook.me</li></ul> | Metrics for server | Need maintenance |
-| LDAP            | | LDAP Server | Planned |
+| Service name    | Endpoint | Description | Status |
+| --------------- | :------: | ----------- | :----: |
+| VPN             | N/A | Wireguard VPN Proxy | Stable |
+| DDNS            | N/A | Cloudflare DDNS Updater | Stable |
+| Proxy           | <ul><li>https://nginx.home.jaewook.me</li><ul>   | Nginx web management console | Stable |
+| Virt            | <ul><li>https://docker.home.jaewook.me</li></ul> | Docker stack management console | Stable |
+| LLM             | <ul><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM service | Stable |
+| LDAP            | | LDAP Server | Work in progress |
 | DNS             | | DNS Service | Planned |
 | Code Review     | | Gerrit code review system | Experimental |
 | Docker Registry | | Private docker image registry | Planned |
-| Storage         | <ul><li>https://status.drive.home.jaewook.me</li><li>https://drive.home.jaewook.me</li></ul> | Personal NAS solution | No |
+| ~~Storage~~     | ~~<ul><li>https://status.drive.home.jaewook.me</li><li>https://drive.home.jaewook.me</li></ul>~~ | ~~Personal NAS solution~~ | Deleted |
+| ~~Metrics~~     | ~~<ul><li>https://status.home.jaewook.me</li></ul>~~ | ~~Metrics for server~~ | Deleted |
 
 ## Networks
 
 **Externally created networks**
 
 | Name | Description | Status |
-|------|-------------|:------:|
-| nginx_network | Nginx uses this network to proxy other services | Current |
-| nextcloud-aio | All of the Nextcloud services use this network | Obsolete |
+| ----------------- | -------------------------------------------------- | :-----: |
+| nginx_network     | Nginx uses this network to proxy other services    | Stable  |
+| ~~nextcloud-aio~~ | ~~All of the Nextcloud services use this network~~ | Deleted |
 
 ## Volumes and data
 
@@ -50,12 +51,12 @@ Bind mount is not used for security reason. All data are stored in docker volume
 **Externally created volumes**
 
 | Name | Description | Status |
-|------|-------------|:------:|
-| nginx_proxy_data | Nginx configuration data | Current |
-| nginx_proxy_letsencrypt | Nginx SSL/TLS data | Current |
+| ----------------------- | ------------------------ | :-----: |
+| nginx_proxy_data        | Nginx configuration data | Stable  |
+| nginx_proxy_letsencrypt | Nginx SSL/TLS data       | Staable |
 
 ## Batch Tasks
 
-### *prune-docker.sh*
+### [*prune-docker.sh*](./batch/prune-docker.sh)
 
-This script will delete builder cache and dangling images to free up space.
+This script will delete builder cache and dangling images to free up disk space.
