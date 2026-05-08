@@ -25,6 +25,7 @@ Setup docker environment by running the command:
 | --------------- | :------: | ----------- | :----: |
 | VPN             | N/A | Wireguard VPN Proxy | Stable |
 | DDNS            | N/A | Cloudflare DDNS Updater | Stable |
+| Tunnel          | N/A | Cloudflare Tunnel Daemon | Stable |
 | Proxy           | <ul><li>https://nginx.home.jaewook.me</li><ul>   | Nginx web management console | Stable |
 | Virt            | <ul><li>https://docker.home.jaewook.me</li></ul> | Docker stack management console | Stable |
 | LLM             | <ul><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM service | Stable |

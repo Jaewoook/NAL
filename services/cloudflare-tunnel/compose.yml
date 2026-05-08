@@ -1,0 +1,20 @@
+services:
+  cloudflare-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflare-tunnel-daemon
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    networks:
+      - nginx_network
+    volumes:
+      - ./token:/home/nonroot/token
+      - ./data:/home/nonroot/.cloudflared/
+    environment:
+      - TUNNEL_TOKEN_FILE=/home/nonroot/token
+    # For host ssh
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
+networks:
+  nginx_network:
+    external: true
