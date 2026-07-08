@@ -5,9 +5,9 @@ services:
   portainer:
     image: portainer/portainer-ce:latest
     container_name: portainer
-    ports:
-      - "8000:8000"
-      - "9443:9443"
+    expose:
+      - 8000
+      - 9443
     networks:
       default:
         ipv4_address: 172.22.0.5
