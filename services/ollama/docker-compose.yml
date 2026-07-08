@@ -6,8 +6,8 @@ services:
     networks:
       default:
         ipv4_address: 172.22.0.20
-    ports:
-      - 11434:11434
+    expose:
+      - 11434
     volumes:
       - ollama-data:/root/.ollama
   open-webui:

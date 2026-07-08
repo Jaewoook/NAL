@@ -1,13 +1,11 @@
-version: "3"
-
 services:
   gerrit:
-    image: gerritcodereview/gerrit
+    image: gerritcodereview/gerrit:latest
     container_name: gerrit
     restart: unless-stopped
-    ports:
-      - 8080:8080
-      - 29418:29418
+    expose:
+      - 8080
+      - 29418
     volumes:
       - git-volume:/var/gerrit/git
       - gerrit_cache:/var/gerrit/cache
