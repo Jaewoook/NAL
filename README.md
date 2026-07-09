@@ -22,6 +22,14 @@ Setup docker environment by running the command:
 ./setup-docker-env.sh
 ```
 
+Start, stop, or restart one or more services with:
+
+```sh
+./manage-services.sh start   # interactive picker
+./manage-services.sh stop auth db
+./manage-services.sh restart all
+```
+
 ## Services
 
 | Service         | Endpoint | Description | Status |

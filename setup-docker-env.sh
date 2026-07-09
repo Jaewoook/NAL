@@ -17,6 +17,14 @@ else
     echo "nginx_network already exists, skipping creation."
 fi
 
+# Check if db_network exists
+if ! docker network ls | grep -q "db_network"; then
+    echo "Creating db_network..."
+    docker network create db_network
+else
+    echo "db_network already exists, skipping creation."
+fi
+
 echo "Setting up volumes..."
 # Check if nginx_volume exists
 if ! docker volume ls | grep -q "nginx_proxy_data"; then
@@ -38,5 +46,12 @@ if ! docker volume ls | grep -q "git-volume"; then
     docker volume create git-volume
 else
     echo "git-volume already exists, skipping creation."
+fi
+
+if ! docker volume ls | grep -q "nal_main_db"; then
+    echo "Creating nal_main_db..."
+    docker volume create nal_main_db
+else
+    echo "nal_main_db already exists, skipping creation."
 fi
 echo "Done."
