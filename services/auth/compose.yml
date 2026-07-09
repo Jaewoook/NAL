@@ -1,0 +1,61 @@
+services:
+  server:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}
+    container_name: authentik-server
+    command: server
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS:?database password required}
+    shm_size: 512mb
+    expose:
+      - 9000
+      - 9443
+    networks:
+      - default
+      - db_network
+    volumes:
+      - media:/media
+      - templates:/templates
+
+  worker:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}
+    container_name: authentik-worker
+    command: worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS:?database password required}
+    # Required by authentik's embedded outpost to manage docker-based outposts.
+    user: root
+    shm_size: 512mb
+    networks:
+      - default
+      - db_network
+    volumes:
+      - media:/media
+      - certs:/certs
+      - templates:/templates
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  media:
+  certs:
+  templates:
+
+networks:
+  default:
+    external: true
+    name: nginx_network
+  db_network:
+    external: true

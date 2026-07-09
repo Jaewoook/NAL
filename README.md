@@ -4,12 +4,15 @@ A set of configurations for my home server. All sensitive data is stored in dock
 
 ## Server Information
 
-> fqdn: home.jaewook.me
+> fqdn:
+>
+> - home.jaewook.me
+> - jaewook.dev
 
 - Apple M2 Mac mini
 - 16GM RAM
 - 256GB Internal SSD
-- 500Mbps internet connected
+- 1Gbps internet connected
 
 ## Get Started
 
@@ -21,7 +24,7 @@ Setup docker environment by running the command:
 
 ## Services
 
-| Service name    | Endpoint | Description | Status |
+| Service         | Endpoint | Description | Status |
 | --------------- | :------: | ----------- | :----: |
 | VPN             | N/A | Wireguard VPN Proxy | Stable |
 | DDNS            | N/A | Cloudflare DDNS Updater | Stable |
@@ -29,7 +32,8 @@ Setup docker environment by running the command:
 | Proxy           | <ul><li>https://nginx.home.jaewook.me</li><ul>   | Nginx web management console | Stable |
 | Virt            | <ul><li>https://docker.home.jaewook.me</li></ul> | Docker stack management console | Stable |
 | LLM             | <ul><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM service | Stable |
-| LDAP            | | LDAP Server | Work in progress |
+| Auth            | | Authenticate/Authorize + LDAP Server (authentik) | Work in progress |
+| DB              | N/A | Shared PostgreSQL database server | Work in progress |
 | DNS             | | DNS Service | Planned |
 | Code Review     | | Gerrit code review system | Experimental |
 | Docker Registry | | Private docker image registry | Planned |
@@ -40,9 +44,10 @@ Setup docker environment by running the command:
 
 **Externally created networks**
 
-| Name | Description | Status |
+| Name              | Description                                        | Status  |
 | ----------------- | -------------------------------------------------- | :-----: |
 | nginx_network     | Nginx uses this network to proxy other services    | Stable  |
+| db_network        | Shared network for services to reach the DB server | Work in progress |
 | ~~nextcloud-aio~~ | ~~All of the Nextcloud services use this network~~ | Deleted |
 
 ## Volumes and data
@@ -51,10 +56,11 @@ Bind mount is not used for security reason. All data are stored in docker volume
 
 **Externally created volumes**
 
-| Name | Description | Status |
+| Name                    | Description              | Status  |
 | ----------------------- | ------------------------ | :-----: |
 | nginx_proxy_data        | Nginx configuration data | Stable  |
 | nginx_proxy_letsencrypt | Nginx SSL/TLS data       | Staable |
+| nal_main_db             | Shared PostgreSQL data (all databases/roles) | Work in progress |
 
 ## Batch Tasks
 
