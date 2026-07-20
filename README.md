@@ -58,6 +58,12 @@ Start, stop, or restart one or more services with:
 | db_network        | Shared network for services to reach the DB server | Work in progress |
 | ~~nextcloud-aio~~ | ~~All of the Nextcloud services use this network~~ | Deleted |
 
+`nginx_network` is created with a fixed subnet (`172.22.0.0/16`) and gateway
+(`172.22.0.1`), with dynamically-assigned addresses restricted to the
+`172.22.1.0/24` range. Services that pin a static IP (e.g. nginx-proxy,
+portainer, ollama) use `172.22.0.0/24`, so they never collide with an
+auto-assigned one.
+
 ## Volumes and data
 
 Bind mount is not used for security reason. All data are stored in docker volume and the volume is listed in docker compose configuration file.
