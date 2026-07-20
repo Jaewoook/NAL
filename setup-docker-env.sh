@@ -12,7 +12,10 @@ echo "Setting up networks..."
 # Check if nginx_network exists
 if ! docker network ls | grep -q "nginx_network"; then
     echo "Creating nginx_network..."
-    docker network create nginx_network
+    docker network create nginx_network \
+    --subnet=172.22.0.0/16 \
+    --gateway=172.22.0.1 \
+    --ip-range=172.22.1.0/24
 else
     echo "nginx_network already exists, skipping creation."
 fi
