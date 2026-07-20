@@ -76,8 +76,39 @@ Bind mount is not used for security reason. All data are stored in docker volume
 | nginx_proxy_letsencrypt | Nginx SSL/TLS data       | Staable |
 | nal_main_db             | Shared PostgreSQL data (all databases/roles) | Work in progress |
 
+**Backups**
+
+Docker has no undo for `docker volume rm`, `docker volume prune`, or
+`docker network prune` — they permanently delete data that isn't attached to
+a running container, including volumes marked `external: true`. Avoid running
+those commands on this host. Networks are cheap to recover (`./setup-docker-env.sh`
+recreates them, including nginx_network's fixed subnet), but volume contents
+are not, so they're backed up separately:
+
+```sh
+# one-time setup: install rclone and configure a remote (rclone config),
+# then set NAL_BACKUP_REMOTE to that remote:path, e.g.:
+export NAL_BACKUP_REMOTE="b2:my-bucket/nal"
+
+./batch/backup-volumes.sh              # back up every named volume on this host
+./batch/backup-volumes.sh nal_main_db  # back up just one
+
+./batch/restore-volumes.sh list                 # show available backups
+./batch/restore-volumes.sh nal_main_db          # restore the latest backup
+./batch/restore-volumes.sh nal_main_db <file>   # restore a specific one
+```
+
+Recovery after a full wipe: `./setup-docker-env.sh` (networks + empty
+volumes) → `./batch/restore-volumes.sh <volume>` for each volume that had
+data → `./manage-services.sh start all`.
+
 ## Batch Tasks
 
 ### [*prune-docker.sh*](./batch/prune-docker.sh)
 
 This script will delete builder cache and dangling images to free up disk space.
+
+### [*backup-volumes.sh*](./batch/backup-volumes.sh) / [*restore-volumes.sh*](./batch/restore-volumes.sh)
+
+Back up docker volumes to (and restore them from) a remote/cloud destination
+via `rclone`. See the Backups section above.
