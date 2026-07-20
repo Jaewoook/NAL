@@ -57,4 +57,11 @@ if ! docker volume ls | grep -q "nal_main_db"; then
 else
     echo "nal_main_db already exists, skipping creation."
 fi
+
+if ! docker volume ls | grep -q "nal_dns_config"; then
+    echo "Creating nal_dns_config..."
+    docker volume create nal_dns_config
+else
+    echo "nal_dns_config already exists, skipping creation."
+fi
 echo "Done."

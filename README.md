@@ -42,11 +42,15 @@ Start, stop, or restart one or more services with:
 | LLM             | <ul><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM service | Stable |
 | Auth            | | Authenticate/Authorize + LDAP Server (authentik) | Work in progress |
 | DB              | N/A | Shared PostgreSQL database server | Work in progress |
-| DNS             | | DNS Service | Planned |
+| DNS             | <ul><li>https://dns.home.jaewook.me</li><li>https://dns.jaewook.dev</li></ul> | DNS Service (Technitium) | Work in progress |
 | Code Review     | | Gerrit code review system | Experimental |
 | Docker Registry | | Private docker image registry | Planned |
 | ~~Storage~~     | ~~<ul><li>https://status.drive.home.jaewook.me</li><li>https://drive.home.jaewook.me</li></ul>~~ | ~~Personal NAS solution~~ | Deleted |
 | ~~Metrics~~     | ~~<ul><li>https://status.home.jaewook.me</li></ul>~~ | ~~Metrics for server~~ | Deleted |
+
+Future work: Technitium (DNS) supports OIDC SSO login for its web console,
+which could integrate with the authentik (Auth) instance once it's actually
+live/configured — not implemented yet.
 
 ## Networks
 
@@ -75,6 +79,7 @@ Bind mount is not used for security reason. All data are stored in docker volume
 | nginx_proxy_data        | Nginx configuration data | Stable  |
 | nginx_proxy_letsencrypt | Nginx SSL/TLS data       | Staable |
 | nal_main_db             | Shared PostgreSQL data (all databases/roles) | Work in progress |
+| nal_dns_config          | Technitium DNS Server configuration/zone data | Work in progress |
 
 **Backups**
 
