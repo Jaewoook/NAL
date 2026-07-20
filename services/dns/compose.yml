@@ -1,0 +1,32 @@
+services:
+  dns-server:
+    image: technitium/dns-server:latest
+    container_name: technitium-dns
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DNS_SERVER_DOMAIN: ${DNS_SERVER_DOMAIN:?domain required}
+      DNS_SERVER_ADMIN_PASSWORD: ${DNS_SERVER_ADMIN_PASSWORD:?initial admin password required}
+      DNS_SERVER_LOG_FOLDER_PATH: /var/log/technitium/dns
+    sysctls:
+      net.ipv4.ip_local_port_range: "1024 65535"
+    ports:
+      - 53:53/tcp
+      - 53:53/udp
+    expose:
+      - 5380
+    volumes:
+      - config:/etc/dns
+      - logs:/var/log/technitium/dns
+
+volumes:
+  config:
+    external: true
+    name: nal_dns_config
+  logs:
+
+networks:
+  default:
+    external: true
+    name: nginx_network
