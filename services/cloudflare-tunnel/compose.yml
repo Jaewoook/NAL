@@ -16,5 +16,6 @@ services:
       - 'host.docker.internal:host-gateway'
 
 networks:
-  nginx_network:
+  default:
     external: true
+    name: nginx_network
