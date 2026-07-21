@@ -20,8 +20,12 @@ services:
       - default
       - db_network
     volumes:
-      - media:/media
+      - data:/data
       - templates:/templates
+      # Git-managed sign-in background. In authentik: System > Brands > edit
+      # brand > "Default flow background" > enter `branding/bg_signin.jpg`
+      # (relative path, no leading slash).
+      - ./assets/images/bg_signin.jpg:/data/media/public/branding/bg_signin.jpg:ro
 
   worker:
     image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}
@@ -43,13 +47,13 @@ services:
       - default
       - db_network
     volumes:
-      - media:/media
+      - data:/data
       - certs:/certs
       - templates:/templates
       - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
-  media:
+  data:
   certs:
   templates:
 
