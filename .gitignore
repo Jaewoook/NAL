@@ -4,10 +4,12 @@
 
 node_modules
 build
+# backup directory for volume data
+backup
 
 # config for cloudflare-ddns
 services/cloudflare-ddns/config.json
 
 # config and data for cloudflare-tunnel
 services/cloudflare-tunnel/token
-service/cloudflare-tunnel/data
+services/cloudflare-tunnel/data
