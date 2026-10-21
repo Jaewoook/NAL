@@ -99,8 +99,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestTestAlertWithMockChannel(t *testing.T) {
 	var receivedBody string
-	origTransport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	mockTransport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(r.Body)
 		receivedBody = string(body)
 		return &http.Response{
@@ -109,9 +108,6 @@ func TestTestAlertWithMockChannel(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	})
-	defer func() {
-		http.DefaultTransport = origTransport
-	}()
 
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "config.yaml")
@@ -128,7 +124,7 @@ notifications:
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := runApp([]string{"test-alert", "-config", cfgPath, "-channel", "webhook"}, &stdout, &stderr)
+	code := runApp([]string{"test-alert", "-config", cfgPath, "-channel", "webhook"}, &stdout, &stderr, WithHTTPTransport(mockTransport))
 	if code != 0 {
 		t.Fatalf("expected exit code 0 for test-alert, got %d (stderr: %s)", code, stderr.String())
 	}
@@ -182,5 +178,40 @@ func TestServiceInstallToFile(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "[Unit]") {
 		t.Errorf("expected systemd content in file, got: %s", string(data))
+	}
+}
+
+func TestResolveConfigWithoutFileAppliesEnv(t *testing.T) {
+	t.Setenv("SERVER_NAME", "custom-host-env")
+	t.Setenv("BOT_TOKEN", "tg-bot-1234")
+	t.Setenv("DEFAULT_CHAT_ID", "tg-chat-5678")
+
+	tmpDir := t.TempDir()
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to getwd: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to chdir to tempDir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(origWd)
+	}()
+
+	cfg, err := resolveConfig("")
+	if err != nil {
+		t.Fatalf("expected nil error from resolveConfig, got: %v", err)
+	}
+	if cfg.Server.Name != "custom-host-env" {
+		t.Errorf("expected Server.Name 'custom-host-env', got: %s", cfg.Server.Name)
+	}
+	if !cfg.Notifications.Telegram.Enabled {
+		t.Errorf("expected Telegram.Enabled to be true via env")
+	}
+	if cfg.Notifications.Telegram.BotToken != "tg-bot-1234" {
+		t.Errorf("expected Telegram.BotToken 'tg-bot-1234', got: %s", cfg.Notifications.Telegram.BotToken)
+	}
+	if cfg.Notifications.Telegram.ChatID != "tg-chat-5678" {
+		t.Errorf("expected Telegram.ChatID 'tg-chat-5678', got: %s", cfg.Notifications.Telegram.ChatID)
 	}
 }

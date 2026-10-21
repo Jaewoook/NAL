@@ -29,6 +29,11 @@ func NewDiscordChannel(webhookURL string) *DiscordChannel {
 	}
 }
 
+// SetTransport configures a custom HTTP transport (useful for tests or proxies).
+func (d *DiscordChannel) SetTransport(rt http.RoundTripper) {
+	d.client.Transport = rt
+}
+
 // Name returns the channel identifier.
 func (d *DiscordChannel) Name() string {
 	return "discord"
@@ -86,6 +91,10 @@ func (d *DiscordChannel) Send(alert *models.Alert) error {
 	if len(alert.TopProcesses) > 0 {
 		table := formatProcessesTable(alert.TopProcesses)
 		if table != "" {
+			runes := []rune(table)
+			if len(runes) > 1000 {
+				table = string(runes[:997]) + "..."
+			}
 			fields = append(fields, discordField{
 				Name:   "Top Processes",
 				Value:  "```\n" + table + "\n```",

@@ -150,9 +150,11 @@ func (d *Daemon) Step(ctx context.Context) error {
 
 		for _, a := range alerts {
 			alertCopy := a
-			errs := d.dispatcher.Dispatch(&alertCopy)
-			for chName, chErr := range errs {
-				log.Printf("[daemon] failed to dispatch alert %q to channel %q: %v", alertCopy.Title, chName, chErr)
+			if d.dispatcher != nil {
+				errs := d.dispatcher.Dispatch(&alertCopy)
+				for chName, chErr := range errs {
+					log.Printf("[daemon] failed to dispatch alert %q to channel %q: %v", alertCopy.Title, chName, chErr)
+				}
 			}
 		}
 
@@ -162,9 +164,11 @@ func (d *Daemon) Step(ctx context.Context) error {
 			if err != nil {
 				log.Printf("[daemon] digest generation failed: %v", err)
 			} else if digestAlert != nil {
-				errs := d.dispatcher.Dispatch(digestAlert)
-				for chName, chErr := range errs {
-					log.Printf("[daemon] failed to dispatch digest to channel %q: %v", chName, chErr)
+				if d.dispatcher != nil {
+					errs := d.dispatcher.Dispatch(digestAlert)
+					for chName, chErr := range errs {
+						log.Printf("[daemon] failed to dispatch digest to channel %q: %v", chName, chErr)
+					}
 				}
 			}
 		}

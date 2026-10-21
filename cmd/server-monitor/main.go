@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -56,10 +57,29 @@ func resolveConfig(configPath string) (*config.Config, error) {
 	if _, err := os.Stat(defaultPath); err == nil {
 		return config.LoadConfig(defaultPath)
 	}
-	return config.DefaultConfig(), nil
+	return config.DefaultConfigWithEnv(), nil
 }
 
-func runApp(args []string, stdout, stderr io.Writer) int {
+// AppOption configures optional runtime parameters for runApp.
+type AppOption func(*appConfig)
+
+type appConfig struct {
+	transport http.RoundTripper
+}
+
+// WithHTTPTransport configures a custom HTTP transport for notification dispatchers.
+func WithHTTPTransport(rt http.RoundTripper) AppOption {
+	return func(a *appConfig) {
+		a.transport = rt
+	}
+}
+
+func runApp(args []string, stdout, stderr io.Writer, opts ...AppOption) int {
+	var appCfg appConfig
+	for _, opt := range opts {
+		opt(&appCfg)
+	}
+
 	if len(args) == 0 {
 		fmt.Fprint(stdout, usageText)
 		return 0
@@ -147,7 +167,11 @@ func runApp(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 
-		disp := notifier.NewDispatcherFromConfig(&cfg.Notifications)
+		var dispOpts []notifier.DispatcherOption
+		if appCfg.transport != nil {
+			dispOpts = append(dispOpts, notifier.WithTransport(appCfg.transport))
+		}
+		disp := notifier.NewDispatcherFromConfig(&cfg.Notifications, dispOpts...)
 
 		if *channelName != "" {
 			var matched notifier.Channel

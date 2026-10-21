@@ -2,6 +2,7 @@ package notifier
 
 import (
 	"fmt"
+	"net/http"
 	"sync"
 
 	"github.com/jaewoook/server-monitor/internal/config"
@@ -27,27 +28,62 @@ func NewDispatcher(channels ...Channel) *Dispatcher {
 	return d
 }
 
+// DispatcherOption configures Dispatcher creation options.
+type DispatcherOption func(*dispatcherOptions)
+
+type dispatcherOptions struct {
+	transport http.RoundTripper
+}
+
+// WithTransport configures a custom HTTP transport for HTTP-based notification channels.
+func WithTransport(rt http.RoundTripper) DispatcherOption {
+	return func(o *dispatcherOptions) {
+		o.transport = rt
+	}
+}
+
 // NewDispatcherFromConfig creates and populates a Dispatcher based on active notification configurations.
-func NewDispatcherFromConfig(cfg *config.NotificationsConfig) *Dispatcher {
+func NewDispatcherFromConfig(cfg *config.NotificationsConfig, opts ...DispatcherOption) *Dispatcher {
 	d := NewDispatcher()
 	if cfg == nil {
 		return d
 	}
 
+	var dOpts dispatcherOptions
+	for _, opt := range opts {
+		opt(&dOpts)
+	}
+
 	if cfg.Telegram.Enabled {
-		d.Register(NewTelegramChannel(cfg.Telegram.BotToken, cfg.Telegram.ChatID))
+		ch := NewTelegramChannel(cfg.Telegram.BotToken, cfg.Telegram.ChatID)
+		if dOpts.transport != nil {
+			ch.SetTransport(dOpts.transport)
+		}
+		d.Register(ch)
 	}
 	if cfg.Discord.Enabled {
-		d.Register(NewDiscordChannel(cfg.Discord.WebhookURL))
+		ch := NewDiscordChannel(cfg.Discord.WebhookURL)
+		if dOpts.transport != nil {
+			ch.SetTransport(dOpts.transport)
+		}
+		d.Register(ch)
 	}
 	if cfg.Slack.Enabled {
-		d.Register(NewSlackChannel(cfg.Slack.WebhookURL))
+		ch := NewSlackChannel(cfg.Slack.WebhookURL)
+		if dOpts.transport != nil {
+			ch.SetTransport(dOpts.transport)
+		}
+		d.Register(ch)
 	}
 	if cfg.Email.Enabled {
 		d.Register(NewEmailChannel(cfg.Email))
 	}
 	if cfg.Webhook.Enabled {
-		d.Register(NewWebhookChannel(cfg.Webhook.URL))
+		ch := NewWebhookChannel(cfg.Webhook.URL)
+		if dOpts.transport != nil {
+			ch.SetTransport(dOpts.transport)
+		}
+		d.Register(ch)
 	}
 
 	return d

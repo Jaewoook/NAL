@@ -29,6 +29,11 @@ func NewWebhookChannel(url string) *WebhookChannel {
 	}
 }
 
+// SetTransport configures a custom HTTP transport (useful for tests or proxies).
+func (w *WebhookChannel) SetTransport(rt http.RoundTripper) {
+	w.client.Transport = rt
+}
+
 // Name returns the channel identifier.
 func (w *WebhookChannel) Name() string {
 	return "webhook"

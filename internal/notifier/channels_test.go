@@ -125,6 +125,77 @@ func TestDiscordChannelErrors(t *testing.T) {
 	}
 }
 
+func TestDiscordChannelTopProcessesTruncation(t *testing.T) {
+	var receivedPayload discordPayload
+
+	ch := NewDiscordChannel("http://localhost/discord")
+	ch.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(body, &receivedPayload); err != nil {
+			t.Errorf("failed to unmarshal discord body: %v", err)
+		}
+		return &http.Response{
+			StatusCode: http.StatusNoContent,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	}))
+
+	// Generate 50 processes so table exceeds 1000 runes
+	procs := make([]models.ProcessInfo, 50)
+	for i := range procs {
+		procs[i] = models.ProcessInfo{
+			PID:           int32(1000 + i),
+			Name:          "long-process-name",
+			CPUPercent:    25.5,
+			MemoryPercent: 12.3,
+		}
+	}
+
+	alert := &models.Alert{
+		Title:        "High Process Load",
+		Message:      "Too many heavy processes",
+		Level:        models.AlertLevelWarning,
+		TopProcesses: procs,
+	}
+
+	if err := ch.Send(alert); err != nil {
+		t.Fatalf("unexpected send error: %v", err)
+	}
+
+	if len(receivedPayload.Embeds) != 1 {
+		t.Fatalf("expected 1 embed, got %d", len(receivedPayload.Embeds))
+	}
+
+	embed := receivedPayload.Embeds[0]
+	var topProcsField *discordField
+	for i := range embed.Fields {
+		if embed.Fields[i].Name == "Top Processes" {
+			topProcsField = &embed.Fields[i]
+			break
+		}
+	}
+
+	if topProcsField == nil {
+		t.Fatalf("expected Top Processes field in embed")
+	}
+
+	valRunes := []rune(topProcsField.Value)
+	if len(valRunes) > 1024 {
+		t.Errorf("field value exceeded Discord 1024 limit: %d runes", len(valRunes))
+	}
+	if !strings.HasPrefix(topProcsField.Value, "```\n") || !strings.HasSuffix(topProcsField.Value, "\n```") {
+		t.Errorf("expected field value to be enclosed in code block, got: %q", topProcsField.Value)
+	}
+	innerTable := strings.TrimSuffix(strings.TrimPrefix(topProcsField.Value, "```\n"), "\n```")
+	if len([]rune(innerTable)) > 1000 {
+		t.Errorf("expected inner table length <= 1000 runes, got %d", len([]rune(innerTable)))
+	}
+	if !strings.HasSuffix(innerTable, "...") {
+		t.Errorf("expected inner table to end with '...', got: %q", innerTable[len(innerTable)-10:])
+	}
+}
+
 func TestSlackChannel(t *testing.T) {
 	tests := []struct {
 		name          string

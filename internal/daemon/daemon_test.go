@@ -99,6 +99,48 @@ func TestDaemonSingleStepSpikeAlert(t *testing.T) {
 	}
 }
 
+func TestDaemonStepWithNilDispatcher(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.CPU.Spike.Enabled = true
+	cfg.CPU.Spike.ThresholdPercent = 80.0
+	cfg.CPU.Spike.SustainedSeconds = 1
+	cfg.Digest.Enabled = true
+	cfg.Digest.IntervalHours = 1
+
+	coll := &mockCollector{
+		metrics: &models.SystemMetrics{
+			Timestamp:     time.Now(),
+			CPUPercent:    95.0,
+			MemoryPercent: 40.0,
+			DiskPercent:   50.0,
+		},
+	}
+
+	det := detector.New(cfg)
+	cooldowns := map[string]time.Duration{
+		detector.RuleCPUSpike: 10 * time.Minute,
+	}
+	mgr := alert.NewManager(cfg.Server.Name, cooldowns, true)
+	dig := digest.New(cfg.Server.Name, 1*time.Hour)
+	dig.Reset()
+
+	d, err := New(cfg,
+		WithCollector(coll),
+		WithDetector(det),
+		WithAlertManager(mgr),
+		WithDigest(dig),
+		WithDispatcher(nil),
+	)
+	if err != nil {
+		t.Fatalf("failed to create daemon: %v", err)
+	}
+
+	// Should not panic when alerts and digest are produced with nil dispatcher
+	if err := d.Step(context.Background()); err != nil {
+		t.Fatalf("unexpected step error with nil dispatcher: %v", err)
+	}
+}
+
 func TestDaemonStepCollectorErrorGraceful(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Heartbeat.Enabled = true

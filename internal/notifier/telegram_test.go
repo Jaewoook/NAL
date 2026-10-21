@@ -217,3 +217,96 @@ func TestTelegramChannelMessageLengthCap(t *testing.T) {
 		t.Errorf("expected truncated text to end with '...', got: %s", capturedPayload.Text[len(capturedPayload.Text)-10:])
 	}
 }
+
+func TestTelegramChannelPreTagClosureOnTruncation(t *testing.T) {
+	var capturedPayload telegramPayload
+	ch := NewTelegramChannelWithEndpoint("test-token", "12345", "http://localhost/test")
+	ch.SetTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
+		_ = json.Unmarshal(body, &capturedPayload)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ok": true}`)),
+			Header:     make(http.Header),
+		}, nil
+	}))
+
+	// Generate 120 processes to create a large table (>4096 characters)
+	procs := make([]models.ProcessInfo, 120)
+	for i := range procs {
+		procs[i] = models.ProcessInfo{
+			PID:           int32(1000 + i),
+			Name:          "proc-worker-task",
+			CPUPercent:    50.0,
+			MemoryPercent: 10.0,
+		}
+	}
+
+	alert := &models.Alert{
+		Title:        "Massive Process List",
+		Message:      "High process count",
+		Level:        models.AlertLevelCritical,
+		TopProcesses: procs,
+	}
+
+	if err := ch.Send(alert); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	text := capturedPayload.Text
+	if len([]rune(text)) > 4096 {
+		t.Errorf("expected text length <= 4096, got %d", len([]rune(text)))
+	}
+
+	// Verify <pre> and </pre> are balanced
+	preOpenCount := strings.Count(text, "<pre>")
+	preCloseCount := strings.Count(text, "</pre>")
+	if preOpenCount == 0 {
+		t.Errorf("expected at least one <pre> tag")
+	}
+	if preOpenCount != preCloseCount {
+		t.Errorf("unbalanced <pre> tags: open=%d, close=%d in text:\n%s", preOpenCount, preCloseCount, text)
+	}
+	if !strings.HasSuffix(text, "</pre>\n") && !strings.HasSuffix(text, "</pre>") {
+		t.Errorf("expected truncated pre text to end with </pre>, got: %q", text[len(text)-15:])
+	}
+}
+
+func TestTelegramChannelTagClosureWhenMessageLong(t *testing.T) {
+	var capturedPayload telegramPayload
+	ch := NewTelegramChannelWithEndpoint("test-token", "12345", "http://localhost/test")
+	ch.SetTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
+		_ = json.Unmarshal(body, &capturedPayload)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ok": true}`)),
+			Header:     make(http.Header),
+		}, nil
+	}))
+
+	// Message is 4050 chars, plus top process
+	alert := &models.Alert{
+		Title:   "Warning",
+		Message: strings.Repeat("M", 4050),
+		Level:   models.AlertLevelWarning,
+		TopProcesses: []models.ProcessInfo{
+			{PID: 123, Name: "worker", CPUPercent: 5.0, MemoryPercent: 2.0},
+		},
+	}
+
+	if err := ch.Send(alert); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	text := capturedPayload.Text
+	if len([]rune(text)) > 4096 {
+		t.Errorf("expected text length <= 4096, got %d", len([]rune(text)))
+	}
+
+	preOpenCount := strings.Count(text, "<pre>")
+	preCloseCount := strings.Count(text, "</pre>")
+	if preOpenCount != preCloseCount {
+		t.Errorf("unbalanced <pre> tags: open=%d, close=%d", preOpenCount, preCloseCount)
+	}
+}

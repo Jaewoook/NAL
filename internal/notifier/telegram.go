@@ -9,6 +9,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jaewoook/server-monitor/internal/models"
@@ -41,6 +42,11 @@ func NewTelegramChannelWithEndpoint(botToken, chatID, endpoint string) *Telegram
 			Timeout: 5 * time.Second,
 		},
 	}
+}
+
+// SetTransport configures a custom HTTP transport (useful for tests or proxies).
+func (t *TelegramChannel) SetTransport(rt http.RoundTripper) {
+	t.client.Transport = rt
 }
 
 // Name returns the channel identifier.
@@ -102,16 +108,46 @@ func (t *TelegramChannel) Send(alert *models.Alert) error {
 	if len(alert.TopProcesses) > 0 {
 		table := formatProcessesTable(alert.TopProcesses)
 		if table != "" {
-			textBuilder.WriteString("\n<b>Top Processes:</b>\n<pre>")
-			textBuilder.WriteString(html.EscapeString(table))
-			textBuilder.WriteString("</pre>\n")
+			escapedTable := html.EscapeString(table)
+			const (
+				prePrefix = "\n<b>Top Processes:</b>\n<pre>"
+				preSuffix = "</pre>\n"
+				maxLen    = 4096
+			)
+			baseRunes := len([]rune(textBuilder.String()))
+			budget := maxLen - baseRunes - len([]rune(prePrefix)) - len([]rune(preSuffix))
+			if budget > 0 {
+				tableRunes := []rune(escapedTable)
+				if len(tableRunes) > budget {
+					if budget > 3 {
+						escapedTable = string(tableRunes[:budget-3]) + "..."
+					} else {
+						escapedTable = string(tableRunes[:budget])
+					}
+				}
+				textBuilder.WriteString(prePrefix)
+				textBuilder.WriteString(escapedTable)
+				textBuilder.WriteString(preSuffix)
+			}
 		}
 	}
 
 	msgText := textBuilder.String()
-	if len([]rune(msgText)) > 4096 {
+	const maxTelegramLength = 4096
+	if len([]rune(msgText)) > maxTelegramLength {
 		runes := []rune(msgText)
-		msgText = string(runes[:4090]) + "..."
+		const suffix = "..."
+		cutoff := maxTelegramLength - len([]rune(suffix))
+		truncated := string(runes[:cutoff]) + suffix
+
+		// If <pre> is open in truncated slice without matching </pre>, close it
+		if strings.Count(truncated, "<pre>") > strings.Count(truncated, "</pre>") {
+			closeTag := "\n</pre>"
+			cutoff = maxTelegramLength - len([]rune(suffix)) - len([]rune(closeTag))
+			truncated = string(runes[:cutoff]) + suffix + closeTag
+		}
+
+		msgText = truncated
 	}
 
 	payload := telegramPayload{

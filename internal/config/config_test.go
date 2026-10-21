@@ -133,3 +133,33 @@ func TestLoadConfigInvalidYaml(t *testing.T) {
 		t.Errorf("expected error for invalid yaml, got nil")
 	}
 }
+
+func TestDefaultConfigWithEnv(t *testing.T) {
+	t.Setenv("SERVER_NAME", "env-server")
+	t.Setenv("BOT_TOKEN", "my-bot-token")
+	t.Setenv("DEFAULT_CHAT_ID", "987654")
+	t.Setenv("DISCORD_WEBHOOK_URL", "https://discord.gg/webhook")
+
+	cfg := DefaultConfigWithEnv()
+	if cfg.Server.Name != "env-server" {
+		t.Errorf("expected env-server, got %s", cfg.Server.Name)
+	}
+	if !cfg.Notifications.Telegram.Enabled {
+		t.Errorf("expected telegram to be enabled when BOT_TOKEN is set")
+	}
+	if cfg.Notifications.Telegram.BotToken != "my-bot-token" {
+		t.Errorf("expected my-bot-token, got %s", cfg.Notifications.Telegram.BotToken)
+	}
+	if cfg.Notifications.Telegram.ChatID != "987654" {
+		t.Errorf("expected 987654, got %s", cfg.Notifications.Telegram.ChatID)
+	}
+	if !cfg.Notifications.Discord.Enabled {
+		t.Errorf("expected discord to be enabled when webhook URL is set")
+	}
+	if cfg.Notifications.Discord.WebhookURL != "https://discord.gg/webhook" {
+		t.Errorf("expected https://discord.gg/webhook, got %s", cfg.Notifications.Discord.WebhookURL)
+	}
+	if cfg.Server.CheckIntervalSeconds != 5 {
+		t.Errorf("expected default interval 5, got %d", cfg.Server.CheckIntervalSeconds)
+	}
+}

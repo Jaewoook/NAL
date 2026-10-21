@@ -29,6 +29,11 @@ func NewSlackChannel(webhookURL string) *SlackChannel {
 	}
 }
 
+// SetTransport configures a custom HTTP transport (useful for tests or proxies).
+func (s *SlackChannel) SetTransport(rt http.RoundTripper) {
+	s.client.Transport = rt
+}
+
 // Name returns the channel identifier.
 func (s *SlackChannel) Name() string {
 	return "slack"

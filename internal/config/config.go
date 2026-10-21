@@ -228,6 +228,15 @@ func DefaultConfig() *Config {
 	}
 }
 
+// DefaultConfigWithEnv returns a default configuration with environment variable
+// overrides and validated defaults applied.
+func DefaultConfigWithEnv() *Config {
+	cfg := DefaultConfig()
+	ApplyEnvOverrides(cfg)
+	ValidateAndApplyDefaults(cfg)
+	return cfg
+}
+
 // LoadConfig reads a YAML configuration file from path, merges with defaults,
 // and applies any environment variable overrides.
 func LoadConfig(path string) (*Config, error) {
@@ -241,27 +250,40 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse yaml config %q: %w", path, err)
 	}
 
-	applyEnvOverrides(cfg)
-	validateAndApplyDefaults(cfg)
+	ApplyEnvOverrides(cfg)
+	ValidateAndApplyDefaults(cfg)
 
 	return cfg, nil
 }
 
-func applyEnvOverrides(cfg *Config) {
+// ApplyEnvOverrides overrides configuration fields from environment variables.
+func ApplyEnvOverrides(cfg *Config) {
 	if val := getEnv("SERVER_NAME"); val != "" {
 		cfg.Server.Name = val
 	}
 	if val := getEnv("TELEGRAM_BOT_TOKEN", "BOT_TOKEN"); val != "" {
 		cfg.Notifications.Telegram.BotToken = val
+		cfg.Notifications.Telegram.Enabled = true
 	}
 	if val := getEnv("TELEGRAM_CHAT_ID", "DEFAULT_CHAT_ID", "CHAT_ID"); val != "" {
 		cfg.Notifications.Telegram.ChatID = val
 	}
+	if val := getEnv("TELEGRAM_ENABLED"); val != "" {
+		cfg.Notifications.Telegram.Enabled = (val == "true" || val == "1" || val == "yes")
+	}
 	if val := getEnv("DISCORD_WEBHOOK_URL"); val != "" {
 		cfg.Notifications.Discord.WebhookURL = val
+		cfg.Notifications.Discord.Enabled = true
+	}
+	if val := getEnv("DISCORD_ENABLED"); val != "" {
+		cfg.Notifications.Discord.Enabled = (val == "true" || val == "1" || val == "yes")
 	}
 	if val := getEnv("SLACK_WEBHOOK_URL"); val != "" {
 		cfg.Notifications.Slack.WebhookURL = val
+		cfg.Notifications.Slack.Enabled = true
+	}
+	if val := getEnv("SLACK_ENABLED"); val != "" {
+		cfg.Notifications.Slack.Enabled = (val == "true" || val == "1" || val == "yes")
 	}
 	if val := getEnv("EMAIL_USERNAME"); val != "" {
 		cfg.Notifications.Email.Username = val
@@ -272,11 +294,22 @@ func applyEnvOverrides(cfg *Config) {
 	if val := getEnv("EMAIL_TO"); val != "" {
 		cfg.Notifications.Email.ToEmail = val
 	}
+	if val := getEnv("EMAIL_ENABLED"); val != "" {
+		cfg.Notifications.Email.Enabled = (val == "true" || val == "1" || val == "yes")
+	}
 	if val := getEnv("WEBHOOK_URL"); val != "" {
 		cfg.Notifications.Webhook.URL = val
+		cfg.Notifications.Webhook.Enabled = true
+	}
+	if val := getEnv("WEBHOOK_ENABLED"); val != "" {
+		cfg.Notifications.Webhook.Enabled = (val == "true" || val == "1" || val == "yes")
 	}
 	if val := getEnv("HEARTBEAT_URL"); val != "" {
 		cfg.Heartbeat.URL = val
+		cfg.Heartbeat.Enabled = true
+	}
+	if val := getEnv("HEARTBEAT_ENABLED"); val != "" {
+		cfg.Heartbeat.Enabled = (val == "true" || val == "1" || val == "yes")
 	}
 }
 
@@ -289,7 +322,8 @@ func getEnv(keys ...string) string {
 	return ""
 }
 
-func validateAndApplyDefaults(cfg *Config) {
+// ValidateAndApplyDefaults ensures required fields have valid fallback values.
+func ValidateAndApplyDefaults(cfg *Config) {
 	if cfg.Server.CheckIntervalSeconds <= 0 {
 		cfg.Server.CheckIntervalSeconds = 5
 	}
