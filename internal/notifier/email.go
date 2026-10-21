@@ -1,6 +1,7 @@
 package notifier
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/smtp"
@@ -18,6 +19,7 @@ type sendMailFunc func(addr string, a smtp.Auth, from string, to []string, msg [
 type EmailChannel struct {
 	cfg          config.EmailConfig
 	sendMailFunc sendMailFunc
+	timeout      time.Duration
 }
 
 // NewEmailChannel creates a new EmailChannel from configuration.
@@ -25,6 +27,7 @@ func NewEmailChannel(cfg config.EmailConfig) *EmailChannel {
 	return &EmailChannel{
 		cfg:          cfg,
 		sendMailFunc: smtp.SendMail,
+		timeout:      5 * time.Second,
 	}
 }
 
@@ -88,8 +91,25 @@ func (e *EmailChannel) Send(alert *models.Alert) error {
 		"Date: %s\r\n\r\n%s",
 		from, e.cfg.ToEmail, subject, alert.Timestamp.UTC().Format(time.RFC1123Z), body.String()))
 
-	if err := e.sendMailFunc(addr, auth, from, []string{e.cfg.ToEmail}, msg); err != nil {
-		return fmt.Errorf("smtp send failed: %w", err)
+	timeout := e.timeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- e.sendMailFunc(addr, auth, from, []string{e.cfg.ToEmail}, msg)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("smtp send timed out after %v: %w", timeout, ctx.Err())
+	case err := <-done:
+		if err != nil {
+			return fmt.Errorf("smtp send failed: %w", err)
+		}
 	}
 
 	return nil

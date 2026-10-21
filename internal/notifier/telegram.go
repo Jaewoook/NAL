@@ -64,6 +64,9 @@ func (t *TelegramChannel) Send(alert *models.Alert) error {
 	if alert == nil {
 		return errors.New("alert cannot be nil")
 	}
+	if t.botToken == "" || t.chatID == "" {
+		return errors.New("telegram bot token and chat ID must be configured")
+	}
 
 	icon := "ℹ️"
 	switch alert.Level {
@@ -105,9 +108,15 @@ func (t *TelegramChannel) Send(alert *models.Alert) error {
 		}
 	}
 
+	msgText := textBuilder.String()
+	if len([]rune(msgText)) > 4096 {
+		runes := []rune(msgText)
+		msgText = string(runes[:4090]) + "..."
+	}
+
 	payload := telegramPayload{
 		ChatID:    t.chatID,
-		Text:      textBuilder.String(),
+		Text:      msgText,
 		ParseMode: "HTML",
 	}
 
@@ -131,7 +140,7 @@ func (t *TelegramChannel) Send(alert *models.Alert) error {
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("telegram api error (status %d): %s", resp.StatusCode, string(respBody))

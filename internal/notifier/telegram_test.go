@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -12,19 +11,28 @@ import (
 	"github.com/jaewoook/server-monitor/internal/models"
 )
 
+type roundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 func TestTelegramChannelSend(t *testing.T) {
 	var receivedBody string
 	var receivedContentType string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedContentType = r.Header.Get("Content-Type")
-		body, _ := io.ReadAll(r.Body)
-		receivedBody = string(body)
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"ok": true}`))
-	}))
-	defer ts.Close()
 
-	ch := NewTelegramChannelWithEndpoint("test-token", "12345", ts.URL)
+	ch := NewTelegramChannelWithEndpoint("test-token", "12345", "http://localhost/test")
+	ch.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		receivedContentType = req.Header.Get("Content-Type")
+		body, _ := io.ReadAll(req.Body)
+		receivedBody = string(body)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ok": true}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
 	if ch.Name() != "telegram" {
 		t.Errorf("expected channel name 'telegram', got '%s'", ch.Name())
 	}
@@ -70,13 +78,15 @@ func TestTelegramChannelSend(t *testing.T) {
 }
 
 func TestTelegramChannelHTTPError(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"ok": false, "description": "Bad Request: chat not found"}`))
-	}))
-	defer ts.Close()
+	ch := NewTelegramChannelWithEndpoint("test-token", "invalid-chat", "http://localhost/test")
+	ch.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Body:       io.NopCloser(strings.NewReader(`{"ok": false, "description": "Bad Request: chat not found"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
 
-	ch := NewTelegramChannelWithEndpoint("test-token", "invalid-chat", ts.URL)
 	alert := &models.Alert{
 		Title:   "Alert",
 		Message: "Test",
@@ -100,6 +110,18 @@ func TestTelegramChannelNilAlert(t *testing.T) {
 	}
 }
 
+func TestTelegramChannelConfigValidation(t *testing.T) {
+	chNoToken := NewTelegramChannel("", "12345")
+	if err := chNoToken.Send(&models.Alert{Title: "Test"}); err == nil {
+		t.Error("expected error for empty bot token")
+	}
+
+	chNoChatID := NewTelegramChannel("token", "")
+	if err := chNoChatID.Send(&models.Alert{Title: "Test"}); err == nil {
+		t.Error("expected error for empty chat ID")
+	}
+}
+
 func TestTelegramChannelDefaultEndpoint(t *testing.T) {
 	ch := NewTelegramChannel("test-token", "12345")
 	if ch.Name() != "telegram" {
@@ -113,15 +135,17 @@ func TestTelegramChannelDefaultEndpoint(t *testing.T) {
 
 func TestTelegramChannelHTMLEscaping(t *testing.T) {
 	var receivedBody string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
+	ch := NewTelegramChannelWithEndpoint("test-token", "12345", "http://localhost/test")
+	ch.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
 		receivedBody = string(body)
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"ok": true}`))
-	}))
-	defer ts.Close()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ok": true}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
 
-	ch := NewTelegramChannelWithEndpoint("test-token", "12345", ts.URL)
 	alert := &models.Alert{
 		Title:   "CPU <Critical> & Warning",
 		Message: "Value > 90% && status <fail>",
@@ -144,18 +168,52 @@ func TestTelegramChannelHTMLEscaping(t *testing.T) {
 }
 
 func TestTelegramChannelOKFalse200(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"ok": false, "description": "bot was blocked by user"}`))
-	}))
-	defer ts.Close()
+	ch := NewTelegramChannelWithEndpoint("test-token", "12345", "http://localhost/test")
+	ch.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ok": false, "description": "bot was blocked by user"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
 
-	ch := NewTelegramChannelWithEndpoint("test-token", "12345", ts.URL)
 	err := ch.Send(&models.Alert{Title: "Test"})
 	if err == nil {
 		t.Fatal("expected error when ok=false, got nil")
 	}
 	if !strings.Contains(err.Error(), "bot was blocked by user") {
 		t.Errorf("expected error to contain description, got: %v", err)
+	}
+}
+
+func TestTelegramChannelMessageLengthCap(t *testing.T) {
+	var capturedPayload telegramPayload
+	ch := NewTelegramChannelWithEndpoint("test-token", "12345", "http://localhost/test")
+	ch.client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
+		_ = json.Unmarshal(body, &capturedPayload)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ok": true}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	longMsg := strings.Repeat("A", 5000)
+	alert := &models.Alert{
+		Title:   "Long message",
+		Message: longMsg,
+		Level:   models.AlertLevelCritical,
+	}
+
+	if err := ch.Send(alert); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len([]rune(capturedPayload.Text)) > 4096 {
+		t.Errorf("expected text length <= 4096, got %d", len([]rune(capturedPayload.Text)))
+	}
+	if !strings.HasSuffix(capturedPayload.Text, "...") {
+		t.Errorf("expected truncated text to end with '...', got: %s", capturedPayload.Text[len(capturedPayload.Text)-10:])
 	}
 }

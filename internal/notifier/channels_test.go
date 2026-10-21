@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"net/smtp"
 	"strings"
 	"testing"
@@ -30,16 +29,20 @@ func TestDiscordChannel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var receivedPayload discordPayload
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+			ch := NewDiscordChannel("http://localhost/discord")
+			ch.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				body, _ := io.ReadAll(r.Body)
 				if err := json.Unmarshal(body, &receivedPayload); err != nil {
 					t.Errorf("failed to unmarshal discord body: %v", err)
 				}
-				w.WriteHeader(http.StatusNoContent)
-			}))
-			defer ts.Close()
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Body:       io.NopCloser(strings.NewReader("")),
+					Header:     make(http.Header),
+				}, nil
+			})
 
-			ch := NewDiscordChannel(ts.URL)
 			if ch.Name() != "discord" {
 				t.Errorf("expected channel name 'discord', got '%s'", ch.Name())
 			}
@@ -104,13 +107,15 @@ func TestDiscordChannelErrors(t *testing.T) {
 	}
 
 	// HTTP error response
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"message": "Invalid Webhook Token"}`))
-	}))
-	defer ts.Close()
+	chErr := NewDiscordChannel("http://localhost/discord")
+	chErr.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusUnauthorized,
+			Body:       io.NopCloser(strings.NewReader(`{"message": "Invalid Webhook Token"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
 
-	chErr := NewDiscordChannel(ts.URL)
 	err := chErr.Send(&models.Alert{Title: "Test"})
 	if err == nil {
 		t.Error("expected error on HTTP 401 response")
@@ -135,17 +140,20 @@ func TestSlackChannel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var receivedPayload slackPayload
-			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+			ch := NewSlackChannel("http://localhost/slack")
+			ch.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 				body, _ := io.ReadAll(r.Body)
 				if err := json.Unmarshal(body, &receivedPayload); err != nil {
 					t.Errorf("failed to unmarshal slack body: %v", err)
 				}
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("ok"))
-			}))
-			defer ts.Close()
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("ok")),
+					Header:     make(http.Header),
+				}, nil
+			})
 
-			ch := NewSlackChannel(ts.URL)
 			if ch.Name() != "slack" {
 				t.Errorf("expected channel name 'slack', got '%s'", ch.Name())
 			}
@@ -199,13 +207,15 @@ func TestSlackChannelErrors(t *testing.T) {
 	}
 
 	// HTTP error response
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("channel_not_found"))
-	}))
-	defer ts.Close()
+	chErr := NewSlackChannel("http://localhost/slack")
+	chErr.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(strings.NewReader("channel_not_found")),
+			Header:     make(http.Header),
+		}, nil
+	})
 
-	chErr := NewSlackChannel(ts.URL)
 	err := chErr.Send(&models.Alert{Title: "Test"})
 	if err == nil {
 		t.Error("expected error on HTTP 404 response")
@@ -220,18 +230,21 @@ func TestWebhookChannel(t *testing.T) {
 	var userAgent string
 	var contentType string
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ch := NewWebhookChannel("http://localhost/webhook")
+	ch.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		userAgent = r.Header.Get("User-Agent")
 		contentType = r.Header.Get("Content-Type")
 		body, _ := io.ReadAll(r.Body)
 		if err := json.Unmarshal(body, &receivedAlert); err != nil {
 			t.Errorf("failed to unmarshal alert payload: %v", err)
 		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer ts.Close()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("ok")),
+			Header:     make(http.Header),
+		}, nil
+	})
 
-	ch := NewWebhookChannel(ts.URL)
 	if ch.Name() != "webhook" {
 		t.Errorf("expected channel name 'webhook', got '%s'", ch.Name())
 	}
@@ -276,13 +289,15 @@ func TestWebhookChannelErrors(t *testing.T) {
 	}
 
 	// HTTP error response
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("internal database failure"))
-	}))
-	defer ts.Close()
+	chErr := NewWebhookChannel("http://localhost/webhook")
+	chErr.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       io.NopCloser(strings.NewReader("internal database failure")),
+			Header:     make(http.Header),
+		}, nil
+	})
 
-	chErr := NewWebhookChannel(ts.URL)
 	err := chErr.Send(&models.Alert{Title: "Test"})
 	if err == nil {
 		t.Error("expected error on HTTP 500 response")
@@ -403,5 +418,37 @@ func TestEmailChannelErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "connection refused") {
 		t.Errorf("expected connection refused error, got: %v", err)
+	}
+}
+
+func TestEmailChannelTimeout(t *testing.T) {
+	ch := NewEmailChannel(config.EmailConfig{
+		SMTPHost: "smtp.example.com",
+		SMTPPort: 587,
+		ToEmail:  "test@example.com",
+	})
+	ch.timeout = 50 * time.Millisecond
+	ch.sendMailFunc = func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		time.Sleep(200 * time.Millisecond)
+		return nil
+	}
+
+	err := ch.Send(&models.Alert{Title: "Test"})
+	if err == nil {
+		t.Fatal("expected error on timeout, got nil")
+	}
+	if !strings.Contains(err.Error(), "timed out after") {
+		t.Errorf("expected error to mention timeout, got: %v", err)
+	}
+}
+
+func TestFormatProcessesTableRuneSafe(t *testing.T) {
+	// Korean/multi-byte UTF-8 process name with > 16 runes (20 runes)
+	procs := []models.ProcessInfo{
+		{PID: 1, Name: "이것은매우긴프로세스이름입니다정말로길다", CPUPercent: 50.0, MemoryPercent: 10.0},
+	}
+	table := formatProcessesTable(procs)
+	if !strings.Contains(table, "이것은매우긴프로세스이름입...") {
+		t.Errorf("expected rune-safe truncation with ellipsis, got table: %s", table)
 	}
 }

@@ -65,7 +65,7 @@ func (w *WebhookChannel) Send(alert *models.Alert) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		return fmt.Errorf("webhook endpoint returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
