@@ -222,3 +222,25 @@ func TestHeartbeatConcurrentTicks(t *testing.T) {
 		t.Errorf("expected exactly 1 ping to occur, got %d", atomic.LoadInt32(&count))
 	}
 }
+
+func TestHeartbeatContextDeadlineEnforced(t *testing.T) {
+	var hasDeadline bool
+	sender := NewWithClient("http://example.com/ping", 60*time.Second, &http.Client{})
+	sender.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		_, hasDeadline = r.Context().Deadline()
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("ok")),
+			Header:     make(http.Header),
+		}, nil
+	}))
+
+	// Ping with context without deadline (context.Background())
+	if err := sender.Ping(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasDeadline {
+		t.Fatalf("expected request context to have deadline enforced")
+	}
+}
+

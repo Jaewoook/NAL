@@ -28,7 +28,9 @@ func formatProcessesTable(processes []models.ProcessInfo) string {
 		if len(runes) > 16 {
 			name = string(runes[:13]) + "..."
 		}
-		sb.WriteString(fmt.Sprintf("%-7d %-16s %-7.1f%% %-7.1f%%\n", p.PID, name, p.CPUPercent, p.MemoryPercent))
+		cpuStr := fmt.Sprintf("%.1f%%", p.CPUPercent)
+		memStr := fmt.Sprintf("%.1f%%", p.MemoryPercent)
+		sb.WriteString(fmt.Sprintf("%-7d %-16s %-8s %-8s\n", p.PID, name, cpuStr, memStr))
 	}
 	return strings.TrimRight(sb.String(), "\n")
 }

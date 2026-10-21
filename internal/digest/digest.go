@@ -116,7 +116,7 @@ func (e *Engine) BuildDigest(now time.Time, m *models.SystemMetrics) (*models.Al
 		Title:        "System Health Digest",
 		Message:      msg,
 		Level:        models.AlertLevelInfo,
-		MetricName:   "CPU",
+		MetricName:   "System",
 		CurrentValue: m.CPUPercent,
 		Timestamp:    now,
 		Hostname:     hostname,

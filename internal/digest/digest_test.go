@@ -115,6 +115,9 @@ func TestDigestContentFormatting(t *testing.T) {
 	if alert.CurrentValue != 15.5 {
 		t.Errorf("expected currentValue 15.5, got %v", alert.CurrentValue)
 	}
+	if alert.MetricName != "System" {
+		t.Errorf("expected MetricName 'System', got '%s'", alert.MetricName)
+	}
 	if len(alert.TopProcesses) != 2 {
 		t.Errorf("expected 2 top processes, got %d", len(alert.TopProcesses))
 	}

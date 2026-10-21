@@ -126,8 +126,11 @@ func (s *Sender) Ping(ctx context.Context) error {
 	}
 
 	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 	}
 
