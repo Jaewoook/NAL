@@ -135,8 +135,26 @@ You can configure any Telegram bot to receive alerts directly in your personal c
 
 Because Telegram allows concurrent outbound `sendMessage` calls with a bot token, `server-monitor` pushes alerts to your Telegram chat cleanly without interfering with any other services or webhook handlers.
 
-### Zero-Config via Environment Variables
-If you don't want to maintain a YAML file, export your bot credentials via environment variables:
+### Option A: Configuration File (`config.yml`)
+
+Configure your bot credentials under `notifications.telegram` and make sure `enabled: true` is set:
+
+```yaml
+notifications:
+  telegram:
+    enabled: true
+    bot_token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+    chat_id: "987654321"
+```
+
+Verify your configuration by sending a test alert:
+```bash
+./server-monitor test-alert -channel telegram
+```
+
+### Option B: Direct Environment Variables
+
+If you prefer exporting credentials in your shell or service definition without editing YAML:
 
 ```bash
 export BOT_TOKEN="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
@@ -150,14 +168,14 @@ export DEFAULT_CHAT_ID="987654321"
 
 ## Configuration
 
-`server-monitor` can be configured via a YAML file (`config.yaml`), environment variables, or a combination of both (environment variables take precedence).
+`server-monitor` can be configured via `config.yml`, environment variables, or a combination of both (environment variables take precedence).
 
 Copy the example configuration to get started:
 ```bash
-cp config.example.yaml config.yaml
+cp config.example.yml config.yml
 ```
 
-### `config.yaml` Reference
+### `config.yml` Reference
 
 ```yaml
 server:
@@ -301,7 +319,7 @@ Commands:
   service install  Generate service configuration (systemd unit or launchd plist)
 
 Global Flags:
-  -config string   Path to config YAML file (default: "config.yaml")
+  -config string   Path to config file (default: "config.yml")
 
 Command Flags:
   test-alert:

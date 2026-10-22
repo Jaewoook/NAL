@@ -120,6 +120,9 @@ Unlike Docker services running inside the container virtualization layer, daemon
 # One-off system health inspection
 ./daemons/server-monitor/server-monitor check
 
+# Test notification channel (e.g. Telegram)
+./daemons/server-monitor/server-monitor test-alert -channel telegram
+
 # Run continuous monitoring daemon directly
 ./daemons/server-monitor/server-monitor run
 
