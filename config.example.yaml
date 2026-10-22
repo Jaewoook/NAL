@@ -72,10 +72,10 @@ digest:
 
 # Notification Channels (Configure any or all channels)
 notifications:
-  # Telegram Bot (Directly compatible with for_jaewook_bot)
+  # Telegram Bot
   telegram:
     enabled: false
-    bot_token: ""       # Your Telegram Bot Token (from @BotFather or for_jaewook_bot .env)
+    bot_token: ""       # Your Telegram Bot Token (from @BotFather)
     chat_id: ""         # Your Telegram User ID or Group Chat ID
 
   # Discord Webhook

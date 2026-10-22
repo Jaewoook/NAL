@@ -4,7 +4,7 @@ A lightweight, zero-dependency, single-binary physical server monitoring and not
 
 Designed specifically for physical and home servers running unattended workloads, `server-monitor` detects CPU usage spikes, sudden workload crashes (plunge drops), memory/disk exhaustion, and complete server outages via an outbound dead-man's-switch heartbeat.
 
-Alerts are dispatched across multiple channels including **Telegram** (directly reusing your existing `@for_jaewook_bot`), **Discord**, **Slack**, **SMTP Email**, and **Generic Webhooks**.
+Alerts are dispatched across multiple channels including **Telegram**, **Discord**, **Slack**, **SMTP Email**, and **Generic Webhooks**.
 
 ---
 
@@ -26,9 +26,9 @@ Alerts are dispatched across multiple channels including **Telegram** (directly 
 - **Multi-Track Alerting & Noise Prevention:**
   - Independent track state machines per subsystem (`cpu_spike`, `cpu_plunge`, `memory`, `disk`). A disk warning will never silence or corrupt an ongoing CPU spike alert.
   - Configurable cooldown timers (e.g., 30m) prevent alert storms on long-running incidents.
-- **Direct Telegram Bot Reuse (`for_jaewook_bot`):**
-  - Seamlessly uses your existing bot token (`BOT_TOKEN`) and chat ID (`DEFAULT_CHAT_ID`) to send messages directly via the Telegram Bot API.
-  - Works concurrently without interfering with your bot's incoming command polling (`/ping`, `/cmd`, `/상태`).
+- **Direct Telegram Bot Integration:**
+  - Uses your bot token (`BOT_TOKEN`) and chat ID (`DEFAULT_CHAT_ID`) to send messages directly via the Telegram Bot API.
+  - Can coexist with any other process or bot without webhook or polling conflicts.
 - **Single Static Binary & Low Footprint:**
   - Compiles to a standalone static binary with zero CGO dependencies (`CGO_ENABLED=0`).
   - Ultra-low resource consumption: **$< 0.1\%$ CPU** and **$< 8$ MB RAM**.
@@ -56,7 +56,7 @@ Alerts are dispatched across multiple channels including **Telegram** (directly 
              v                                                          v
     +-----------------+                                 +-------------------------------+
     | External Uptime |                                 | Channels:                     |
-    | (Healthchecks,  |                                 | - Telegram (for_jaewook_bot)  |
+    | (Healthchecks,  |                                 | - Telegram                    |
     |  BetterStack)   |                                 | - Discord Webhook             |
     +-----------------+                                 | - Slack Webhook               |
                                                         | - Email (SMTP)                |
@@ -129,14 +129,14 @@ Verify your webhook URLs and bot credentials by sending a test alert:
 
 ---
 
-## Using with `for_jaewook_bot` (Telegram)
+## Telegram Integration
 
-You can reuse your existing `@for_jaewook_bot` credentials directly. 
+You can configure any Telegram bot to receive alerts directly in your personal chat or group.
 
-Because Telegram allows unlimited concurrent outbound `sendMessage` calls with the same bot token, `server-monitor` can push alerts to your Telegram chat while your existing Node.js bot continues polling and responding to `/ping`, `/cmd`, and `/상태` without any conflict!
+Because Telegram allows concurrent outbound `sendMessage` calls with a bot token, `server-monitor` pushes alerts to your Telegram chat cleanly without interfering with any other services or webhook handlers.
 
 ### Zero-Config via Environment Variables
-If you don't want to maintain a YAML file, export your bot's `.env` variables:
+If you don't want to maintain a YAML file, export your bot credentials via environment variables:
 
 ```bash
 export BOT_TOKEN="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
