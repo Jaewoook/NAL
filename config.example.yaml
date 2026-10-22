@@ -1,0 +1,105 @@
+# ==============================================================================
+# Physical Server Monitoring & Notification System - Configuration Example
+# ==============================================================================
+
+server:
+  # Friendly name of this server, included in alert headers and digests
+  name: "primary-server"
+  # How often system metrics are polled (in seconds)
+  check_interval_seconds: 5
+
+cpu:
+  # --- CPU Spike Detection ---
+  # Alerts when aggregate CPU exceeds threshold_percent for sustained_seconds
+  spike:
+    enabled: true
+    threshold_percent: 85.0
+    sustained_seconds: 15
+    cooldown_minutes: 30
+
+  # --- CPU Plunge Drop Detection (Crash / Sudden Termination) ---
+  # Alerts when CPU rapidly drops by delta_percent from an active baseline (>= from_min_percent)
+  # within the sliding window. One-shot incident alert with cooldown.
+  plunge_drop:
+    enabled: true
+    delta_percent: 40.0
+    from_min_percent: 50.0
+    window_seconds: 15
+    cooldown_minutes: 15
+
+  # --- CPU Floor Drop Detection (Optional) ---
+  # Alerts if CPU stays below threshold_percent for sustained_seconds.
+  # Disabled by default so idle servers do not fire false alarms.
+  floor_drop:
+    enabled: false
+    threshold_percent: 5.0
+    sustained_seconds: 30
+    cooldown_minutes: 30
+
+  # Number of top CPU-consuming processes to capture in alert diagnostics
+  top_processes_count: 5
+
+health:
+  # Memory utilization threshold
+  memory:
+    enabled: true
+    threshold_percent: 90.0
+    sustained_seconds: 15
+    cooldown_minutes: 30
+
+  # Root disk space threshold
+  disk:
+    enabled: true
+    threshold_percent: 85.0
+    mount_point: "/"
+    cooldown_minutes: 60
+
+alerting:
+  # Send an explicit "RECOVERED" notification when sustained conditions resolve
+  notify_on_recovery: true
+
+# Outbound Dead-Man's-Switch Heartbeat (e.g. Healthchecks.io, BetterStack, Uptime Kuma)
+# If the server loses power or network completely, the external monitor alerts you.
+heartbeat:
+  enabled: false
+  url: "https://hc-ping.com/YOUR-UUID-HERE"
+  interval_seconds: 60
+
+# Periodic Health Digest (e.g., daily "All systems operational" status summary)
+digest:
+  enabled: false
+  interval_hours: 24
+
+# Notification Channels (Configure any or all channels)
+notifications:
+  # Telegram Bot (Directly compatible with for_jaewook_bot)
+  telegram:
+    enabled: false
+    bot_token: ""       # Your Telegram Bot Token (from @BotFather or for_jaewook_bot .env)
+    chat_id: ""         # Your Telegram User ID or Group Chat ID
+
+  # Discord Webhook
+  discord:
+    enabled: false
+    webhook_url: ""     # https://discord.com/api/webhooks/...
+
+  # Slack Webhook
+  slack:
+    enabled: false
+    webhook_url: ""     # https://hooks.slack.com/services/...
+
+  # Email (SMTP)
+  email:
+    enabled: false
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    use_tls: true
+    username: ""
+    password: ""
+    from_email: ""
+    to_email: ""
+
+  # Generic HTTP Webhook (POST JSON)
+  webhook:
+    enabled: false
+    url: ""             # https://example.com/api/alerts
