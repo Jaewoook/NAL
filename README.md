@@ -107,6 +107,27 @@ Recovery after a full wipe: `./setup-docker-env.sh` (networks + empty
 volumes) → `./batch/restore-volumes.sh <volume>` for each volume that had
 data → `./manage-services.sh start all`.
 
+## Daemons (Host-Level Background Services)
+
+Unlike Docker services running inside the container virtualization layer, daemons run natively on the physical Mac mini host to monitor hardware, OS metrics, and external reachability directly.
+
+| Daemon | Path | Description | Management |
+| :--- | :--- | :--- | :--- |
+| **Server Monitor** | [`daemons/server-monitor`](./daemons/server-monitor) | Real-time CPU spike & drop anomaly detection, host health telemetry, dead-man's-switch aliveness heartbeat, and multi-channel alerting (Telegram, Discord, Slack, Email, Webhook). | macOS `launchd` / CLI |
+
+**Quick Commands:**
+```sh
+# One-off system health inspection
+./daemons/server-monitor/server-monitor check
+
+# Run continuous monitoring daemon directly
+./daemons/server-monitor/server-monitor run
+
+# Install as an automatic macOS background service (launchd)
+./daemons/server-monitor/server-monitor service install -type launchd -path ~/Library/LaunchAgents/me.jaewook.nal.servermonitor.plist
+launchctl load ~/Library/LaunchAgents/me.jaewook.nal.servermonitor.plist
+```
+
 ## Batch Tasks
 
 ### [*prune-docker.sh*](./batch/prune-docker.sh)

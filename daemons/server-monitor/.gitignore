@@ -1,1 +1,5 @@
 /server-monitor
+config.yaml
+config.yml
+.env
+*.swp
