@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -229,35 +228,9 @@ func DefaultConfig() *Config {
 	}
 }
 
-// LoadEnvFile reads a .env file if it exists and sets environment variables that are not already set.
-func LoadEnvFile(path string) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) == 2 {
-			key := strings.TrimSpace(parts[0])
-			val := strings.TrimSpace(parts[1])
-			if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
-				val = val[1 : len(val)-1]
-			}
-			if os.Getenv(key) == "" {
-				_ = os.Setenv(key, val)
-			}
-		}
-	}
-}
-
 // DefaultConfigWithEnv returns a default configuration with environment variable
 // overrides and validated defaults applied.
 func DefaultConfigWithEnv() *Config {
-	LoadEnvFile(".env")
 	cfg := DefaultConfig()
 	ApplyEnvOverrides(cfg)
 	ValidateAndApplyDefaults(cfg)
@@ -267,7 +240,6 @@ func DefaultConfigWithEnv() *Config {
 // LoadConfig reads a YAML configuration file from path, merges with defaults,
 // and applies any environment variable overrides.
 func LoadConfig(path string) (*Config, error) {
-	LoadEnvFile(".env")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file %q: %w", path, err)
