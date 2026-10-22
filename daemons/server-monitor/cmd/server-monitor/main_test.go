@@ -215,3 +215,42 @@ func TestResolveConfigWithoutFileAppliesEnv(t *testing.T) {
 		t.Errorf("expected Telegram.ChatID 'tg-chat-5678', got: %s", cfg.Notifications.Telegram.ChatID)
 	}
 }
+
+func TestResolveConfigWithConfigYml(t *testing.T) {
+	tmpDir := t.TempDir()
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to getwd: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to chdir to tempDir: %v", err)
+	}
+	defer func() {
+		_ = os.Chdir(origWd)
+	}()
+
+	ymlContent := `
+server:
+  name: "yml-detected-server"
+notifications:
+  telegram:
+    enabled: true
+    bot_token: "test-token-from-yml"
+    chat_id: "test-chat-from-yml"
+`
+	if err := os.WriteFile("config.yml", []byte(ymlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := resolveConfig("")
+	if err != nil {
+		t.Fatalf("resolveConfig failed: %v", err)
+	}
+	if cfg.Server.Name != "yml-detected-server" {
+		t.Errorf("expected Server.Name 'yml-detected-server', got: %s", cfg.Server.Name)
+	}
+	if !cfg.Notifications.Telegram.Enabled {
+		t.Errorf("expected Telegram.Enabled to be true from config.yml")
+	}
+}
+

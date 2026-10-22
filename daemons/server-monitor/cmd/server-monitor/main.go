@@ -53,9 +53,10 @@ func resolveConfig(configPath string) (*config.Config, error) {
 	if configPath != "" {
 		return config.LoadConfig(configPath)
 	}
-	defaultPath := "config.yaml"
-	if _, err := os.Stat(defaultPath); err == nil {
-		return config.LoadConfig(defaultPath)
+	for _, candidate := range []string{"config.yaml", "config.yml"} {
+		if _, err := os.Stat(candidate); err == nil {
+			return config.LoadConfig(candidate)
+		}
 	}
 	return config.DefaultConfigWithEnv(), nil
 }

@@ -163,3 +163,34 @@ func TestDefaultConfigWithEnv(t *testing.T) {
 		t.Errorf("expected default interval 5, got %d", cfg.Server.CheckIntervalSeconds)
 	}
 }
+
+func TestLoadEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env")
+	content := `# Comment line
+SERVER_NAME="envfile-server"
+BOT_TOKEN='envfile-token'
+DEFAULT_CHAT_ID=123456
+EMPTY_LINE=
+`
+	if err := os.WriteFile(envPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SERVER_NAME", "")
+	t.Setenv("BOT_TOKEN", "")
+	t.Setenv("DEFAULT_CHAT_ID", "")
+
+	LoadEnvFile(envPath)
+
+	if val := os.Getenv("SERVER_NAME"); val != "envfile-server" {
+		t.Errorf("expected envfile-server, got %s", val)
+	}
+	if val := os.Getenv("BOT_TOKEN"); val != "envfile-token" {
+		t.Errorf("expected envfile-token, got %s", val)
+	}
+	if val := os.Getenv("DEFAULT_CHAT_ID"); val != "123456" {
+		t.Errorf("expected 123456, got %s", val)
+	}
+}
+
