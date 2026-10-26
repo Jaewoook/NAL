@@ -57,6 +57,10 @@ health:
 alerting:
   # Send an explicit "RECOVERED" notification when sustained conditions resolve
   notify_on_recovery: true
+  # Send a notification when the monitoring daemon starts up
+  notify_on_startup: true
+  # Send a notification when the monitoring daemon receives a termination signal
+  notify_on_shutdown: true
 
 # Outbound Dead-Man's-Switch Heartbeat (e.g. Healthchecks.io, BetterStack, Uptime Kuma)
 # If the server loses power or network completely, the external monitor alerts you.

@@ -261,3 +261,78 @@ func TestDaemonRunCancellation(t *testing.T) {
 		t.Fatalf("daemon did not terminate within timeout")
 	}
 }
+
+func TestDaemonStartupAndShutdownNotifications(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Server.Name = "prod-server"
+	cfg.Server.CheckIntervalSeconds = 1
+	cfg.Alerting.NotifyOnStartup = true
+	cfg.Alerting.NotifyOnShutdown = true
+
+	coll := &mockCollector{
+		metrics: &models.SystemMetrics{
+			Timestamp:     time.Now(),
+			CPUPercent:    15.0,
+			MemoryPercent: 45.0,
+			DiskPercent:   60.0,
+			UptimeSeconds: 7200,
+		},
+	}
+
+	ch := &mockChannel{name: "mock"}
+	disp := notifier.NewDispatcher(ch)
+
+	d, err := New(cfg, WithCollector(coll), WithDispatcher(disp))
+	if err != nil {
+		t.Fatalf("failed to create daemon: %v", err)
+	}
+	d.interval = 10 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan error, 1)
+	go func() {
+		done <- d.Run(ctx)
+	}()
+
+	// Wait briefly for startup notification
+	time.Sleep(30 * time.Millisecond)
+
+	// Trigger clean shutdown
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("expected clean exit, got: %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatalf("daemon did not terminate within timeout")
+	}
+
+	if len(ch.alerts) < 2 {
+		t.Fatalf("expected at least 2 alerts (startup and shutdown), got %d", len(ch.alerts))
+	}
+
+	startupAlert := ch.alerts[0]
+	if !strings.Contains(startupAlert.Title, "Server Monitor Online") {
+		t.Errorf("expected startup alert title, got: %s", startupAlert.Title)
+	}
+	if !strings.Contains(startupAlert.Message, "Uptime: 2h 0m 0s") {
+		t.Errorf("expected uptime in startup message, got: %s", startupAlert.Message)
+	}
+	if startupAlert.Level != models.AlertLevelResolved {
+		t.Errorf("expected Resolved level for startup, got: %s", startupAlert.Level)
+	}
+
+	shutdownAlert := ch.alerts[len(ch.alerts)-1]
+	if !strings.Contains(shutdownAlert.Title, "Server Monitor Shutting Down") {
+		t.Errorf("expected shutdown alert title, got: %s", shutdownAlert.Title)
+	}
+	if !strings.Contains(shutdownAlert.Message, "termination signal") {
+		t.Errorf("expected termination message, got: %s", shutdownAlert.Message)
+	}
+	if shutdownAlert.Level != models.AlertLevelWarning {
+		t.Errorf("expected Warning level for shutdown, got: %s", shutdownAlert.Level)
+	}
+}

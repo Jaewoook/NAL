@@ -261,6 +261,8 @@ func runApp(args []string, stdout, stderr io.Writer, opts ...AppOption) int {
 		targetPath := fs.String("path", "", "Destination path to write service file")
 		cfgPath := fs.String("config", "", "Path to config file for service")
 		binPath := fs.String("bin", "", "Path to executable binary for service")
+		userFlag := fs.String("user", "", "User to run service as")
+		workDir := fs.String("workdir", "", "Working directory for service")
 		if err := fs.Parse(args[2:]); err != nil {
 			return 1
 		}
@@ -277,6 +279,8 @@ func runApp(args []string, stdout, stderr io.Writer, opts ...AppOption) int {
 		opts := service.ServiceOptions{
 			BinaryPath: *binPath,
 			ConfigPath: *cfgPath,
+			User:       *userFlag,
+			WorkingDir: *workDir,
 		}
 
 		if *targetPath != "" && *targetPath != "-" {

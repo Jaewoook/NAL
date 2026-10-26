@@ -89,6 +89,8 @@ func TestConfigEnvOverride(t *testing.T) {
 	t.Setenv("DISCORD_WEBHOOK_URL", "https://discord.example/webhook")
 	t.Setenv("SLACK_WEBHOOK_URL", "https://slack.example/webhook")
 	t.Setenv("HEARTBEAT_URL", "https://heartbeat.example/ping")
+	t.Setenv("NOTIFY_ON_STARTUP", "true")
+	t.Setenv("NOTIFY_ON_SHUTDOWN", "1")
 
 	cfg, err := LoadConfig(cfgPath)
 	if err != nil {
@@ -111,6 +113,12 @@ func TestConfigEnvOverride(t *testing.T) {
 	}
 	if cfg.Heartbeat.URL != "https://heartbeat.example/ping" {
 		t.Errorf("expected heartbeat url override, got %s", cfg.Heartbeat.URL)
+	}
+	if !cfg.Alerting.NotifyOnStartup {
+		t.Errorf("expected NotifyOnStartup to be true via env")
+	}
+	if !cfg.Alerting.NotifyOnShutdown {
+		t.Errorf("expected NotifyOnShutdown to be true via env")
 	}
 }
 

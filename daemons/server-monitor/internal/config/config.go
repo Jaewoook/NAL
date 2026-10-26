@@ -71,6 +71,8 @@ type HealthConfig struct {
 // AlertingConfig defines global alert manager options.
 type AlertingConfig struct {
 	NotifyOnRecovery bool `yaml:"notify_on_recovery"`
+	NotifyOnStartup  bool `yaml:"notify_on_startup"`
+	NotifyOnShutdown bool `yaml:"notify_on_shutdown"`
 }
 
 // HeartbeatConfig configures dead-man's-switch aliveness pings.
@@ -187,6 +189,8 @@ func DefaultConfig() *Config {
 		},
 		Alerting: AlertingConfig{
 			NotifyOnRecovery: true,
+			NotifyOnStartup:  false,
+			NotifyOnShutdown: false,
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:         false,
@@ -310,6 +314,15 @@ func ApplyEnvOverrides(cfg *Config) {
 	}
 	if val := getEnv("HEARTBEAT_ENABLED"); val != "" {
 		cfg.Heartbeat.Enabled = (val == "true" || val == "1" || val == "yes")
+	}
+	if val := getEnv("NOTIFY_ON_RECOVERY"); val != "" {
+		cfg.Alerting.NotifyOnRecovery = (val == "true" || val == "1" || val == "yes")
+	}
+	if val := getEnv("NOTIFY_ON_STARTUP"); val != "" {
+		cfg.Alerting.NotifyOnStartup = (val == "true" || val == "1" || val == "yes")
+	}
+	if val := getEnv("NOTIFY_ON_SHUTDOWN"); val != "" {
+		cfg.Alerting.NotifyOnShutdown = (val == "true" || val == "1" || val == "yes")
 	}
 }
 

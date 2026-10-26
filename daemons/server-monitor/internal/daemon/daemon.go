@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -192,6 +193,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 		log.Printf("[daemon] initial step error: %v", err)
 	}
 
+	// Dispatch startup notification if enabled
+	if d.cfg.Alerting.NotifyOnStartup && d.dispatcher != nil {
+		d.sendStartupNotification()
+	}
+
 	ticker := time.NewTicker(d.interval)
 	defer ticker.Stop()
 
@@ -199,11 +205,62 @@ func (d *Daemon) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			log.Println("[daemon] shutdown signal received, terminating monitor loop cleanly")
+			if d.cfg.Alerting.NotifyOnShutdown && d.dispatcher != nil {
+				d.sendShutdownNotification()
+			}
 			return nil
 		case <-ticker.C:
 			if err := d.Step(ctx); err != nil {
 				log.Printf("[daemon] step error: %v", err)
 			}
 		}
+	}
+}
+
+func (d *Daemon) sendStartupNotification() {
+	msg := fmt.Sprintf("Daemon online and monitoring %s (check interval: %v).", d.cfg.Server.Name, d.interval)
+	if d.collector != nil {
+		if m, err := d.collector.Collect(); err == nil && m != nil {
+			uptimeStr := digest.FormatUptime(m.UptimeSeconds)
+			msg = fmt.Sprintf("Daemon online and monitoring %s.\nCheck Interval: %v | Uptime: %s | CPU: %.1f%% | RAM: %.1f%%",
+				d.cfg.Server.Name, d.interval, uptimeStr, m.CPUPercent, m.MemoryPercent)
+		}
+	}
+
+	startupAlert := &models.Alert{
+		Title:     fmt.Sprintf("[%s] Server Monitor Online", d.cfg.Server.Name),
+		Message:   msg,
+		Level:     models.AlertLevelResolved,
+		Timestamp: time.Now(),
+		Hostname:  d.cfg.Server.Name,
+	}
+
+	errs := d.dispatcher.Dispatch(startupAlert)
+	for ch, err := range errs {
+		log.Printf("[daemon] failed to dispatch startup notification to %s: %v", ch, err)
+	}
+}
+
+func (d *Daemon) sendShutdownNotification() {
+	msg := fmt.Sprintf("Daemon received termination signal on %s. Monitoring stopped cleanly.", d.cfg.Server.Name)
+	if d.collector != nil {
+		if m, err := d.collector.Collect(); err == nil && m != nil {
+			uptimeStr := digest.FormatUptime(m.UptimeSeconds)
+			msg = fmt.Sprintf("Daemon received termination signal on %s. Monitoring stopped cleanly.\nUptime: %s | CPU: %.1f%% | RAM: %.1f%%",
+				d.cfg.Server.Name, uptimeStr, m.CPUPercent, m.MemoryPercent)
+		}
+	}
+
+	shutdownAlert := &models.Alert{
+		Title:     fmt.Sprintf("[%s] Server Monitor Shutting Down", d.cfg.Server.Name),
+		Message:   msg,
+		Level:     models.AlertLevelWarning,
+		Timestamp: time.Now(),
+		Hostname:  d.cfg.Server.Name,
+	}
+
+	errs := d.dispatcher.Dispatch(shutdownAlert)
+	for ch, err := range errs {
+		log.Printf("[daemon] failed to dispatch shutdown notification to %s: %v", ch, err)
 	}
 }

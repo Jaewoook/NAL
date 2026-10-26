@@ -127,3 +127,60 @@ func TestInstallWriteFile(t *testing.T) {
 		t.Errorf("installed content incorrect: %s", string(data))
 	}
 }
+
+func TestLaunchdPlistIncludesWorkingDirectory(t *testing.T) {
+	opts := ServiceOptions{
+		BinaryPath: "/usr/local/bin/server-monitor",
+		ConfigPath: "/Users/test/server-monitor/config.yml",
+		WorkingDir: "/Users/test/server-monitor",
+		LogDir:     "/Users/test/Library/Logs",
+	}
+
+	plist := GenerateLaunchdPlist(opts)
+	if !strings.Contains(plist, "<key>WorkingDirectory</key>") {
+		t.Errorf("expected WorkingDirectory key in plist, got: %s", plist)
+	}
+	if !strings.Contains(plist, "<string>/Users/test/server-monitor</string>") {
+		t.Errorf("expected WorkingDirectory string in plist, got: %s", plist)
+	}
+	if !strings.Contains(plist, "/Users/test/Library/Logs/server-monitor.log") {
+		t.Errorf("expected user log path in plist, got: %s", plist)
+	}
+}
+
+func TestAutoDetectConfigPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgFile := filepath.Join(tmpDir, "config.yml")
+	if err := os.WriteFile(cfgFile, []byte("server:\n  name: test\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := ServiceOptions{
+		BinaryPath: filepath.Join(tmpDir, "server-monitor"),
+	}
+
+	res := applyDefaults(opts)
+	if res.ConfigPath != cfgFile {
+		t.Errorf("expected auto-detected config path %q, got %q", cfgFile, res.ConfigPath)
+	}
+	if res.WorkingDir != tmpDir {
+		t.Errorf("expected working directory %q, got %q", tmpDir, res.WorkingDir)
+	}
+}
+
+func TestExpandHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("no home dir")
+	}
+
+	if got := ExpandHome("~/foo/bar"); got != filepath.Join(home, "foo/bar") {
+		t.Errorf("expected %s, got %s", filepath.Join(home, "foo/bar"), got)
+	}
+	if got := ExpandHome("~"); got != home {
+		t.Errorf("expected %s, got %s", home, got)
+	}
+	if got := ExpandHome("/etc/foo"); got != "/etc/foo" {
+		t.Errorf("expected /etc/foo, got %s", got)
+	}
+}

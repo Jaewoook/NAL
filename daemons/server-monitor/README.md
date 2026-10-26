@@ -215,6 +215,8 @@ health:
 
 alerting:
   notify_on_recovery: true      # Send "RESOLVED" alert when CPU/memory normalizes
+  notify_on_startup: true       # Send alert when daemon starts up
+  notify_on_shutdown: true      # Send alert when daemon shuts down cleanly
 
 heartbeat:
   enabled: true
@@ -270,6 +272,8 @@ Any configuration value can be set via environment variables. Setting a channel 
 | `MEMORY_THRESHOLD` | Memory utilization threshold % (default: `90.0`) |
 | `DISK_THRESHOLD` | Disk utilization threshold % (default: `85.0`) |
 | `NOTIFY_ON_RECOVERY` | Send alerts on recovery (`true`/`false`) |
+| `NOTIFY_ON_STARTUP` | Send alert when daemon starts up (`true`/`false`) |
+| `NOTIFY_ON_SHUTDOWN` | Send alert when daemon shuts down (`true`/`false`) |
 
 ---
 
