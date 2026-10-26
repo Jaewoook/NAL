@@ -1,0 +1,43 @@
+services:
+  homebrew-nal-web:
+    image: ${HOMEBREW_NAL_IMAGE:-homebrew-nal-web:latest}
+    container_name: homebrew-nal-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - 10245
+    environment:
+      - NODE_ENV=production
+      - PORT=10245
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_REPO_OWNER=${GITHUB_REPO_OWNER:-jaewoook}
+      - GITHUB_REPO_NAME=${GITHUB_REPO_NAME:-homebrew-nal}
+      - GITHUB_SYNC_WORKFLOW=${GITHUB_SYNC_WORKFLOW:-sync-upstream.yml}
+      - GITHUB_BUILD_WORKFLOW=${GITHUB_BUILD_WORKFLOW:-build.yml}
+      - AUTHENTIK_ISSUER=${AUTHENTIK_ISSUER}
+      - AUTHENTIK_CLIENT_ID=${AUTHENTIK_CLIENT_ID}
+      - AUTHENTIK_CLIENT_SECRET=${AUTHENTIK_CLIENT_SECRET}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-https://homebrew-nal.jaewook.dev}
+      - DB_TYPE=postgres
+      - PG_HOST=${PG_HOST:-postgresql}
+      - PG_PORT=${PG_PORT:-5432}
+      - PG_DB=${PG_DB:-homebrew_nal}
+      - PG_USER=${PG_USER:-homebrew_nal}
+      - PG_PASS=${PG_PASS}
+    networks:
+      - default
+      - db_network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:10245/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  default:
+    external: true
+    name: nginx_network
+  db_network:
+    external: true

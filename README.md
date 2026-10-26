@@ -32,21 +32,20 @@ Start, stop, or restart one or more services with:
 
 ## Services
 
-| Service         | Endpoint | Description | Status |
-| --------------- | :------: | ----------- | :----: |
-| VPN             | N/A | Wireguard VPN Proxy | Stable |
-| DDNS            | N/A | Cloudflare DDNS Updater | Stable |
-| Tunnel          | N/A | Cloudflare Tunnel Daemon | Stable |
-| Proxy           | <ul><li>https://nginx.home.jaewook.me</li><ul>   | Nginx web management console | Stable |
-| Virt            | <ul><li>https://docker.home.jaewook.me</li></ul> | Docker stack management console | Stable |
-| LLM             | <ul><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM service | Stable |
-| Auth            | | Authenticate/Authorize + LDAP Server (authentik) | Work in progress |
-| DB              | N/A | Shared PostgreSQL database server | Work in progress |
-| DNS             | <ul><li>https://dns.home.jaewook.me</li><li>https://dns.jaewook.dev</li></ul> | DNS Service (Technitium) | Work in progress |
-| Code Review     | | Gerrit code review system | Experimental |
-| Docker Registry | | Private docker image registry | Planned |
-| ~~Storage~~     | ~~<ul><li>https://status.drive.home.jaewook.me</li><li>https://drive.home.jaewook.me</li></ul>~~ | ~~Personal NAS solution~~ | Deleted |
-| ~~Metrics~~     | ~~<ul><li>https://status.home.jaewook.me</li></ul>~~ | ~~Metrics for server~~ | Deleted |
+| Service          | Endpoint | Description | Status |
+| ---------------- | :------: | ----------- | :----: |
+| VPN              | N/A | Wireguard VPN Proxy | Stable |
+| DDNS             | N/A | Cloudflare DDNS Updater | Stable |
+| Tunnel           | N/A | Cloudflare Tunnel Daemon | Stable |
+| Proxy            | <ul><li>https://nginx.home.jaewook.me</li><ul>   | Nginx web management console | Stable |
+| Virt             | <ul><li>https://docker.home.jaewook.me</li></ul> | Docker stack management console | Stable |
+| LLM              | <ul><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM service | Stable |
+| Auth             | | Authenticate/Authorize + LDAP Server (authentik) | Work in progress |
+| DB               | N/A | Shared PostgreSQL database server | Work in progress |
+| Homebrew NAL Tap | <ul><li>https://homebrew-nal.jaewook.dev</li></ul> | [Homebrew tap](https://github.com/Jaewoook/homebrew-nal) registry | Stable |
+| DNS              | <ul><li>https://dns.home.jaewook.me</li><li>https://dns.jaewook.dev</li></ul> | DNS Service (Technitium) | Work in progress |
+| Code Review      | | Gerrit code review system | Experimental |
+| Docker Registry  | | Private docker image registry | Planned |
 
 Future work: Technitium (DNS) supports OIDC SSO login for its web console,
 which could integrate with the authentik (Auth) instance once it's actually
