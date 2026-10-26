@@ -1,0 +1,39 @@
+services:
+  homeassistant:
+    image: homeassistant/home-assistant:2026.9.4
+    container_name: homeassistant
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:?timezone required}
+    expose:
+      - 8123
+    volumes:
+      - ha_config:/config
+
+  # Host networking (Matter needs LAN mDNS) and opt-in profile: see README.md.
+  matter-hub:
+    image: ghcr.io/riddix/home-assistant-matter-hub:2.0.57
+    container_name: matter-hub
+    profiles: ["matter"]
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      HAMH_HOME_ASSISTANT_URL: ${HAMH_HOME_ASSISTANT_URL:?Home Assistant URL required}
+      HAMH_HOME_ASSISTANT_ACCESS_TOKEN: ${HAMH_HOME_ASSISTANT_ACCESS_TOKEN:-}
+    volumes:
+      - matter_hub_data:/data
+    depends_on:
+      - homeassistant
+
+volumes:
+  ha_config:
+    external: true
+    name: nal_ha_config
+  matter_hub_data:
+    external: true
+    name: nal_matter_hub_data
+
+networks:
+  default:
+    external: true
+    name: nginx_network

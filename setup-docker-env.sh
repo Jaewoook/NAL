@@ -64,4 +64,18 @@ if ! docker volume ls | grep -q "nal_dns_config"; then
 else
     echo "nal_dns_config already exists, skipping creation."
 fi
+
+if ! docker volume ls | grep -q "nal_ha_config"; then
+    echo "Creating nal_ha_config..."
+    docker volume create nal_ha_config
+else
+    echo "nal_ha_config already exists, skipping creation."
+fi
+
+if ! docker volume ls | grep -q "nal_matter_hub_data"; then
+    echo "Creating nal_matter_hub_data..."
+    docker volume create nal_matter_hub_data
+else
+    echo "nal_matter_hub_data already exists, skipping creation."
+fi
 echo "Done."

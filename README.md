@@ -55,6 +55,7 @@ Start, stop, or restart one or more services with:
 | DB               | N/A | Shared PostgreSQL database server | Work in progress |
 | Homebrew NAL Tap | <ul><li>https://homebrew-nal.jaewook.dev</li></ul> | [Homebrew tap](https://github.com/Jaewoook/homebrew-nal) registry | Stable |
 | DNS              | <ul><li>https://dns.home.jaewook.me</li></ul> | Technitium DNS server for local network | Stable |
+| IoT             | <ul><li>https://ha.home.jaewook.me</li></ul> | Home Assistant + Matter Hub: bridges LG ThinQ and Xiaomi devices into SmartThings | Experimental |
 | Code Review      | | Gerrit code review system | Experimental |
 | Docker Registry  | | Private docker image registry | Planned |
 
@@ -90,6 +91,8 @@ Bind mount is not used for security reason. All data are stored in docker volume
 | nginx_proxy_letsencrypt | Nginx SSL/TLS data       | Staable |
 | nal_main_db             | Shared PostgreSQL data (all databases/roles) | Work in progress |
 | nal_dns_config          | Technitium DNS Server configuration/zone data | Work in progress |
+| nal_ha_config           | Home Assistant config (incl. LG ThinQ / Xiaomi credentials) | Experimental |
+| nal_matter_hub_data     | Matter Hub bridge pairing/state data | Experimental |
 
 **Backups**
 
