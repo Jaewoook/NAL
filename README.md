@@ -1,18 +1,24 @@
 # Network Attached Laboratory (NAL) Server
 
-A set of configurations for my home server. All sensitive data is stored in docker volume so this repository does not have private files. Since there is only one server running, all of this configurations are written in docker compose.
+A set of configurations for homelab servers. All sensitive data are ignored/masked. Currently all configurations are written in compose config format, with plans to migrate to Kubernetes in the future.
+ 
+## Hardware Specifications
 
-## Server Information
+All infrastructure is running on the following hardwares.
 
-> fqdn:
->
-> - home.jaewook.me
-> - jaewook.dev
+### Apple Mac Mini
 
-- Apple M2 Mac mini
-- 16GM RAM
-- 256GB Internal SSD
-- 1Gbps internet connected
+- Processor: Apple M2
+- RAM: 16GM
+- Storage: 256GB SSD
+- Network: 1Gbps wired connection
+
+### Synology DS925+
+
+- Processor: AMD Ryzen V1500B
+- RAM: 4GB
+- Storage: 32TB HDD
+- Network: 1Gbps wired connection
 
 ## Get Started
 
@@ -32,18 +38,23 @@ Start, stop, or restart one or more services with:
 
 ## Services
 
+> fqdn:
+>
+> - jaewook.dev
+> - home.jaewook.me (Inaccessible from outside)
+
 | Service          | Endpoint | Description | Status |
 | ---------------- | :------: | ----------- | :----: |
 | VPN              | N/A | Wireguard VPN Proxy | Stable |
-| DDNS             | N/A | Cloudflare DDNS Updater | Stable |
+| DDNS             | N/A | Cloudflare DDNS Daemon | Stable |
 | Tunnel           | N/A | Cloudflare Tunnel Daemon | Stable |
-| Proxy            | <ul><li>https://nginx.home.jaewook.me</li><ul>   | Nginx web management console | Stable |
-| Virt             | <ul><li>https://docker.home.jaewook.me</li></ul> | Docker stack management console | Stable |
-| LLM              | <ul><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM service | Stable |
-| Auth             | | Authenticate/Authorize + LDAP Server (authentik) | Work in progress |
+| Proxy            | <ul><li>https://nginx.jaewook.dev</li><ul>   | Nginx web management console | Stable |
+| Virt             | <ul><li>https://docker.jaewook.dev</li></ul> | Docker stack management console | Stable |
+| LLM              | <ul><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM service | Experimental |
+| Auth             | <ul><li>https://auth.jaewook.dev</li></ul> | Authenticate/Authorize + LDAP | Stable |
 | DB               | N/A | Shared PostgreSQL database server | Work in progress |
 | Homebrew NAL Tap | <ul><li>https://homebrew-nal.jaewook.dev</li></ul> | [Homebrew tap](https://github.com/Jaewoook/homebrew-nal) registry | Stable |
-| DNS              | <ul><li>https://dns.home.jaewook.me</li><li>https://dns.jaewook.dev</li></ul> | DNS Service (Technitium) | Work in progress |
+| DNS              | <ul><li>https://dns.home.jaewook.me</li></ul> | Technitium DNS server for local network | Stable |
 | Code Review      | | Gerrit code review system | Experimental |
 | Docker Registry  | | Private docker image registry | Planned |
 
