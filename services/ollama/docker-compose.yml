@@ -1,36 +1,35 @@
 services:
-  ollama-core:
-    image: 'ollama/ollama'
-    container_name: 'ollama-core'
+  ollama:
+    container_name: ollama
+    pull_policy: always
+    tty: true
     restart: unless-stopped
-    networks:
-      default:
-        ipv4_address: 172.22.0.20
-    expose:
-      - 11434
+    image: ollama/ollama:${OLLAMA_DOCKER_TAG-latest}
     volumes:
-      - ollama-data:/root/.ollama
+      - ollama:/root/.ollama
+
   open-webui:
-    image: 'ghcr.io/open-webui/open-webui:main'
-    container_name: 'ollama-webui'
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG-main}
+    container_name: open-webui
     restart: unless-stopped
     depends_on:
-      - ollama-core
-    networks:
-      default:
-        ipv4_address: 172.22.0.21
-    ports:
-      # To avoid port conflicts, this uses simillar ports to ollama.
-      - 11435:8080
+      - ollama
+    expose:
+      - 8080
     volumes:
-      - ollama-web-data:/app/backend/data
+      - open-webui:/app/backend/data
     environment:
-      - OLLAMA_BASE_URL=http://ollama-core:11434
+      - 'OLLAMA_BASE_URL=http://ollama:11434'
+      - 'WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY-}'
+    extra_hosts:
+      - host.docker.internal:host-gateway
 
 volumes:
-  ollama-data:
-    external: true
-  ollama-web-data:
+  ollama:
+  open-webui:
 
 networks:
   default:
