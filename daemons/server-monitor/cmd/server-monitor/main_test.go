@@ -2,12 +2,17 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jaewoook/server-monitor/internal/service"
 )
 
 func TestHelp(t *testing.T) {
@@ -253,4 +258,101 @@ notifications:
 		t.Errorf("expected Telegram.Enabled to be true from config.yml")
 	}
 }
+
+func TestServiceUnknownSubcommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runApp([]string{"service", "nonexistent"}, &stdout, &stderr)
+	if code == 0 {
+		t.Errorf("expected non-zero exit code for unknown service subcommand")
+	}
+	if !strings.Contains(stderr.String(), "unknown service subcommand") {
+		t.Errorf("expected unknown service subcommand error, got: %s", stderr.String())
+	}
+}
+
+func TestServiceNoSubcommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runApp([]string{"service"}, &stdout, &stderr)
+	if code == 0 {
+		t.Errorf("expected non-zero exit code for service with no args")
+	}
+	if !strings.Contains(stderr.String(), "usage: server-monitor service") {
+		t.Errorf("expected usage message, got: %s", stderr.String())
+	}
+}
+
+func TestServiceStatusLaunchd(t *testing.T) {
+	service.SetCommandRunner(func(name string, args ...string) ([]byte, error) {
+		if name == "launchctl" {
+			return []byte("state = running\npid = 4321\npath = /tmp/test.plist\nstdout path = /tmp/out.log\nstderr path = /tmp/err.log\n"), nil
+		}
+		if name == "ps" {
+			return []byte("%CPU %MEM RSS ELAPSED\n 1.2 0.3 30720 02:00:00\n"), nil
+		}
+		return nil, errors.New("unexpected command")
+	})
+	defer service.SetCommandRunner(nil)
+
+	var stdout, stderr bytes.Buffer
+	code := runApp([]string{"service", "status", "-type", "launchd"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 for service status, got %d (stderr: %s)", code, stderr.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, "Active (running)") {
+		t.Errorf("expected running in status, got: %s", out)
+	}
+	if !strings.Contains(out, "PID:         4321") {
+		t.Errorf("expected PID 4321, got: %s", out)
+	}
+	if !strings.Contains(out, "30.0 MB RSS") {
+		t.Errorf("expected 30.0 MB RSS, got: %s", out)
+	}
+}
+
+func TestRunCommandLogging(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "test-daemon.log")
+	cfgPath := filepath.Join(tmpDir, "config.yml")
+
+	cfgContent := `
+server:
+  name: "log-test-node"
+  check_interval_seconds: 1
+logging:
+  enabled: true
+  file_path: "` + logPath + `"
+  max_size_mb: 5
+  max_backups: 2
+  console: true
+`
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	var stdout, stderr bytes.Buffer
+	code := runApp([]string{"run", "-config", cfgPath}, &stdout, &stderr, WithContext(ctx))
+	if code != 0 {
+		t.Fatalf("expected exit code 0 for clean run shutdown, got %d (stderr: %s)", code, stderr.String())
+	}
+
+	// Verify log file was created and contains startup banner
+	logBytes, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed to read created log file: %v", err)
+	}
+	logContent := string(logBytes)
+	if !strings.Contains(logContent, "[daemon] starting server-monitor daemon for \"log-test-node\"") {
+		t.Errorf("expected log file to contain startup line, got:\n%s", logContent)
+	}
+
+	// Verify stdout contains the startup line because console: true
+	if !strings.Contains(stdout.String(), "starting server-monitor daemon") {
+		t.Errorf("expected stdout to contain daemon output, got:\n%s", stdout.String())
+	}
+}
+
 

@@ -18,6 +18,7 @@ import (
 	"github.com/jaewoook/server-monitor/internal/daemon"
 	"github.com/jaewoook/server-monitor/internal/detector"
 	"github.com/jaewoook/server-monitor/internal/digest"
+	"github.com/jaewoook/server-monitor/internal/logger"
 	"github.com/jaewoook/server-monitor/internal/models"
 	"github.com/jaewoook/server-monitor/internal/notifier"
 	"github.com/jaewoook/server-monitor/internal/service"
@@ -29,24 +30,34 @@ Commands:
   check        Run a single point-in-time health check and print formatted metrics
   test-alert   Send a test notification to verify channel credentials and connectivity
   run          Start the continuous background monitoring daemon
-  service      Manage OS background service definitions
+  service      Manage OS background service lifecycle
   help         Display this help message
 
 Options for check:
-  -config string   Path to configuration file (default "config.yaml")
+  -config string   Path to configuration file (default "config.yml")
 
 Options for test-alert:
-  -config string   Path to configuration file (default "config.yaml")
+  -config string   Path to configuration file (default "config.yml")
   -channel string  Specific notification channel to test (e.g. telegram, discord, webhook)
 
 Options for run:
-  -config string   Path to configuration file (default "config.yaml")
+  -config string   Path to configuration file (default "config.yml")
+
+Service Subcommands:
+  service status       Display current running state, PID, uptime, and memory
+  service start        Start the installed background service
+  service stop         Stop the background service (sends graceful shutdown notification)
+  service restart      Restart the background service
+  service install      Generate and install service definition (systemd or launchd)
+  service uninstall    Stop and remove service definition from system
 
 Options for service install:
   -type string     Service manager type: systemd or launchd (defaults to OS native)
   -path string     File destination to write service unit/plist (defaults to stdout)
   -config string   Configuration path to embed in service definition
   -bin string      Binary path to embed in service definition
+  -user string     User to run service as
+  -workdir string  Working directory for service
 `
 
 func resolveConfig(configPath string) (*config.Config, error) {
@@ -66,12 +77,20 @@ type AppOption func(*appConfig)
 
 type appConfig struct {
 	transport http.RoundTripper
+	ctx       context.Context
 }
 
 // WithHTTPTransport configures a custom HTTP transport for notification dispatchers.
 func WithHTTPTransport(rt http.RoundTripper) AppOption {
 	return func(a *appConfig) {
 		a.transport = rt
+	}
+}
+
+// WithContext configures a custom context for controlling daemon lifecycle.
+func WithContext(ctx context.Context) AppOption {
+	return func(a *appConfig) {
+		a.ctx = ctx
 	}
 }
 
@@ -234,14 +253,30 @@ func runApp(args []string, stdout, stderr io.Writer, opts ...AppOption) int {
 			return 1
 		}
 
+		logCloser, err := logger.Setup(&cfg.Logging, stdout)
+		if err != nil {
+			fmt.Fprintf(stderr, "failed to initialize logger: %v\n", err)
+			return 1
+		}
+		defer func() {
+			logger.Reset()
+			if logCloser != nil {
+				_ = logCloser.Close()
+			}
+		}()
+
 		d, err := daemon.New(cfg)
 		if err != nil {
 			fmt.Fprintf(stderr, "failed to initialize daemon: %v\n", err)
 			return 1
 		}
 
-		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer cancel()
+		ctx := appCfg.ctx
+		if ctx == nil {
+			var cancel context.CancelFunc
+			ctx, cancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer cancel()
+		}
 
 		if err := d.Run(ctx); err != nil {
 			fmt.Fprintf(stderr, "daemon exited with error: %v\n", err)
@@ -250,55 +285,143 @@ func runApp(args []string, stdout, stderr io.Writer, opts ...AppOption) int {
 		return 0
 
 	case "service":
-		if len(args) < 2 || args[1] != "install" {
-			fmt.Fprintln(stderr, "usage: server-monitor service install [-type systemd|launchd] [-path PATH]")
+		if len(args) < 2 {
+			fmt.Fprintln(stderr, "usage: server-monitor service <install|uninstall|start|stop|restart|status> [options]")
 			return 1
 		}
 
-		fs := flag.NewFlagSet("service install", flag.ContinueOnError)
-		fs.SetOutput(stderr)
-		serviceType := fs.String("type", "", "Service manager type: systemd or launchd")
-		targetPath := fs.String("path", "", "Destination path to write service file")
-		cfgPath := fs.String("config", "", "Path to config file for service")
-		binPath := fs.String("bin", "", "Path to executable binary for service")
-		userFlag := fs.String("user", "", "User to run service as")
-		workDir := fs.String("workdir", "", "Working directory for service")
-		if err := fs.Parse(args[2:]); err != nil {
-			return 1
-		}
-
-		resolvedType := *serviceType
-		if resolvedType == "" {
-			if runtime.GOOS == "darwin" {
-				resolvedType = "launchd"
-			} else {
-				resolvedType = "systemd"
-			}
-		}
-
-		opts := service.ServiceOptions{
-			BinaryPath: *binPath,
-			ConfigPath: *cfgPath,
-			User:       *userFlag,
-			WorkingDir: *workDir,
-		}
-
-		if *targetPath != "" && *targetPath != "-" {
-			if err := service.Install(resolvedType, opts, *targetPath); err != nil {
-				fmt.Fprintf(stderr, "failed to install service: %v\n", err)
+		subCmd := args[1]
+		switch subCmd {
+		case "install":
+			fs := flag.NewFlagSet("service install", flag.ContinueOnError)
+			fs.SetOutput(stderr)
+			serviceType := fs.String("type", "", "Service manager type: systemd or launchd")
+			targetPath := fs.String("path", "", "Destination path to write service file")
+			cfgPath := fs.String("config", "", "Path to config file for service")
+			binPath := fs.String("bin", "", "Path to executable binary for service")
+			userFlag := fs.String("user", "", "User to run service as")
+			workDir := fs.String("workdir", "", "Working directory for service")
+			if err := fs.Parse(args[2:]); err != nil {
 				return 1
 			}
-			fmt.Fprintf(stdout, "Successfully installed %s service to %s\n", resolvedType, *targetPath)
-			return 0
-		}
 
-		content, err := service.Generate(resolvedType, opts)
-		if err != nil {
-			fmt.Fprintf(stderr, "failed to generate service: %v\n", err)
+			resolvedType := *serviceType
+			if resolvedType == "" {
+				if runtime.GOOS == "darwin" {
+					resolvedType = "launchd"
+				} else {
+					resolvedType = "systemd"
+				}
+			}
+
+			opts := service.ServiceOptions{
+				BinaryPath: *binPath,
+				ConfigPath: *cfgPath,
+				User:       *userFlag,
+				WorkingDir: *workDir,
+			}
+
+			if *targetPath != "" && *targetPath != "-" {
+				if err := service.Install(resolvedType, opts, *targetPath); err != nil {
+					fmt.Fprintf(stderr, "failed to install service: %v\n", err)
+					return 1
+				}
+				fmt.Fprintf(stdout, "Successfully installed %s service to %s\n", resolvedType, *targetPath)
+				return 0
+			}
+
+			content, err := service.Generate(resolvedType, opts)
+			if err != nil {
+				fmt.Fprintf(stderr, "failed to generate service: %v\n", err)
+				return 1
+			}
+			fmt.Fprint(stdout, content)
+			return 0
+
+		case "uninstall":
+			fs := flag.NewFlagSet("service uninstall", flag.ContinueOnError)
+			fs.SetOutput(stderr)
+			serviceType := fs.String("type", "", "Service manager type: systemd or launchd")
+			targetPath := fs.String("path", "", "Custom path to service file")
+			if err := fs.Parse(args[2:]); err != nil {
+				return 1
+			}
+			msg, err := service.UninstallService(*serviceType, "server-monitor", *targetPath)
+			if err != nil {
+				fmt.Fprintf(stderr, "failed to uninstall service: %v\n", err)
+				return 1
+			}
+			fmt.Fprintln(stdout, msg)
+			return 0
+
+		case "start":
+			fs := flag.NewFlagSet("service start", flag.ContinueOnError)
+			fs.SetOutput(stderr)
+			serviceType := fs.String("type", "", "Service manager type: systemd or launchd")
+			targetPath := fs.String("path", "", "Custom path to service file")
+			if err := fs.Parse(args[2:]); err != nil {
+				return 1
+			}
+			msg, err := service.StartService(*serviceType, "server-monitor", *targetPath)
+			if err != nil {
+				fmt.Fprintf(stderr, "failed to start service: %v\n", err)
+				return 1
+			}
+			fmt.Fprintln(stdout, msg)
+			return 0
+
+		case "stop":
+			fs := flag.NewFlagSet("service stop", flag.ContinueOnError)
+			fs.SetOutput(stderr)
+			serviceType := fs.String("type", "", "Service manager type: systemd or launchd")
+			targetPath := fs.String("path", "", "Custom path to service file")
+			if err := fs.Parse(args[2:]); err != nil {
+				return 1
+			}
+			msg, err := service.StopService(*serviceType, "server-monitor", *targetPath)
+			if err != nil {
+				fmt.Fprintf(stderr, "failed to stop service: %v\n", err)
+				return 1
+			}
+			fmt.Fprintln(stdout, msg)
+			return 0
+
+		case "restart":
+			fs := flag.NewFlagSet("service restart", flag.ContinueOnError)
+			fs.SetOutput(stderr)
+			serviceType := fs.String("type", "", "Service manager type: systemd or launchd")
+			targetPath := fs.String("path", "", "Custom path to service file")
+			if err := fs.Parse(args[2:]); err != nil {
+				return 1
+			}
+			msg, err := service.RestartService(*serviceType, "server-monitor", *targetPath)
+			if err != nil {
+				fmt.Fprintf(stderr, "failed to restart service: %v\n", err)
+				return 1
+			}
+			fmt.Fprintln(stdout, msg)
+			return 0
+
+		case "status":
+			fs := flag.NewFlagSet("service status", flag.ContinueOnError)
+			fs.SetOutput(stderr)
+			serviceType := fs.String("type", "", "Service manager type: systemd or launchd")
+			targetPath := fs.String("path", "", "Custom path to service file")
+			if err := fs.Parse(args[2:]); err != nil {
+				return 1
+			}
+			msg, err := service.StatusService(*serviceType, "server-monitor", *targetPath)
+			if err != nil {
+				fmt.Fprintf(stderr, "failed to get service status: %v\n", err)
+				return 1
+			}
+			fmt.Fprint(stdout, msg)
+			return 0
+
+		default:
+			fmt.Fprintf(stderr, "unknown service subcommand: %q. Valid subcommands: install, uninstall, start, stop, restart, status\n", subCmd)
 			return 1
 		}
-		fmt.Fprint(stdout, content)
-		return 0
 
 	default:
 		fmt.Fprintf(stderr, "unknown command: %q. Run 'server-monitor help' for usage.\n", cmd)

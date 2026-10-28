@@ -227,6 +227,13 @@ digest:
   enabled: true
   interval_hours: 24            # Daily health summary
 
+logging:
+  enabled: true
+  file_path: "server-monitor.log" # Destination log file (relative or absolute)
+  max_size_mb: 10               # Rotate when log exceeds 10 MB
+  max_backups: 3                # Keep up to 3 rotated backups (.1, .2, .3)
+  console: true                 # Also mirror output to stdout
+
 notifications:
   telegram:
     enabled: true
@@ -274,38 +281,48 @@ Any configuration value can be set via environment variables. Setting a channel 
 | `NOTIFY_ON_RECOVERY` | Send alerts on recovery (`true`/`false`) |
 | `NOTIFY_ON_STARTUP` | Send alert when daemon starts up (`true`/`false`) |
 | `NOTIFY_ON_SHUTDOWN` | Send alert when daemon shuts down (`true`/`false`) |
+| `LOG_FILE` | Dedicated log file path (default: `server-monitor.log`) |
+| `LOG_ENABLED` | Enable dedicated file logging (`true`/`false`) |
+| `LOG_MAX_SIZE_MB` | Maximum log file size in MB before rotation (default: `10`) |
+| `LOG_MAX_BACKUPS` | Number of rotated backups to keep (default: `3`) |
+| `LOG_CONSOLE` | Mirror log output to console stdout (`true`/`false`) |
 
 ---
 
-## Daemon & Service Installation
+## Service Management (`launchd` & `systemd`)
 
-`server-monitor` includes a built-in generator to install itself as a native system service that restarts automatically on reboot.
+`server-monitor` includes built-in lifecycle management commands for both macOS (`launchd`) and Linux (`systemd`):
 
-### Linux (`systemd`)
-
-Generate and install the systemd service unit:
+### Quick Service Management
 
 ```bash
-# Print the systemd unit file to terminal:
-./server-monitor service install -type systemd
+# Inspect service state, PID, uptime, memory, and log paths:
+./server-monitor service status
 
-# Automatically write to systemd directory and enable:
-sudo ./server-monitor service install -type systemd -path /etc/systemd/system/server-monitor.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now server-monitor
+# Start the background service:
+./server-monitor service start
 
-# Check status:
-sudo systemctl status server-monitor
+# Stop the background service (sends graceful shutdown notification):
+./server-monitor service stop
+
+# Restart the background service:
+./server-monitor service restart
+
+# Completely stop and uninstall service definition:
+./server-monitor service uninstall
 ```
 
-### macOS (`launchd`)
-
-Install as a background LaunchDaemon / LaunchAgent:
+### Installation
 
 ```bash
-# Install to ~/Library/LaunchAgents:
-./server-monitor service install -type launchd -path ~/Library/LaunchAgents/com.servermonitor.plist
-launchctl load ~/Library/LaunchAgents/com.servermonitor.plist
+# macOS (LaunchAgent):
+./server-monitor service install -path ~/Library/LaunchAgents/com.servermonitor.plist
+./server-monitor service start
+
+# Linux (systemd):
+sudo ./server-monitor service install -path /etc/systemd/system/server-monitor.service
+sudo systemctl daemon-reload
+./server-monitor service start
 ```
 
 ---
@@ -317,13 +334,13 @@ Usage:
   server-monitor <command> [flags]
 
 Commands:
-  check            Perform a single system health check and print metrics
-  test-alert       Send a test alert through configured notification channels
-  run              Run the continuous monitoring daemon
-  service install  Generate service configuration (systemd unit or launchd plist)
+  check              Perform a single system health check and print metrics
+  test-alert         Send a test alert through configured notification channels
+  run                Run the continuous monitoring daemon
+  service <action>   Manage system service lifecycle (status, start, stop, restart, install, uninstall)
 
 Global Flags:
-  -config string   Path to config file (default: "config.yml")
+  -config string     Path to config file (default: "config.yml")
 
 Command Flags:
   test-alert:
