@@ -172,3 +172,109 @@ func TestDefaultConfigWithEnv(t *testing.T) {
 	}
 }
 
+func TestLoggingConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Logging.Enabled {
+		t.Errorf("expected Logging.Enabled true by default")
+	}
+	if cfg.Logging.FilePath != "server-monitor.log" {
+		t.Errorf("expected FilePath server-monitor.log, got %s", cfg.Logging.FilePath)
+	}
+	if cfg.Logging.MaxSizeMB != 10 {
+		t.Errorf("expected MaxSizeMB 10, got %d", cfg.Logging.MaxSizeMB)
+	}
+	if cfg.Logging.MaxBackups != 3 {
+		t.Errorf("expected MaxBackups 3, got %d", cfg.Logging.MaxBackups)
+	}
+	if !cfg.Logging.Console {
+		t.Errorf("expected Console true by default")
+	}
+}
+
+func TestLoggingConfigYaml(t *testing.T) {
+	yamlData := `
+server:
+  name: "log-test-server"
+logging:
+  enabled: true
+  file_path: "/tmp/custom-monitor.log"
+  max_size_mb: 25
+  max_backups: 7
+  console: false
+`
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(cfgPath, []byte(yamlData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !cfg.Logging.Enabled {
+		t.Errorf("expected Logging.Enabled true")
+	}
+	if cfg.Logging.FilePath != "/tmp/custom-monitor.log" {
+		t.Errorf("expected /tmp/custom-monitor.log, got %s", cfg.Logging.FilePath)
+	}
+	if cfg.Logging.MaxSizeMB != 25 {
+		t.Errorf("expected 25, got %d", cfg.Logging.MaxSizeMB)
+	}
+	if cfg.Logging.MaxBackups != 7 {
+		t.Errorf("expected 7, got %d", cfg.Logging.MaxBackups)
+	}
+	if cfg.Logging.Console {
+		t.Errorf("expected Console false, got true")
+	}
+}
+
+func TestLoggingConfigEnvOverrides(t *testing.T) {
+	t.Setenv("LOG_FILE", "/var/log/env-monitor.log")
+	t.Setenv("LOG_ENABLED", "false")
+	t.Setenv("LOG_MAX_SIZE_MB", "50")
+	t.Setenv("LOG_MAX_BACKUPS", "10")
+	t.Setenv("LOG_CONSOLE", "false")
+
+	cfg := DefaultConfigWithEnv()
+	if cfg.Logging.Enabled {
+		t.Errorf("expected Logging.Enabled false via env override")
+	}
+	if cfg.Logging.FilePath != "/var/log/env-monitor.log" {
+		t.Errorf("expected /var/log/env-monitor.log, got %s", cfg.Logging.FilePath)
+	}
+	if cfg.Logging.MaxSizeMB != 50 {
+		t.Errorf("expected MaxSizeMB 50, got %d", cfg.Logging.MaxSizeMB)
+	}
+	if cfg.Logging.MaxBackups != 10 {
+		t.Errorf("expected MaxBackups 10, got %d", cfg.Logging.MaxBackups)
+	}
+	if cfg.Logging.Console {
+		t.Errorf("expected Console false via env override")
+	}
+}
+
+func TestLoggingConfigValidation(t *testing.T) {
+	cfg := &Config{
+		Logging: LoggingConfig{
+			Enabled:    true,
+			FilePath:   "",
+			MaxSizeMB:  -1,
+			MaxBackups: 0,
+		},
+	}
+	ValidateAndApplyDefaults(cfg)
+
+	if cfg.Logging.FilePath != "server-monitor.log" {
+		t.Errorf("expected fallback to server-monitor.log, got %s", cfg.Logging.FilePath)
+	}
+	if cfg.Logging.MaxSizeMB != 10 {
+		t.Errorf("expected fallback MaxSizeMB 10, got %d", cfg.Logging.MaxSizeMB)
+	}
+	if cfg.Logging.MaxBackups != 3 {
+		t.Errorf("expected fallback MaxBackups 3, got %d", cfg.Logging.MaxBackups)
+	}
+}
+
+

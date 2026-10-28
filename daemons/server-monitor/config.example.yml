@@ -74,6 +74,14 @@ digest:
   enabled: false
   interval_hours: 24
 
+# Dedicated Operational Logging & Size-based Rotation
+logging:
+  enabled: true
+  file_path: "server-monitor.log"  # Relative or absolute destination for operational logs
+  max_size_mb: 10                  # Rotate when file exceeds size (in MB)
+  max_backups: 3                   # Number of rotated archives to retain (.1, .2, etc.)
+  console: true                    # Mirror logs to console (stdout)
+
 # Notification Channels (Configure any or all channels)
 notifications:
   # Telegram Bot

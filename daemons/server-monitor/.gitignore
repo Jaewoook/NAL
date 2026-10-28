@@ -3,3 +3,5 @@ config.yaml
 config.yml
 .env
 *.swp
+*.log
+*.log.*

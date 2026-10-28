@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -133,6 +134,15 @@ type NotificationsConfig struct {
 	Webhook  WebhookConfig  `yaml:"webhook"`
 }
 
+// LoggingConfig configures dedicated file logging and log rotation.
+type LoggingConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	FilePath   string `yaml:"file_path"`
+	MaxSizeMB  int    `yaml:"max_size_mb"`
+	MaxBackups int    `yaml:"max_backups"`
+	Console    bool   `yaml:"console"`
+}
+
 // Config represents the complete daemon configuration.
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
@@ -142,6 +152,7 @@ type Config struct {
 	Heartbeat     HeartbeatConfig     `yaml:"heartbeat"`
 	Digest        DigestConfig        `yaml:"digest"`
 	Notifications NotificationsConfig `yaml:"notifications"`
+	Logging       LoggingConfig       `yaml:"logging"`
 }
 
 // DefaultConfig returns a Config struct populated with sensible production defaults.
@@ -228,6 +239,13 @@ func DefaultConfig() *Config {
 				Enabled: false,
 				URL:     "",
 			},
+		},
+		Logging: LoggingConfig{
+			Enabled:    true,
+			FilePath:   "server-monitor.log",
+			MaxSizeMB:  10,
+			MaxBackups: 3,
+			Console:    true,
 		},
 	}
 }
@@ -324,6 +342,25 @@ func ApplyEnvOverrides(cfg *Config) {
 	if val := getEnv("NOTIFY_ON_SHUTDOWN"); val != "" {
 		cfg.Alerting.NotifyOnShutdown = (val == "true" || val == "1" || val == "yes")
 	}
+	if val := getEnv("LOG_FILE", "LOG_FILE_PATH"); val != "" {
+		cfg.Logging.FilePath = val
+	}
+	if val := getEnv("LOG_ENABLED"); val != "" {
+		cfg.Logging.Enabled = (val == "true" || val == "1" || val == "yes")
+	}
+	if val := getEnv("LOG_MAX_SIZE_MB"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			cfg.Logging.MaxSizeMB = n
+		}
+	}
+	if val := getEnv("LOG_MAX_BACKUPS"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n >= 0 {
+			cfg.Logging.MaxBackups = n
+		}
+	}
+	if val := getEnv("LOG_CONSOLE"); val != "" {
+		cfg.Logging.Console = (val == "true" || val == "1" || val == "yes")
+	}
 }
 
 func getEnv(keys ...string) string {
@@ -396,5 +433,14 @@ func ValidateAndApplyDefaults(cfg *Config) {
 	}
 	if cfg.Digest.IntervalHours <= 0 {
 		cfg.Digest.IntervalHours = 24
+	}
+	if cfg.Logging.FilePath == "" {
+		cfg.Logging.FilePath = "server-monitor.log"
+	}
+	if cfg.Logging.MaxSizeMB <= 0 {
+		cfg.Logging.MaxSizeMB = 10
+	}
+	if cfg.Logging.MaxBackups <= 0 {
+		cfg.Logging.MaxBackups = 3
 	}
 }
