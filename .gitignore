@@ -13,3 +13,7 @@ services/cloudflare-ddns/config.json
 # config and data for cloudflare-tunnel
 services/cloudflare-tunnel/token
 services/cloudflare-tunnel/data
+
+# Documentation / agent plans
+docs/
+.superpowers/
