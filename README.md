@@ -50,7 +50,7 @@ Start, stop, or restart one or more services with:
 | Tunnel           | N/A | Cloudflare Tunnel Daemon | Stable |
 | Proxy            | <ul><li>https://nginx.jaewook.dev</li><ul>   | Nginx web management console | Stable |
 | Virt             | <ul><li>https://docker.jaewook.dev</li></ul> | Docker stack management console | Stable |
-| LLM              | <ul><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM service | Experimental |
+| LLM              | <ul><li>https://llm.jaewook.dev</li><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM web service ([`services/llm`](./services/llm)) | Experimental |
 | Auth             | <ul><li>https://auth.jaewook.dev</li></ul> | Authenticate/Authorize + LDAP | Stable |
 | DB               | N/A | Shared PostgreSQL database server | Work in progress |
 | Homebrew NAL Tap | <ul><li>https://homebrew-nal.jaewook.dev</li></ul> | [Homebrew tap](https://github.com/Jaewoook/homebrew-nal) registry | Stable |

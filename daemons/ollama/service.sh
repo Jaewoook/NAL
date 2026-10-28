@@ -39,6 +39,28 @@ find_ollama() {
     fi
 }
 
+check_port_conflict() {
+    local port_pids
+    port_pids=$(lsof -ti :11434 2>/dev/null || true)
+    if [[ -n "$port_pids" ]]; then
+        local managed_pid=""
+        if launchctl print "gui/$USER_ID/$LABEL" >/dev/null 2>&1; then
+            managed_pid=$(launchctl print "gui/$USER_ID/$LABEL" 2>/dev/null | awk -F' = ' '/pid/ {print $2}' || true)
+        fi
+
+        for pid in $port_pids; do
+            if [[ -n "$pid" && "$pid" != "$managed_pid" ]]; then
+                local proc_name
+                proc_name=$(ps -p "$pid" -o comm= 2>/dev/null || echo "unknown")
+                echo "Warning: Port 11434 is currently held by PID $pid ($proc_name)." >&2
+                echo "Terminating conflicting process $pid..." >&2
+                kill "$pid" 2>/dev/null || true
+                sleep 1
+            fi
+        done
+    fi
+}
+
 cmd_install() {
     echo "==> Installing $LABEL daemon..."
     local ollama_bin
@@ -51,9 +73,12 @@ cmd_install() {
     mkdir -p "$LAUNCH_AGENTS_DIR"
     mkdir -p "$LOG_DIR"
 
+    # Check and clear conflicting processes before bootstrapping
+    check_port_conflict
+
     # Generate target plist with dynamically resolved home and binary path
-    sed -e "s|/opt/homebrew/bin/ollama|$ollama_bin|g" \
-        -e "s|/Users/jaewookahn|$HOME|g" \
+    sed -e "s|__OLLAMA_BIN__|$ollama_bin|g" \
+        -e "s|__HOME__|$HOME|g" \
         "$SOURCE_PLIST" > "$TARGET_PLIST"
 
     chmod 644 "$TARGET_PLIST"
@@ -67,6 +92,7 @@ cmd_install() {
     # Bootstrap service into modern macOS launchd domain
     if launchctl bootstrap "gui/$USER_ID" "$TARGET_PLIST" 2>/dev/null; then
         echo "Service bootstrapped successfully."
+        launchctl kickstart -k "gui/$USER_ID/$LABEL" 2>/dev/null || true
     else
         # Fallback to legacy launchctl load
         launchctl load -w "$TARGET_PLIST"
@@ -94,13 +120,24 @@ cmd_uninstall() {
 
 cmd_start() {
     echo "==> Starting $LABEL..."
-    if ! launchctl print "gui/$USER_ID/$LABEL" >/dev/null 2>&1; then
-        echo "Service not loaded. Running install first..."
+    if ! [[ -f "$TARGET_PLIST" ]]; then
+        echo "LaunchAgent plist not found. Running install first..."
         cmd_install
         return
     fi
 
+    check_port_conflict
+
+    if ! launchctl print "gui/$USER_ID/$LABEL" >/dev/null 2>&1; then
+        if launchctl bootstrap "gui/$USER_ID" "$TARGET_PLIST" 2>/dev/null; then
+            echo "Service bootstrapped into launchd."
+        else
+            launchctl load -w "$TARGET_PLIST"
+        fi
+    fi
+
     launchctl kickstart -k "gui/$USER_ID/$LABEL" 2>/dev/null || launchctl start "$LABEL"
+
     echo "==> Start command issued."
     sleep 1
     cmd_status
@@ -108,13 +145,14 @@ cmd_start() {
 
 cmd_stop() {
     echo "==> Stopping $LABEL..."
+    # With KeepAlive=true, killing the process respawns it. We bootout the instance to stop supervision without removing plist.
     if launchctl print "gui/$USER_ID/$LABEL" >/dev/null 2>&1; then
-        launchctl kill SIGTERM "gui/$USER_ID/$LABEL" 2>/dev/null || true
-        # Also disable KeepAlive temporarily if needed or wait
-        sleep 1
+        launchctl bootout "gui/$USER_ID/$LABEL" 2>/dev/null || true
+    elif [[ -f "$TARGET_PLIST" ]]; then
+        launchctl unload "$TARGET_PLIST" 2>/dev/null || true
     fi
 
-    # Kill any leftover manual process if running
+    # Kill any leftover or unmanaged process if still running
     local pids
     pids=$(pgrep -f "ollama serve" || true)
     if [[ -n "$pids" ]]; then
@@ -126,14 +164,9 @@ cmd_stop() {
 
 cmd_restart() {
     echo "==> Restarting $LABEL..."
-    if launchctl print "gui/$USER_ID/$LABEL" >/dev/null 2>&1; then
-        launchctl kickstart -k "gui/$USER_ID/$LABEL"
-    else
-        cmd_stop
-        cmd_start
-    fi
+    cmd_stop
     sleep 1
-    cmd_status
+    cmd_start
 }
 
 cmd_status() {
@@ -161,9 +194,11 @@ cmd_status() {
 
     if [[ "$running" == true && -n "$pid" ]]; then
         echo "Status:  RUNNING (PID: $pid)"
-        ps -p "$pid" -o %cpu,%mem,time,command | tail -n +2 | while read -r cpu mem time cmd; do
-            echo "CPU:     ${cpu}% | Memory: ${mem}% | CPU Time: ${time}"
-        done
+        if kill -0 "$pid" 2>/dev/null; then
+            ps -p "$pid" -o %cpu,%mem,time,command 2>/dev/null | tail -n +2 | while read -r cpu mem time cmd; do
+                echo "CPU:     ${cpu}% | Memory: ${mem}% | CPU Time: ${time}"
+            done || true
+        fi
     else
         echo "Status:  STOPPED"
     fi
@@ -171,12 +206,12 @@ cmd_status() {
     echo -n "Port:    "
     if curl -s -m 2 http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
         local version
-        version=$(curl -s http://127.0.0.1:11434/api/version | sed -E 's/.*"version":"([^"]+)".*/\1/' || echo "unknown")
+        version=$(curl -s -m 2 http://127.0.0.1:11434/api/version | sed -E 's/.*"version":"([^"]+)".*/\1/' || echo "unknown")
         echo "http://0.0.0.0:11434 is REACHABLE (Ollama v$version)"
 
         echo "Models:"
         local models
-        models=$(curl -s http://127.0.0.1:11434/api/tags | grep -o '"name":"[^"]*"' | cut -d'"' -f4 || true)
+        models=$(curl -s -m 2 http://127.0.0.1:11434/api/tags | grep -o '"name":"[^"]*"' | cut -d'"' -f4 || true)
         if [[ -n "$models" ]]; then
             while IFS= read -r m; do
                 echo "  - $m"

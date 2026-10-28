@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/opt/homebrew/bin/ollama</string>
+        <string>__OLLAMA_BIN__</string>
         <string>serve</string>
     </array>
 
@@ -34,9 +34,9 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/jaewookahn/Library/Logs/me.jaewook.nal.ollama.log</string>
+    <string>__HOME__/Library/Logs/me.jaewook.nal.ollama.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/jaewookahn/Library/Logs/me.jaewook.nal.ollama.error.log</string>
+    <string>__HOME__/Library/Logs/me.jaewook.nal.ollama.error.log</string>
 </dict>
 </plist>
