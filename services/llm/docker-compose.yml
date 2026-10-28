@@ -1,0 +1,21 @@
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG-main}
+    container_name: open-webui
+    restart: unless-stopped
+    expose:
+      - 8080
+    volumes:
+      - open-webui:/app/backend/data
+    env_file:
+      - .env
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+volumes:
+  open-webui:
+
+networks:
+  default:
+    external: true
+    name: nginx_network
