@@ -17,15 +17,21 @@ services:
       - 9000
       - 9443
     networks:
-      - default
-      - db_network
+      default:
+        ipv4_address: 172.22.0.7
+      db_network:
     volumes:
       - data:/data
       - templates:/templates
-      # Git-managed sign-in background. In authentik: System > Brands > edit
-      # brand > "Default flow background" > enter `branding/bg_signin.jpg`
-      # (relative path, no leading slash).
+      # Git-managed branding assets. In authentik: System > Brands > edit brand:
+      # - "Branding logo" > `branding/logo.svg` (or `/media/public/branding/logo.svg`)
+      # - "Branding favicon" > `branding/favicon.svg` (or `/media/public/branding/favicon.svg`)
+      # - "Default flow background" > `branding/bg_signin.jpg`
       - ./assets/images/bg_signin.jpg:/data/media/public/branding/bg_signin.jpg:ro
+      - ./assets/images/logo.svg:/data/media/public/branding/logo.svg:ro
+      - ./assets/images/logo.png:/data/media/public/branding/logo.png:ro
+      - ./assets/images/favicon.svg:/data/media/public/branding/favicon.svg:ro
+      - ./assets/images/favicon.png:/data/media/public/branding/favicon.png:ro
 
   worker:
     image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}
