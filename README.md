@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/images/logo.png" alt="NAL Logo" width="640">
+</p>
+
 # Network Attached Laboratory (NAL) Server
 
 A set of configurations for homelab servers. All sensitive data are ignored/masked. Currently all configurations are written in compose config format, with plans to migrate to Kubernetes in the future.
