@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="193 225 324 324">
+  <defs>
+    <linearGradient id="crestGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#cbd5e1"/>
+      <stop offset="50%" stop-color="#67e8f9"/>
+      <stop offset="100%" stop-color="#fbbf24"/>
+    </linearGradient>
+    <linearGradient id="monoGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="48%" stop-color="#5eead4"/>
+      <stop offset="100%" stop-color="#fde68a"/>
+    </linearGradient>
+    <radialGradient id="innerFill" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.0"/>
+    </radialGradient>
+    <radialGradient id="apexGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fef08a" stop-opacity="0.80"/>
+      <stop offset="45%" stop-color="#fbbf24" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#fbbf24" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="centerGlow3" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#a5f3fc" stop-opacity="0.75"/>
+      <stop offset="50%" stop-color="#38bdf8" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <g>
+    <circle cx="355" cy="387" r="152" fill="#18191a"/>
+    <circle cx="355" cy="387" r="148" fill="url(#innerFill)"/>
+    <circle cx="355" cy="387" r="152" fill="none" stroke="url(#crestGrad)" stroke-width="9"/>
+
+    <circle cx="355" cy="314" r="26" fill="url(#apexGlow)"/>
+    <circle cx="355" cy="404" r="28" fill="url(#centerGlow3)"/>
+
+    <path d="M 254 460
+             L 254 314
+             L 310 460
+             L 355 314
+             L 400 460
+             L 400 314
+             L 400 460
+             L 456 460"
+          fill="none"
+          stroke="url(#monoGrad)"
+          stroke-width="11"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+
+    <line x1="327.3" y1="404" x2="382.7" y2="404" stroke="#e2e8f0" stroke-width="8" stroke-linecap="round"/>
+
+    <circle cx="254" cy="314" r="8" fill="#18191a" stroke="#818cf8" stroke-width="4"/>
+    <circle cx="355" cy="314" r="9.5" fill="#fef08a" stroke="#f59e0b" stroke-width="3.5"/>
+    <circle cx="400" cy="314" r="8" fill="#18191a" stroke="#5eead4" stroke-width="4"/>
+
+    <circle cx="355" cy="404" r="8.5" fill="#e0f2fe" stroke="#38bdf8" stroke-width="3"/>
+
+    <circle cx="254" cy="460" r="8" fill="#6366f1"/>
+    <circle cx="310" cy="460" r="8" fill="#38bdf8"/>
+    <circle cx="400" cy="460" r="8" fill="#5eead4"/>
+    <circle cx="456" cy="460" r="8" fill="#fbbf24"/>
+  </g>
+</svg>
