@@ -27,11 +27,13 @@ services:
       # - "Branding logo" > `branding/logo.svg` (or `/media/public/branding/logo.svg`)
       # - "Branding favicon" > `branding/favicon.svg` (or `/media/public/branding/favicon.svg`)
       # - "Default flow background" > `branding/bg_signin.jpg`
+      # - "Custom CSS" > loaded directly into Brand via ak shell or System > Brands
       - ./assets/images/bg_signin.jpg:/data/media/public/branding/bg_signin.jpg:ro
       - ./assets/images/logo.svg:/data/media/public/branding/logo.svg:ro
       - ./assets/images/logo.png:/data/media/public/branding/logo.png:ro
       - ./assets/images/favicon.svg:/data/media/public/branding/favicon.svg:ro
       - ./assets/images/favicon.png:/data/media/public/branding/favicon.png:ro
+      - ./assets/custom.css:/data/media/public/branding/custom.css:ro
 
   worker:
     image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}

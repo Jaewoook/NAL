@@ -1,0 +1,268 @@
+/* ==========================================================================
+   NAL (Network Attached Laboratory) — Custom Theme
+   Concept: Deep Obsidian & Amber Glow
+   Target: Authentik User-Facing Flow & Authentication Pages
+   ========================================================================== */
+
+/* 1. Global Reset & Theme Variables */
+:root {
+    --pf-c-background-image--Filter: none !important;
+    --pf-c-background-image--BackgroundColor: transparent !important;
+    --ak-c-login__main--BackgroundColor: #0d1017 !important;
+    --ak-c-login--MaxWidth: 28rem !important;
+}
+
+/* Ensure PatternFly adopts Authentik's configured flow background image */
+.pf-c-background-image {
+    --pf-c-background-image--BackgroundImage: var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
+    --pf-c-background-image--BackgroundImage-2x: var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
+    --pf-c-background-image--BackgroundImage--sm: var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
+    --pf-c-background-image--BackgroundImage--sm-2x: var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
+    --pf-c-background-image--BackgroundImage--lg: var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
+    --pf-c-background-image--Filter: none !important;
+}
+
+/* 2. Page Background with User's Wallpaper + Obsidian Scrim & Warm Amber Glow */
+html {
+    background-color: #080a0f !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+    color: #e2e8f0 !important;
+}
+
+body.pf-c-background-image,
+body {
+    background-color: transparent !important;
+    background-image: none !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+    color: #e2e8f0 !important;
+}
+
+.pf-c-background-image::before {
+    content: "" !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: -1 !important;
+    background-color: #080a0f !important;
+    background-image:
+        radial-gradient(ellipse 70% 45% at 50% 0%, rgba(245, 158, 11, 0.12) 0%, transparent 70%),
+        linear-gradient(rgba(8, 10, 15, 0.72), rgba(8, 10, 15, 0.82)),
+        var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
+    background-size: cover !important;
+    background-position: center center !important;
+    background-repeat: no-repeat !important;
+    background-attachment: fixed !important;
+    filter: none !important;
+}
+
+/* 3. Authentication Main Card */
+.pf-c-login__main {
+    background-color: #0d1017 !important;
+    background: #0d1017 !important;
+    border-radius: 16px !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-top: 1px solid rgba(245, 158, 11, 0.4) !important;
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.8),
+        0 24px 50px -10px rgba(0, 0, 0, 0.9),
+        0 0 40px -10px rgba(245, 158, 11, 0.08) !important;
+    padding: 2.25rem 2rem !important;
+    max-width: 440px !important;
+    margin: 0 auto !important;
+    color: #e2e8f0 !important;
+}
+
+/* 4. Branding Header & Monogram Logo */
+.pf-c-login__main-header {
+    padding: 0 0 1.5rem 0 !important;
+    text-align: center !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.pf-c-login__main-header .branding-logo,
+.pf-c-login__main-header img {
+    max-height: 52px !important;
+    width: auto !important;
+    margin: 0 auto !important;
+    filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.7));
+}
+
+/* 5. Flow Title & Typography */
+.pf-c-title,
+.pf-c-login__main-header h1,
+.pf-c-login__main-body h1,
+.pf-c-login__main-body h2 {
+    color: #f8fafc !important;
+    font-size: 1.35rem !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.015em !important;
+    margin-top: 0.5rem !important;
+    margin-bottom: 0.5rem !important;
+    text-align: center !important;
+}
+
+.pf-c-login__main-body p,
+.pf-c-login__main-body .pf-c-form__helper-text {
+    color: #94a3b8 !important;
+    font-size: 0.875rem !important;
+}
+
+/* 6. Form Inputs & Labels */
+.pf-c-form__group {
+    margin-bottom: 1.25rem !important;
+}
+
+.pf-c-form__label-text,
+label.pf-c-form__label {
+    color: #cbd5e1 !important;
+    font-size: 0.825rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.01em !important;
+    margin-bottom: 0.35rem !important;
+    display: inline-block !important;
+}
+
+.pf-c-form-control {
+    background-color: #141822 !important;
+    color: #f8fafc !important;
+    border: 1px solid #232b3c !important;
+    border-radius: 8px !important;
+    padding: 0.65rem 0.85rem !important;
+    font-size: 0.95rem !important;
+    line-height: 1.5 !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease !important;
+}
+
+.pf-c-form-control::placeholder {
+    color: #475569 !important;
+}
+
+.pf-c-form-control:focus,
+.pf-c-form-control:focus-within {
+    background-color: #181d2a !important;
+    border-color: #f59e0b !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22) !important;
+}
+
+/* 7. Primary Action Button (Radiant Warm Amber) */
+.pf-c-button.pf-m-primary {
+    background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%) !important;
+    background-color: #f59e0b !important;
+    color: #0a0d14 !important;
+    font-weight: 600 !important;
+    font-size: 0.95rem !important;
+    letter-spacing: 0.01em !important;
+    border: 1px solid #d97706 !important;
+    border-radius: 8px !important;
+    padding: 0.7rem 1.25rem !important;
+    box-shadow: 0 2px 10px rgba(245, 158, 11, 0.25) !important;
+    cursor: pointer !important;
+    transition: all 0.15s ease-in-out !important;
+    width: 100% !important;
+    margin-top: 0.5rem !important;
+}
+
+.pf-c-button.pf-m-primary:hover {
+    background: linear-gradient(180deg, #fcd34d 0%, #fbbf24 100%) !important;
+    color: #05070a !important;
+    border-color: #f59e0b !important;
+    box-shadow: 0 4px 18px rgba(245, 158, 11, 0.45) !important;
+    transform: translateY(-1px) !important;
+}
+
+.pf-c-button.pf-m-primary:active {
+    background: #d97706 !important;
+    transform: translateY(0) !important;
+    box-shadow: 0 1px 6px rgba(245, 158, 11, 0.3) !important;
+}
+
+/* 8. Links & Secondary Buttons */
+.pf-c-button.pf-m-link,
+a.pf-c-button.pf-m-link {
+    color: #fbbf24 !important;
+    font-weight: 500 !important;
+    text-decoration: none !important;
+    font-size: 0.875rem !important;
+    transition: color 0.15s ease !important;
+}
+
+.pf-c-button.pf-m-link:hover,
+a.pf-c-button.pf-m-link:hover {
+    color: #fde68a !important;
+    text-decoration: underline !important;
+}
+
+.pf-c-button.pf-m-secondary {
+    background-color: #141822 !important;
+    color: #cbd5e1 !important;
+    border: 1px solid #232b3c !important;
+    border-radius: 8px !important;
+    transition: all 0.15s ease !important;
+}
+
+.pf-c-button.pf-m-secondary:hover {
+    background-color: #1c2230 !important;
+    border-color: #f59e0b !important;
+    color: #ffffff !important;
+}
+
+/* 9. Alerts and Validation Callouts */
+.pf-c-alert {
+    border-radius: 8px !important;
+    margin-bottom: 1rem !important;
+    border-width: 1px !important;
+    border-style: solid !important;
+}
+
+.pf-c-alert.pf-m-danger {
+    background-color: rgba(239, 68, 68, 0.12) !important;
+    border-color: rgba(239, 68, 68, 0.3) !important;
+    border-left: 4px solid #ef4444 !important;
+    color: #fca5a5 !important;
+}
+
+.pf-c-alert.pf-m-warning {
+    background-color: rgba(245, 158, 11, 0.12) !important;
+    border-color: rgba(245, 158, 11, 0.3) !important;
+    border-left: 4px solid #f59e0b !important;
+    color: #fde68a !important;
+}
+
+.pf-c-alert.pf-m-success {
+    background-color: rgba(16, 185, 129, 0.12) !important;
+    border-color: rgba(16, 185, 129, 0.3) !important;
+    border-left: 4px solid #10b981 !important;
+    color: #86efac !important;
+}
+
+/* 10. Hide "Powered by authentik" & Footer Elements */
+ak-brand-links,
+[name="flow-links"],
+.pf-c-login__footer,
+footer[name="site-footer"],
+[part="footer"] {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* 11. Subtle Header / Inspector Elements */
+ak-locale-select,
+.pf-c-login__header {
+    color: #64748b !important;
+}
+
+ak-locale-select select {
+    background-color: #141822 !important;
+    color: #94a3b8 !important;
+    border: 1px solid #232b3c !important;
+    border-radius: 6px !important;
+}
