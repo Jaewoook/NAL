@@ -1,0 +1,297 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="960" viewBox="0 0 1600 960">
+<defs>
+  <pattern id="gridDots" width="24" height="24" patternUnits="userSpaceOnUse">
+    <circle cx="2" cy="2" r="1.1" fill="#cbd5e1" opacity="0.5"/>
+  </pattern>
+  <filter id="cardShadow" x="-10%" y="-10%" width="125%" height="125%">
+    <feDropShadow dx="3" dy="5" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.08"/>
+  </filter>
+</defs>
+<rect width="1600" height="960" fill="#faf9f6"/>
+<rect width="1600" height="960" fill="url(#gridDots)"/>
+<polygon points="50.4,28.6 1549.3,29.2 1550.7,105.5 51.2,103.8" fill="#ffffff" fill-opacity="1.0" rx="12"/>
+<path d="M 49.2 30.0 Q 799.8 28.6 1548.6 29.1" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 49.2 30.3 Q 800.4 30.1 1550.9 28.5" fill="none" stroke="#0f172a" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1549.5 29.0 Q 1550.9 68.1 1551.4 104.5" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1551.0 30.3 Q 1548.8 66.3 1550.9 105.7" fill="none" stroke="#0f172a" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1549.6 105.2 Q 800.1 106.4 51.0 105.4" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1550.6 103.6 Q 801.1 105.2 49.2 104.4" fill="none" stroke="#0f172a" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<path d="M 48.8 104.3 Q 48.7 66.7 50.4 29.6" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 49.3 106.3 Q 49.6 66.6 50.4 30.3" fill="none" stroke="#0f172a" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<text x="80" y="70" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="28" font-weight="bold" fill="#0f172a">Network Attached Laboratory (NAL)</text>
+<text x="80" y="92" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="15" fill="#64748b">Conceptual Architecture &amp; Component Relations</text>
+<text x="1520" y="76" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#0284c7" text-anchor="end">jaewook.dev • home.jaewook.me</text>
+<text x="65" y="145" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="18" font-weight="bold" fill="#0369a1">1. Clients &amp; Entry Points</text>
+<polygon points="58.6,161.0 328.5,159.5 332.2,270.6 60.3,270.8" fill="#f0f9ff" fill-opacity="1.0" rx="12"/>
+<path d="M 58.8 157.9 Q 196.5 161.2 329.2 159.0" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 61.7 159.2 Q 193.7 161.9 330.7 159.5" fill="none" stroke="#0284c7" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 329.0 158.9 Q 331.8 214.8 330.3 269.0" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 329.6 158.8 Q 330.4 216.8 332.2 270.0" fill="none" stroke="#0284c7" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 328.3 270.6 Q 193.2 268.0 61.3 269.7" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 332.2 270.1 Q 193.1 269.5 62.1 271.6" fill="none" stroke="#0284c7" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 60.8 270.2 Q 57.9 216.0 59.0 160.6" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 59.8 272.0 Q 58.3 214.7 61.7 159.0" fill="none" stroke="#0284c7" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<text x="195" y="195" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="17" font-weight="bold" fill="#0369a1" text-anchor="middle">🌐 Public Web Clients</text>
+<text x="195" y="222" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#334155" text-anchor="middle">Mobile Apps &amp; Web Browsers</text>
+<text x="195" y="245" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-style="italic" fill="#0284c7" text-anchor="middle">auth / llm / docker .jaewook.dev</text>
+<polygon points="60.0,308.6 331.8,311.6 329.1,420.6 60.5,418.5" fill="#eff6ff" fill-opacity="1.0" rx="12"/>
+<path d="M 61.2 310.1 Q 196.2 310.2 327.8 309.2" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 61.7 311.5 Q 192.9 311.9 329.2 308.1" fill="none" stroke="#2563eb" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 328.2 309.9 Q 331.7 367.0 328.1 421.1" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 329.9 310.2 Q 331.2 363.4 329.0 421.6" fill="none" stroke="#2563eb" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 330.2 421.0 Q 194.7 418.7 58.7 419.2" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 329.7 420.1 Q 197.2 420.7 58.3 418.8" fill="none" stroke="#2563eb" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 58.8 418.8 Q 59.3 365.4 58.1 310.6" fill="none" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 61.6 418.1 Q 58.8 366.8 58.8 310.7" fill="none" stroke="#2563eb" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<text x="195" y="345" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="17" font-weight="bold" fill="#1d4ed8" text-anchor="middle">🛡️ Remote Admin</text>
+<text x="195" y="372" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#334155" text-anchor="middle">WireGuard Encrypted Mesh</text>
+<text x="195" y="395" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-style="italic" fill="#2563eb" text-anchor="middle">Private Admin Overlay</text>
+<polygon points="58.7,458.4 331.9,460.3 329.9,571.3 61.4,568.6" fill="#f0fdf4" fill-opacity="1.0" rx="12"/>
+<path d="M 59.7 459.9 Q 193.2 459.7 331.0 460.8" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 59.6 459.3 Q 197.1 458.2 331.6 458.9" fill="none" stroke="#16a34a" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 329.7 459.0 Q 328.6 514.8 328.9 571.9" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 330.2 458.0 Q 329.7 516.6 332.2 571.5" fill="none" stroke="#16a34a" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 331.5 568.5 Q 197.1 571.9 59.9 568.7" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 329.5 572.1 Q 194.6 568.1 59.0 571.2" fill="none" stroke="#16a34a" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 62.0 572.2 Q 59.8 514.7 60.2 461.0" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 62.1 570.3 Q 58.5 514.1 60.2 461.1" fill="none" stroke="#16a34a" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<text x="195" y="495" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="17" font-weight="bold" fill="#15803d" text-anchor="middle">🏠 Home LAN &amp; IoT</text>
+<text x="195" y="522" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#334155" text-anchor="middle">Local WiFi &amp; Wired Devices</text>
+<text x="195" y="545" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-style="italic" fill="#16a34a" text-anchor="middle">Technitium DNS (home.jaewook.me)</text>
+<text x="425" y="145" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="18" font-weight="bold" fill="#c2410c">2. Access Gateway</text>
+<polygon points="408.1,160.4 670.0,161.6 668.5,572.0 408.2,568.6" fill="#fff7ed" fill-opacity="1.0" rx="12"/>
+<path d="M 408.8 158.3 Q 540.4 160.8 671.7 158.9" fill="none" stroke="#ea580c" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 409.6 160.4 Q 540.4 160.5 670.1 161.9" fill="none" stroke="#ea580c" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<path d="M 668.9 159.5 Q 668.7 366.0 670.8 569.1" fill="none" stroke="#ea580c" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 668.1 159.8 Q 669.2 366.1 672.2 572.2" fill="none" stroke="#ea580c" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<path d="M 669.0 571.9 Q 538.1 568.7 411.7 571.7" fill="none" stroke="#ea580c" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 671.5 570.9 Q 539.4 568.5 410.5 572.1" fill="none" stroke="#ea580c" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<path d="M 411.4 569.1 Q 410.7 362.8 410.7 161.9" fill="none" stroke="#ea580c" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 408.3 570.2 Q 408.4 363.3 409.0 160.5" fill="none" stroke="#ea580c" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<text x="540" y="200" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="19" font-weight="bold" fill="#c2410c" text-anchor="middle">🚪 Front Gateway</text>
+<text x="540" y="225" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#7c2d12" text-anchor="middle">Zero-Trust Entry Point</text>
+<polygon points="426.0,248.7 655.6,249.0 654.9,346.8 426.5,343.2" fill="#ffffff" fill-opacity="1.0" rx="12"/>
+<path d="M 422.8 251.2 Q 539.7 249.0 655.6 249.0" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round" opacity="0.95"/>
+<path d="M 424.7 247.8 Q 541.1 250.2 653.1 251.7" fill="none" stroke="#ea580c" stroke-width="1.53" stroke-linecap="round" opacity="0.57"/>
+<path d="M 656.5 250.4 Q 656.8 297.7 653.5 343.4" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round" opacity="0.95"/>
+<path d="M 656.3 251.6 Q 654.2 299.3 656.8 343.7" fill="none" stroke="#ea580c" stroke-width="1.53" stroke-linecap="round" opacity="0.57"/>
+<path d="M 656.2 346.7 Q 538.9 343.3 424.6 345.5" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round" opacity="0.95"/>
+<path d="M 656.6 347.1 Q 538.5 346.9 426.4 346.7" fill="none" stroke="#ea580c" stroke-width="1.53" stroke-linecap="round" opacity="0.57"/>
+<path d="M 424.3 346.9 Q 422.9 298.5 426.3 251.6" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round" opacity="0.95"/>
+<path d="M 426.3 343.3 Q 426.4 296.5 426.6 251.6" fill="none" stroke="#ea580c" stroke-width="1.53" stroke-linecap="round" opacity="0.57"/>
+<text x="540" y="280" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="15" font-weight="bold" fill="#c2410c" text-anchor="middle">☁️ Cloudflare Tunnel</text>
+<text x="540" y="305" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#431407" text-anchor="middle">Outbound-only daemon</text>
+<text x="540" y="325" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#ea580c" text-anchor="middle">No open router ports!</text>
+<polygon points="423.8,376.4 654.8,374.1 656.3,543.8 422.9,543.6" fill="#ffffff" fill-opacity="1.0" rx="12"/>
+<path d="M 427.1 374.0 Q 539.2 376.6 655.6 374.6" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round" opacity="0.95"/>
+<path d="M 426.9 373.3 Q 542.1 375.2 657.1 373.6" fill="none" stroke="#ea580c" stroke-width="1.53" stroke-linecap="round" opacity="0.57"/>
+<path d="M 653.3 374.7 Q 657.0 459.0 656.0 544.2" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round" opacity="0.95"/>
+<path d="M 654.5 375.3 Q 655.5 460.1 653.9 545.9" fill="none" stroke="#ea580c" stroke-width="1.53" stroke-linecap="round" opacity="0.57"/>
+<path d="M 655.2 546.0 Q 537.8 546.9 426.1 545.8" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round" opacity="0.95"/>
+<path d="M 655.7 544.3 Q 539.4 543.1 424.2 546.5" fill="none" stroke="#ea580c" stroke-width="1.53" stroke-linecap="round" opacity="0.57"/>
+<path d="M 424.2 544.6 Q 426.0 459.1 424.6 374.1" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round" opacity="0.95"/>
+<path d="M 426.9 545.8 Q 423.4 459.6 426.8 375.5" fill="none" stroke="#ea580c" stroke-width="1.53" stroke-linecap="round" opacity="0.57"/>
+<text x="540" y="408" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="15" font-weight="bold" fill="#c2410c" text-anchor="middle">🔀 Nginx Proxy Manager</text>
+<text x="540" y="435" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#431407" text-anchor="middle">• SSL Termination &amp; Let's Encrypt</text>
+<text x="540" y="458" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#431407" text-anchor="middle">• Virtual Host Reverse Proxy</text>
+<text x="540" y="482" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#431407" text-anchor="middle">• Forward-Auth Verification</text>
+<text x="540" y="520" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-style="italic" fill="#ea580c" text-anchor="middle">Central internal traffic dispatcher</text>
+<text x="765" y="145" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="18" font-weight="bold" fill="#4338ca">3. Identity &amp; Security</text>
+<polygon points="749.1,160.2 1057.8,159.1 1059.7,275.4 750.7,274.8" fill="#eef2ff" fill-opacity="1.0" rx="12"/>
+<path d="M 749.9 161.8 Q 904.7 158.7 1061.3 158.5" fill="none" stroke="#4f46e5" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 750.6 159.3 Q 903.2 160.1 1061.4 161.1" fill="none" stroke="#4f46e5" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1058.7 157.9 Q 1060.8 216.3 1058.9 274.9" fill="none" stroke="#4f46e5" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1059.6 160.6 Q 1061.5 215.6 1058.7 275.9" fill="none" stroke="#4f46e5" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1060.7 272.8 Q 905.0 273.9 751.1 276.2" fill="none" stroke="#4f46e5" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1058.6 277.0 Q 903.3 274.7 750.1 273.0" fill="none" stroke="#4f46e5" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<path d="M 749.8 276.3 Q 748.9 219.0 750.7 162.1" fill="none" stroke="#4f46e5" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 751.7 275.5 Q 750.4 219.5 751.0 160.0" fill="none" stroke="#4f46e5" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<text x="905" y="195" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="18" font-weight="bold" fill="#4338ca" text-anchor="middle">🔑 Authentik SSO</text>
+<text x="905" y="222" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#312e81" text-anchor="middle">Central Identity &amp; Access Provider</text>
+<text x="905" y="248" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#4f46e5" text-anchor="middle">OIDC • Forward-Auth • LDAP</text>
+<text x="765" y="315" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="18" font-weight="bold" fill="#065f46">4. Compute Services Core</text>
+<polygon points="741.3,325.2 1151.6,326.0 1149.9,909.0 739.0,910.6" fill="#f8fafc" fill-opacity="1.0" rx="12"/>
+<path d="M 740.5 324.1 Q 946.1 325.1 1148.3 324.1" fill="none" stroke="#0f172a" stroke-width="2.6" stroke-linecap="round" opacity="0.95"/>
+<path d="M 740.2 323.6 Q 944.1 324.3 1148.9 325.8" fill="none" stroke="#0f172a" stroke-width="2.21" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1149.6 325.2 Q 1150.8 615.8 1149.7 908.8" fill="none" stroke="#0f172a" stroke-width="2.6" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1150.3 325.8 Q 1149.7 619.1 1151.4 911.1" fill="none" stroke="#0f172a" stroke-width="2.21" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1149.4 911.0 Q 944.5 908.0 741.4 911.8" fill="none" stroke="#0f172a" stroke-width="2.6" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1150.2 910.4 Q 944.7 911.0 738.9 908.9" fill="none" stroke="#0f172a" stroke-width="2.21" stroke-linecap="round" opacity="0.57"/>
+<path d="M 739.3 910.7 Q 739.7 615.6 739.6 323.7" fill="none" stroke="#0f172a" stroke-width="2.6" stroke-linecap="round" opacity="0.95"/>
+<path d="M 740.5 908.1 Q 739.9 616.0 739.6 325.3" fill="none" stroke="#0f172a" stroke-width="2.21" stroke-linecap="round" opacity="0.57"/>
+<rect x="755" y="338" width="230" height="26" rx="6" fill="#0f172a"/>
+<text x="870" y="356" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#ffffff" text-anchor="middle">🍎 Apple Mac Mini (M2 • 16GB)</text>
+<polygon points="757.9,380.6 1128.4,379.8 1128.0,554.5 758.7,554.2" fill="#ecfdf5" fill-opacity="1.0" rx="12"/>
+<path d="M 761.1 381.5 Q 946.1 379.5 1128.9 378.2" fill="none" stroke="#059669" stroke-width="2.0" stroke-linecap="round" opacity="0.95"/>
+<path d="M 762.2 379.3 Q 942.9 380.2 1130.7 381.2" fill="none" stroke="#059669" stroke-width="1.7" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1132.0 378.7 Q 1130.7 468.6 1127.9 553.5" fill="none" stroke="#059669" stroke-width="2.0" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1130.3 378.8 Q 1128.4 468.2 1130.9 556.2" fill="none" stroke="#059669" stroke-width="1.7" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1131.1 553.3 Q 943.5 555.5 761.4 557.0" fill="none" stroke="#059669" stroke-width="2.0" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1129.2 555.8 Q 943.3 552.9 762.0 554.5" fill="none" stroke="#059669" stroke-width="1.7" stroke-linecap="round" opacity="0.57"/>
+<path d="M 760.8 555.6 Q 760.9 465.6 758.2 381.2" fill="none" stroke="#059669" stroke-width="2.0" stroke-linecap="round" opacity="0.95"/>
+<path d="M 758.3 557.1 Q 761.5 467.9 761.2 379.3" fill="none" stroke="#059669" stroke-width="1.7" stroke-linecap="round" opacity="0.57"/>
+<text x="945" y="412" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="17" font-weight="bold" fill="#065f46" text-anchor="middle">🧠 Local AI &amp; LLM Service</text>
+<polygon points="774.7,429.4 930.0,429.3 931.5,536.4 773.3,537.0" fill="#ffffff" fill-opacity="1.0" rx="12"/>
+<path d="M 775.9 429.7 Q 853.1 431.4 931.0 432.0" fill="none" stroke="#059669" stroke-width="1.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 775.2 429.9 Q 851.5 431.4 929.7 431.0" fill="none" stroke="#059669" stroke-width="1.275" stroke-linecap="round" opacity="0.57"/>
+<path d="M 931.5 428.2 Q 929.0 484.0 931.7 533.9" fill="none" stroke="#059669" stroke-width="1.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 929.5 427.9 Q 929.8 483.0 931.5 533.6" fill="none" stroke="#059669" stroke-width="1.275" stroke-linecap="round" opacity="0.57"/>
+<path d="M 929.3 536.7 Q 851.2 536.3 775.9 534.0" fill="none" stroke="#059669" stroke-width="1.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 928.2 536.0 Q 850.3 537.0 774.9 536.1" fill="none" stroke="#059669" stroke-width="1.275" stroke-linecap="round" opacity="0.57"/>
+<path d="M 775.0 536.3 Q 775.8 483.1 773.2 428.8" fill="none" stroke="#059669" stroke-width="1.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 775.4 534.9 Q 775.8 481.6 775.1 429.7" fill="none" stroke="#059669" stroke-width="1.275" stroke-linecap="round" opacity="0.57"/>
+<text x="852" y="458" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#047857" text-anchor="middle">Open WebUI</text>
+<text x="852" y="482" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Chat Interface</text>
+<text x="852" y="502" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Web &amp; Mobile UI</text>
+<text x="852" y="522" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#059669" text-anchor="middle">(Docker container)</text>
+<polygon points="961.1,429.3 1115.9,429.0 1113.9,533.3 958.6,533.3" fill="#ffffff" fill-opacity="1.0" rx="12"/>
+<path d="M 958.6 428.8 Q 1037.7 431.2 1114.9 431.0" fill="none" stroke="#059669" stroke-width="1.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 959.0 428.2 Q 1039.6 430.1 1113.7 428.8" fill="none" stroke="#059669" stroke-width="1.275" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1115.2 429.0 Q 1113.6 480.4 1117.1 535.2" fill="none" stroke="#059669" stroke-width="1.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1116.6 430.0 Q 1115.9 480.9 1116.6 535.3" fill="none" stroke="#059669" stroke-width="1.275" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1113.6 533.0 Q 1037.4 534.7 961.9 534.9" fill="none" stroke="#059669" stroke-width="1.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1113.1 535.6 Q 1038.9 534.6 958.0 533.5" fill="none" stroke="#059669" stroke-width="1.275" stroke-linecap="round" opacity="0.57"/>
+<path d="M 962.2 533.3 Q 960.3 481.6 961.2 430.5" fill="none" stroke="#059669" stroke-width="1.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 960.1 534.8 Q 961.3 481.3 959.7 431.6" fill="none" stroke="#059669" stroke-width="1.275" stroke-linecap="round" opacity="0.57"/>
+<text x="1037" y="458" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#047857" text-anchor="middle">Ollama Engine</text>
+<text x="1037" y="482" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#b45309" text-anchor="middle">⚡ Apple Metal GPU</text>
+<text x="1037" y="502" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Native Host Daemon</text>
+<text x="1037" y="522" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#059669" text-anchor="middle">(Zero virtualization tax)</text>
+<path d="M 930.0 480.0 Q 947.0 479.2 960.0 480.0" fill="none" stroke="#059669" stroke-width="2.0" stroke-linecap="round"/>
+<path d="M 949.5 485.8 L 960.0 480.0 L 950.3 473.0" fill="none" stroke="#059669" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="760.5,580.5 1131.1,582.0 1128.7,713.7 760.7,713.5" fill="#fdf4ff" fill-opacity="1.0" rx="12"/>
+<path d="M 757.8 579.8 Q 943.6 578.1 1130.4 579.1" fill="none" stroke="#a21caf" stroke-width="2.0" stroke-linecap="round" opacity="0.95"/>
+<path d="M 760.9 579.8 Q 943.8 580.9 1130.8 581.9" fill="none" stroke="#a21caf" stroke-width="1.7" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1130.7 581.9 Q 1131.3 648.1 1129.7 715.2" fill="none" stroke="#a21caf" stroke-width="2.0" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1131.4 578.1 Q 1130.6 649.3 1128.5 714.2" fill="none" stroke="#a21caf" stroke-width="1.7" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1129.1 713.3 Q 946.1 715.3 760.8 715.9" fill="none" stroke="#a21caf" stroke-width="2.0" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1130.0 713.2 Q 946.9 715.0 758.0 714.7" fill="none" stroke="#a21caf" stroke-width="1.7" stroke-linecap="round" opacity="0.57"/>
+<path d="M 758.2 717.0 Q 759.2 646.4 761.5 580.3" fill="none" stroke="#a21caf" stroke-width="2.0" stroke-linecap="round" opacity="0.95"/>
+<path d="M 760.8 714.0 Q 762.0 649.7 758.0 581.1" fill="none" stroke="#a21caf" stroke-width="1.7" stroke-linecap="round" opacity="0.57"/>
+<text x="945" y="612" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="16" font-weight="bold" fill="#86198f" text-anchor="middle">🛠️ Lab Management &amp; Dev Services</text>
+<text x="945" y="640" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#334155" text-anchor="middle">🐳 Portainer (Docker Stacks &amp; Lifecycle)</text>
+<text x="945" y="665" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#334155" text-anchor="middle">🔍 Gerrit (Code Review Hub)</text>
+<text x="945" y="690" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#334155" text-anchor="middle">🍺 Homebrew NAL Tap Registry</text>
+<polygon points="759.9,740.7 1131.8,738.6 1130.4,885.6 760.0,883.2" fill="#fffbeb" fill-opacity="1.0" rx="12"/>
+<path d="M 760.7 741.6 Q 944.3 739.3 1129.3 740.9" fill="none" stroke="#d97706" stroke-width="2.0" stroke-linecap="round" opacity="0.95"/>
+<path d="M 761.4 740.2 Q 944.1 742.0 1129.8 739.2" fill="none" stroke="#d97706" stroke-width="1.7" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1129.6 740.1 Q 1129.2 814.6 1132.1 885.7" fill="none" stroke="#d97706" stroke-width="2.0" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1128.6 739.4 Q 1130.2 812.1 1131.1 885.6" fill="none" stroke="#d97706" stroke-width="1.7" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1130.2 886.9 Q 946.1 883.7 759.7 885.9" fill="none" stroke="#d97706" stroke-width="2.0" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1130.5 883.9 Q 943.3 887.1 758.5 885.2" fill="none" stroke="#d97706" stroke-width="1.7" stroke-linecap="round" opacity="0.57"/>
+<path d="M 762.2 886.8 Q 760.2 810.7 759.8 738.3" fill="none" stroke="#d97706" stroke-width="2.0" stroke-linecap="round" opacity="0.95"/>
+<path d="M 761.0 885.0 Q 761.5 812.5 759.0 741.5" fill="none" stroke="#d97706" stroke-width="1.7" stroke-linecap="round" opacity="0.57"/>
+<text x="945" y="772" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="16" font-weight="bold" fill="#92400e" text-anchor="middle">🏡 Smart Home &amp; Automation</text>
+<text x="945" y="802" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#78350f" text-anchor="middle">• Home Assistant + Matter Hub</text>
+<text x="945" y="828" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">Bridges LG ThinQ &amp; Xiaomi into SmartThings</text>
+<text x="945" y="852" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#b45309" text-anchor="middle">Matter Protocol &amp; Local Automation</text>
+<text x="1235" y="145" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="18" font-weight="bold" fill="#7c3aed">5. Persistence &amp; Storage</text>
+<polygon points="1222.1,158.9 1510.2,159.5 1511.9,290.0 1221.7,291.6" fill="#f5f3ff" fill-opacity="1.0" rx="12"/>
+<path d="M 1219.6 161.9 Q 1364.0 161.3 1510.0 161.4" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1220.4 162.2 Q 1364.0 159.1 1510.0 158.5" fill="none" stroke="#7c3aed" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1510.2 160.2 Q 1510.2 224.3 1509.8 289.2" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1510.3 158.8 Q 1508.6 225.9 1511.2 288.0" fill="none" stroke="#7c3aed" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1511.4 289.5 Q 1366.1 290.9 1220.7 291.4" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1508.0 290.0 Q 1367.1 290.0 1220.4 291.6" fill="none" stroke="#7c3aed" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1220.1 289.8 Q 1221.6 224.7 1221.0 159.6" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1219.9 292.1 Q 1220.7 223.5 1219.3 160.8" fill="none" stroke="#7c3aed" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<text x="1365" y="195" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="18" font-weight="bold" fill="#6d28d9" text-anchor="middle">🗄️ PostgreSQL 16</text>
+<text x="1365" y="222" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#4c1d95" text-anchor="middle">Shared Homelab Database Server</text>
+<text x="1365" y="248" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">Authentik SSO &amp; App Schemas</text>
+<text x="1365" y="270" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-style="italic" fill="#7c3aed" text-anchor="middle">Internal `db_network` isolation</text>
+<polygon points="1220.7,361.5 1511.6,361.6 1509.5,589.2 1221.0,591.1" fill="#faf5ff" fill-opacity="1.0" rx="12"/>
+<path d="M 1218.1 360.6 Q 1366.6 358.0 1511.9 362.2" fill="none" stroke="#9333ea" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1218.2 360.6 Q 1366.1 359.7 1511.6 359.8" fill="none" stroke="#9333ea" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1508.0 361.3 Q 1510.9 476.8 1509.1 589.4" fill="none" stroke="#9333ea" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1510.3 361.3 Q 1508.4 475.1 1508.5 588.1" fill="none" stroke="#9333ea" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1508.9 591.8 Q 1366.6 590.5 1218.4 589.8" fill="none" stroke="#9333ea" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1507.8 591.3 Q 1363.9 588.9 1221.8 590.8" fill="none" stroke="#9333ea" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1219.3 590.4 Q 1218.5 474.7 1220.6 359.7" fill="none" stroke="#9333ea" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1218.7 589.5 Q 1218.9 476.5 1219.9 358.8" fill="none" stroke="#9333ea" stroke-width="2.04" stroke-linecap="round" opacity="0.57"/>
+<text x="1365" y="398" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="19" font-weight="bold" fill="#7e22ce" text-anchor="middle">💾 Synology DS925+ NAS</text>
+<text x="1365" y="425" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#581c87" text-anchor="middle">AMD Ryzen • 32TB RAID Storage</text>
+<text x="1365" y="465" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#334155" text-anchor="middle">📦 Persistent Docker Volumes</text>
+<text x="1365" y="492" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#334155" text-anchor="middle">🗃️ Scheduled Btrfs Snapshots</text>
+<text x="1365" y="520" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#334155" text-anchor="middle">🎬 Media &amp; Large Homelab Datasets</text>
+<text x="1365" y="560" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#9333ea" text-anchor="middle">1Gbps Dedicated Wired Link</text>
+<polygon points="1220.3,680.3 1512.2,679.1 1512.1,840.7 1219.0,840.3" fill="#fff1f2" fill-opacity="1.0" rx="12"/>
+<path d="M 1218.0 680.5 Q 1365.8 681.1 1510.0 681.8" fill="none" stroke="#e11d48" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1220.5 679.4 Q 1364.1 681.3 1510.6 680.5" fill="none" stroke="#e11d48" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1510.7 681.5 Q 1510.8 761.0 1510.6 841.8" fill="none" stroke="#e11d48" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1509.7 680.4 Q 1510.6 759.2 1511.0 838.2" fill="none" stroke="#e11d48" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1508.6 838.4 Q 1364.1 841.1 1220.2 842.1" fill="none" stroke="#e11d48" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1511.5 838.9 Q 1365.1 841.8 1221.4 839.9" fill="none" stroke="#e11d48" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1219.3 838.3 Q 1221.3 761.1 1222.0 678.4" fill="none" stroke="#e11d48" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1221.0 842.1 Q 1222.1 761.6 1222.1 681.3" fill="none" stroke="#e11d48" stroke-width="1.87" stroke-linecap="round" opacity="0.57"/>
+<text x="1365" y="718" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="18" font-weight="bold" fill="#be123c" text-anchor="middle">☁️ Remote Disaster Recovery</text>
+<text x="1365" y="745" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#881337" text-anchor="middle">Offsite Encrypted Cloud Storage</text>
+<text x="1365" y="775" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#334155" text-anchor="middle">🔒 Encrypted Rclone Sync ➔ Backblaze B2</text>
+<text x="1365" y="802" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" fill="#334155" text-anchor="middle">♻️ Cold-wipe 1-command restore</text>
+<text x="1365" y="825" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-style="italic" fill="#be123c" text-anchor="middle">Zero-loss disaster resilience</text>
+<path d="M 330.0 215.0 Q 362.6 261.0 410.0 290.0" fill="none" stroke="#0284c7" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M 398.0 290.2 L 410.0 290.0 L 404.7 279.2" fill="none" stroke="#0284c7" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="307.3" y="245.7" width="118.0" height="22" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#0284c7" stroke-width="1.2"/>
+<text x="366.3" y="261.2" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#0284c7" text-anchor="middle">HTTPS Tunnel</text>
+<path d="M 330.0 365.0 Q 370.9 388.5 410.0 420.0" fill="none" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M 398.1 418.7 L 410.0 420.0 L 406.1 408.6" fill="none" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="319.9" y="379.5" width="101.0" height="22" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#2563eb" stroke-width="1.2"/>
+<text x="370.4" y="395.0" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#2563eb" text-anchor="middle">VPN Tunnel</text>
+<path d="M 330.0 515.0 Q 363.1 482.3 410.0 475.0" fill="none" stroke="#16a34a" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M 401.0 482.9 L 410.0 475.0 L 399.0 470.2" fill="none" stroke="#16a34a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="316.1" y="477.6" width="101.0" height="22" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#16a34a" stroke-width="1.2"/>
+<text x="366.6" y="493.1" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#16a34a" text-anchor="middle">Direct LAN</text>
+<path d="M 640.0 215.0 Q 695.7 230.3 750.0 215.0" fill="none" stroke="#4f46e5" stroke-width="2.5" stroke-linecap="round"/>
+<path d="M 742.0 223.9 L 750.0 215.0 L 738.5 211.6" fill="none" stroke="#4f46e5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="589.6" y="211.7" width="211.5" height="22" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#4f46e5" stroke-width="1.2"/>
+<text x="695.3" y="227.2" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#4f46e5" text-anchor="middle">Verify &amp; Auth Check</text>
+<path d="M 670.0 420.0 Q 718.5 422.0 760.0 440.0" fill="none" stroke="#ea580c" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M 748.1 441.9 L 760.0 440.0 L 753.3 430.1" fill="none" stroke="#ea580c" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="657.7" y="415.0" width="118.0" height="22" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#ea580c" stroke-width="1.2"/>
+<text x="716.7" y="430.5" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#ea580c" text-anchor="middle">Route: llm.*</text>
+<path d="M 670.0 490.0 Q 728.6 549.2 760.0 630.0" fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 750.3 622.9 L 760.0 630.0 L 762.3 618.2" fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="650.0" y="543.6" width="143.5" height="22" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#ea580c" stroke-width="1.2"/>
+<text x="721.8" y="559.1" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#ea580c" text-anchor="middle">Route: docker.*</text>
+<path d="M 650.0 550.0 Q 725.8 661.1 760.0 790.0" fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 751.2 781.9 L 760.0 790.0 L 763.6 778.6" fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="660.7" y="654.6" width="109.5" height="22" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#ea580c" stroke-width="1.2"/>
+<text x="715.4" y="670.1" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#ea580c" text-anchor="middle">Route: ha.*</text>
+<path d="M 1060.0 215.0 Q 1140.2 206.7 1220.0 215.0" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round"/>
+<path d="M 1209.3 220.3 L 1220.0 215.0 L 1210.6 207.6" fill="none" stroke="#7c3aed" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="1089.6" y="199.8" width="101.0" height="22" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#7c3aed" stroke-width="1.2"/>
+<text x="1140.1" y="215.3" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#7c3aed" text-anchor="middle">User State</text>
+<path d="M 1130.0 420.0 Q 1184.4 341.5 1220.0 255.0" fill="none" stroke="#7c3aed" stroke-width="2.0" stroke-linecap="round"/>
+<path d="M 1222.1 266.8 L 1220.0 255.0 L 1210.2 261.9" fill="none" stroke="#7c3aed" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="1133.5" y="328.5" width="92.5" height="22" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#7c3aed" stroke-width="1.2"/>
+<text x="1179.7" y="344.0" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#7c3aed" text-anchor="middle">App State</text>
+<path d="M 1150.0 640.0 Q 1172.6 555.6 1220.0 480.0" fill="none" stroke="#9333ea" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M 1220.1 492.0 L 1220.0 480.0 L 1209.2 485.2" fill="none" stroke="#9333ea" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="1039.0" y="546.8" width="279.5" height="22" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#9333ea" stroke-width="1.2"/>
+<text x="1178.8" y="562.3" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#9333ea" text-anchor="middle">Persistent Volumes &amp; Backup</text>
+<path d="M 1365.0 590.0 Q 1344.2 634.6 1365.0 680.0" fill="none" stroke="#e11d48" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M 1354.9 673.5 L 1365.0 680.0 L 1366.6 668.1" fill="none" stroke="#e11d48" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="1261.6" y="623.8" width="186.0" height="22" rx="6" fill="#ffffff" fill-opacity="0.92" stroke="#e11d48" stroke-width="1.2"/>
+<text x="1354.6" y="639.3" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#e11d48" text-anchor="middle">Encrypted Cloud Sync</text>
+<polygon points="49.3,905.9 1549.6,905.0 1549.2,945.8 49.3,944.9" fill="#ffffff" fill-opacity="1.0" rx="12"/>
+<path d="M 50.9 904.8 Q 800.3 905.5 1550.5 904.3" fill="none" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 50.0 904.8 Q 799.8 904.2 1550.9 904.1" fill="none" stroke="#cbd5e1" stroke-width="1.19" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1550.9 905.7 Q 1549.7 924.9 1549.2 945.4" fill="none" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1549.7 904.8 Q 1550.1 926.0 1549.4 944.2" fill="none" stroke="#cbd5e1" stroke-width="1.19" stroke-linecap="round" opacity="0.57"/>
+<path d="M 1550.3 945.3 Q 800.7 944.9 50.2 944.0" fill="none" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1549.3 945.1 Q 800.6 944.5 49.1 945.5" fill="none" stroke="#cbd5e1" stroke-width="1.19" stroke-linecap="round" opacity="0.57"/>
+<path d="M 50.7 944.7 Q 49.4 924.4 49.3 905.8" fill="none" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 49.3 944.3 Q 49.0 925.7 49.5 904.3" fill="none" stroke="#cbd5e1" stroke-width="1.19" stroke-linecap="round" opacity="0.57"/>
+<text x="80" y="930" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#0f172a">RELATIONSHIP FLOW:</text>
+<circle cx="280" cy="925" r="5" fill="#0284c7"/>
+<text x="295" y="930" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155">1. Client Ingress</text>
+<circle cx="440" cy="925" r="5" fill="#4f46e5"/>
+<text x="455" y="930" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155">2. SSO Identity Check</text>
+<circle cx="630" cy="925" r="5" fill="#ea580c"/>
+<text x="645" y="930" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155">3. Routed Reverse Proxy</text>
+<circle cx="845" cy="925" r="5" fill="#059669"/>
+<text x="860" y="930" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155">4. M2 Metal GPU Inference</text>
+<circle cx="1075" cy="925" r="5" fill="#9333ea"/>
+<text x="1090" y="930" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155">5. Central NAS Persistence</text>
+<circle cx="1310" cy="925" r="5" fill="#e11d48"/>
+<text x="1325" y="930" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155">6. Offsite Cloud DR</text>
+</svg>
