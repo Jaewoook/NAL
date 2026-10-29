@@ -5,7 +5,15 @@
 # Network Attached Laboratory (NAL) Server
 
 A set of configurations for homelab servers. All sensitive data are ignored/masked. Currently all configurations are written in compose config format, with plans to migrate to Kubernetes in the future.
- 
+
+## Architecture
+
+Conceptual overview of access paths, security boundaries, compute services, and storage infrastructure:
+
+<p align="center">
+  <img src="./assets/images/architecture.png" alt="NAL Conceptual Architecture" width="100%">
+</p>
+
 ## Hardware Specifications
 
 All infrastructure is running on the following hardwares.
