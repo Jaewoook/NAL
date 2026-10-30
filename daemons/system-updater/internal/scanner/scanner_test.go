@@ -1,0 +1,187 @@
+package scanner
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+type roundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type fakeRunner struct {
+	handler func(name string, args ...string) ([]byte, error)
+}
+
+func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return f.handler(name, args...)
+}
+
+func TestParseComposeImageRefs_EnvExpansionAndFloatingTags(t *testing.T) {
+	root := t.TempDir()
+
+	// 1. services/auth with ${VAR:-default} and .env override
+	authDir := filepath.Join(root, "auth")
+	_ = os.MkdirAll(authDir, 0755)
+	_ = os.WriteFile(filepath.Join(authDir, "compose.yml"), []byte(`services:
+  server:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}
+    container_name: authentik-server
+  worker:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}
+    container_name: authentik-worker
+`), 0644)
+	_ = os.WriteFile(filepath.Join(authDir, ".env"), []byte("AUTHENTIK_TAG=2026.5.4\n"), 0644)
+
+	refs, err := ParseComposeImageRefs(authDir)
+	if err != nil {
+		t.Fatalf("ParseComposeImageRefs(auth) failed: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("expected deduplicated 1 image ref for auth stack, got %d", len(refs))
+	}
+	if refs[0].ImageRepo != "ghcr.io/goauthentik/server" || refs[0].Tag != "2026.5.4" {
+		t.Fatalf("unexpected auth ref: %+v", refs[0])
+	}
+
+	// 2. services/llm with ${WEBUI_DOCKER_TAG-main}
+	llmDir := filepath.Join(root, "llm")
+	_ = os.MkdirAll(llmDir, 0755)
+	_ = os.WriteFile(filepath.Join(llmDir, "docker-compose.yml"), []byte(`services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG-main}
+    container_name: open-webui
+`), 0644)
+	llmRefs, err := ParseComposeImageRefs(llmDir)
+	if err != nil || len(llmRefs) != 1 {
+		t.Fatalf("ParseComposeImageRefs(llm) failed: %v", err)
+	}
+	if llmRefs[0].Tag != "main" || !llmRefs[0].Floating {
+		t.Fatalf("expected floating tag 'main', got %+v", llmRefs[0])
+	}
+}
+
+func TestRegistryClient_CheckImageUpdates_PinnedAndLatest(t *testing.T) {
+	client := NewRegistryClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			u := req.URL.String()
+			switch {
+			case strings.Contains(u, "token"):
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(strings.NewReader(`{"token":"tok"}`)),
+					Header:     make(http.Header),
+				}, nil
+			case strings.HasSuffix(u, "/manifests/latest"):
+				h := make(http.Header)
+				h.Set("Docker-Content-Digest", "sha256:999999")
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(strings.NewReader(`{}`)),
+					Header:     h,
+				}, nil
+			case strings.Contains(u, "cloudflare/cloudflared/tags/list"):
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(strings.NewReader(`{"tags":["latest","2026.8.0","2026.10.2","2026.10.1"]}`)),
+					Header:     make(http.Header),
+				}, nil
+			case strings.Contains(u, "library/postgres/tags/list"):
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(strings.NewReader(`{"tags":["16-alpine","16.4-alpine","16.6-alpine","17.2-alpine","16.6"]}`)),
+					Header:     make(http.Header),
+				}, nil
+			default:
+				return &http.Response{
+					StatusCode: 404,
+					Body:       io.NopCloser(bytes.NewReader(nil)),
+					Header:     make(http.Header),
+				}, nil
+			}
+		}),
+	})
+
+	// 1. Floating latest with differing digest
+	latestVer, tags, remDigest, outdated, err := client.CheckImageUpdates(context.Background(), "cloudflare/cloudflared:latest", "sha256:111111")
+	if err != nil {
+		t.Fatalf("CheckImageUpdates(cloudflared) error: %v", err)
+	}
+	if !outdated || remDigest != "sha256:999999" || latestVer != "2026.10.2" || len(tags) < 3 {
+		t.Fatalf("unexpected cloudflared update result: latest=%s outdated=%v digest=%s tags=%v", latestVer, outdated, remDigest, tags)
+	}
+
+	// 2. Flavor-pinned postgres:16.4-alpine -> preserves -alpine suffix
+	pgLatest, pgTags, _, pgOutdated, err := client.CheckImageUpdates(context.Background(), "docker.io/library/postgres:16.4-alpine", "sha256:222")
+	if err != nil {
+		t.Fatalf("CheckImageUpdates(postgres) error: %v", err)
+	}
+	if !pgOutdated || pgLatest != "16.6-alpine" {
+		t.Fatalf("expected 16.6-alpine as same-major latest, got latest=%s outdated=%v tags=%v", pgLatest, pgOutdated, pgTags)
+	}
+}
+
+func TestBrewScanner_OutdatedAndBrokenLinkage(t *testing.T) {
+	runner := &fakeRunner{
+		handler: func(name string, args ...string) ([]byte, error) {
+			cmdLine := name + " " + strings.Join(args, " ")
+			switch {
+			case strings.Contains(cmdLine, "brew info --json=v2 --installed"):
+				return []byte(`{
+					"formulae": [
+						{"name":"node@22","full_name":"node@22","versions":{"stable":"22.24.0"},"installed":[{"version":"22.23.2_2"}],"deprecated":false},
+						{"name":"openssl@3","full_name":"openssl@3","versions":{"stable":"3.4.0"},"installed":[{"version":"3.3.1"}],"deprecated":false}
+					],
+					"casks": []
+				}`), nil
+			case strings.Contains(cmdLine, "brew outdated --json=v2"):
+				return []byte(`{
+					"formulae": [
+						{"name":"node@22","installed_versions":["22.23.2_2"],"current_version":"22.24.0"},
+						{"name":"openssl@3","installed_versions":["3.3.1"],"current_version":"3.4.0"}
+					],
+					"casks": []
+				}`), nil
+			case strings.Contains(cmdLine, "brew linkage --test node@22"):
+				return []byte("Missing libraries:\n  /opt/homebrew/opt/simdjson/lib/libsimdjson.33.dylib\n"), errors.New("exit status 1")
+			case strings.Contains(cmdLine, "brew linkage --test openssl@3"):
+				return []byte(""), nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+
+	bs := NewBrewScanner(runner)
+	items, err := bs.ScanBrew(context.Background())
+	if err != nil {
+		t.Fatalf("ScanBrew failed: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 brew items, got %d", len(items))
+	}
+	var nodeItem *struct {
+		broken  bool
+		details string
+	}
+	for _, it := range items {
+		if it.Name == "node@22" {
+			nodeItem = &struct {
+				broken  bool
+				details string
+			}{it.BrokenLinkage, it.LinkageDetails}
+		}
+	}
+	if nodeItem == nil || !nodeItem.broken || !strings.Contains(nodeItem.details, "libsimdjson.33.dylib") {
+		t.Fatalf("expected node@22 to be flagged with broken linkage libsimdjson.33.dylib, got %+v", nodeItem)
+	}
+}
