@@ -19,6 +19,8 @@ services:
       start_period: 20s
     expose:
       - 5432
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - database:/var/lib/postgresql/data
       # Provisioning scripts for additional per-service databases/roles.

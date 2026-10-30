@@ -1,0 +1,64 @@
+# ==============================================================================
+# NAL System Updater & Security Scanner - Configuration Example
+# ==============================================================================
+
+web:
+  host: "0.0.0.0"
+  port: 10246
+  public_url: "https://updater.jaewook.dev"
+
+auth:
+  oidc_issuer: "https://auth.jaewook.dev/application/o/system-updater/"
+  oidc_client_id: "system-updater"
+  oidc_client_secret: ""
+  redirect_url: "https://updater.jaewook.dev/api/auth/oidc/callback"
+  session_secret: "replace-with-openssl-rand-hex-32"
+  session_ttl_hours: 24
+  rp_id: "updater.jaewook.dev"
+  rp_origin: "https://updater.jaewook.dev"
+
+database:
+  dsn: "postgres://system_updater:system_updater_pass@127.0.0.1:5432/system_updater?sslmode=disable"
+  container_name: "postgresql"
+  db_name: "system_updater"
+  db_user: "system_updater"
+  db_pass: "system_updater_pass"
+  data_dir: "data"
+
+scanner:
+  interval_hours: 6
+  eol_warning_days: 30
+  services_dir: "../../services"
+  daemons_dir: ".."
+
+updater:
+  batch_dir: "../../batch"
+  deadman_timeout_seconds: 60
+  external_probe_url: "https://auth.jaewook.dev"
+  critical_services:
+    - "cloudflare-tunnel"
+    - "nginx-proxy"
+    - "auth"
+    - "db"
+    - "dns"
+  stateful_volumes:
+    db: "nal_main_db"
+    dns: "nal_dns_config"
+    iot: "nal_ha_config"
+    nginx-proxy: "nginx_proxy_data"
+
+notifications:
+  email:
+    enabled: false
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    use_tls: true
+    username: ""
+    password: ""
+    from_email: ""
+    to_email: ""
+
+logging:
+  enabled: true
+  file_path: "system-updater.log"
+  console: true
