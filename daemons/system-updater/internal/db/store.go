@@ -222,6 +222,14 @@ func (s *SpoolStore) FinishTask(ctx context.Context, taskID string, status strin
 	t.SyncedToDB = false
 	s.state.Tasks[taskID] = t
 	_ = s.saveStateLocked()
+
+	// Close all live SSE subscriber channels for this task so streaming handlers wake up immediately
+	if subs, exists := s.subscribers[taskID]; exists {
+		for ch := range subs {
+			close(ch)
+		}
+		delete(s.subscribers, taskID)
+	}
 	s.mu.Unlock()
 
 	if s.pg != nil {

@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -192,3 +193,29 @@ func TestSpoolStore_OfflineDuringPostgresUpgradeAndIdempotentFlush(t *testing.T)
 		t.Fatalf("expected 2 synced logs and succeeded status, got status=%s len=%d", gotTask.Status, len(logs))
 	}
 }
+
+func TestPostgresBackend_BatchedLogsAndBase64SafeEncoding(t *testing.T) {
+	var executedSQL []string
+	pg := NewPostgresBackend("postgresql", "system_updater", "system_updater", func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 {
+			executedSQL = append(executedSQL, args[len(args)-1])
+		}
+		return []byte("ok"), nil
+	})
+
+	err := pg.InsertTaskLogsBatch(context.Background(), []models.TaskLogLine{
+		{TaskID: "task-00001", Seq: 1, Stream: "stdout", Line: "line with 'quotes' and $dollar$ and \n newline"},
+		{TaskID: "task-00001", Seq: 2, Stream: "stderr", Line: "second line"},
+	})
+	if err != nil {
+		t.Fatalf("InsertTaskLogsBatch failed: %v", err)
+	}
+	// 1 call for schema init + 1 call for batched insert
+	if len(executedSQL) != 2 {
+		t.Fatalf("expected 2 SQL executions (1 schema + 1 batch), got %d", len(executedSQL))
+	}
+	if !strings.Contains(executedSQL[1], "convert_from(decode(") {
+		t.Fatalf("expected base64-decoded safe SQL in batch insert, got: %s", executedSQL[1])
+	}
+}
+

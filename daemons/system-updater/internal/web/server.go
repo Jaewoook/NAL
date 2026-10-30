@@ -299,9 +299,13 @@ func (s *Server) streamTaskLogsSSE(w http.ResponseWriter, r *http.Request, taskI
 	if err != nil {
 		return
 	}
+	lastSentSeq := 0
 	for _, line := range existingLogs {
 		raw, _ := json.Marshal(line)
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", string(raw))
+		if line.Seq > lastSentSeq {
+			lastSentSeq = line.Seq
+		}
 	}
 	flusher.Flush()
 
@@ -315,16 +319,24 @@ func (s *Server) streamTaskLogsSSE(w http.ResponseWriter, r *http.Request, taskI
 		select {
 		case <-r.Context().Done():
 			return
-		case line := <-ch:
-			raw, _ := json.Marshal(line)
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", string(raw))
-			flusher.Flush()
-			curTask, _, _ := s.store.GetTaskWithLogs(r.Context(), taskID)
-			if curTask != nil && curTask.Status != "running" {
-				_, _ = fmt.Fprintf(w, "event: done\ndata: %q\n\n", curTask.Status)
+		case line, ok := <-ch:
+			if !ok {
+				curTask, _, _ := s.store.GetTaskWithLogs(r.Context(), taskID)
+				status := "succeeded"
+				if curTask != nil {
+					status = curTask.Status
+				}
+				_, _ = fmt.Fprintf(w, "event: done\ndata: %q\n\n", status)
 				flusher.Flush()
 				return
 			}
+			if line.Seq <= lastSentSeq {
+				continue
+			}
+			lastSentSeq = line.Seq
+			raw, _ := json.Marshal(line)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", string(raw))
+			flusher.Flush()
 		}
 	}
 }

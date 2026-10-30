@@ -31,7 +31,7 @@ func NewOrchestrator(cfg *config.Config, store db.Store, runner CommandRunner, h
 		store:         store,
 		dockerScanner: NewDockerScanner(cfg.Scanner.ServicesDir, cfg.Updater.CriticalServices, cfg.Updater.StatefulVolumes, runner, reg),
 		brewScanner:   NewBrewScanner(runner),
-		daemonScanner: NewDaemonScanner(cfg.Scanner.DaemonsDir, runner),
+		daemonScanner: NewDaemonScannerWithHTTP(cfg.Scanner.DaemonsDir, runner, httpClient),
 		vulnScanner:   NewVulnScanner(cfg.Scanner.OSVAPIURL, httpClient, runner),
 		eolChecker:    NewEoLChecker(cfg.Scanner.EoLAPIURL, httpClient),
 	}

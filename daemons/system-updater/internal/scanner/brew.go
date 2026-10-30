@@ -38,6 +38,13 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 			Deprecated bool `json:"deprecated"`
 			Disabled   bool `json:"disabled"`
 		} `json:"formulae"`
+		Casks []struct {
+			Token      string `json:"token"`
+			Version    string `json:"version"`
+			Installed  string `json:"installed"`
+			Deprecated bool   `json:"deprecated"`
+			Disabled   bool   `json:"disabled"`
+		} `json:"casks"`
 	}
 	if err := json.Unmarshal(infoOut, &infoPayload); err != nil {
 		return nil, err
@@ -50,10 +57,17 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 				Name           string `json:"name"`
 				CurrentVersion string `json:"current_version"`
 			} `json:"formulae"`
+			Casks []struct {
+				Name           string `json:"name"`
+				CurrentVersion string `json:"current_version"`
+			} `json:"casks"`
 		}
 		if json.Unmarshal(outRaw, &outPayload) == nil {
 			for _, f := range outPayload.Formulae {
 				outdatedMap[f.Name] = f.CurrentVersion
+			}
+			for _, c := range outPayload.Casks {
+				outdatedMap[c.Name] = c.CurrentVersion
 			}
 		}
 	}
@@ -104,6 +118,37 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 			BrokenLinkage:   broken,
 			LinkageDetails:  details,
 			ReleaseNotesURL: "https://formulae.brew.sh/formula/" + f.Name,
+			EoL:             eol,
+			LastCheckedAt:   time.Now().UTC(),
+		})
+	}
+
+	for _, c := range infoPayload.Casks {
+		curVer := c.Installed
+		latestVer := c.Version
+		if ov, ok := outdatedMap[c.Token]; ok && ov != "" {
+			latestVer = ov
+		}
+		_, isOutdated := outdatedMap[c.Token]
+		if !isOutdated && latestVer != "" && curVer != "" && curVer != latestVer {
+			isOutdated = true
+		}
+		eol := models.EoLInfo{Status: models.EoLSupported, Message: "Homebrew Cask"}
+		if c.Deprecated || c.Disabled {
+			eol = models.EoLInfo{Product: c.Token, Status: models.EoLExpired, Message: "Cask deprecated/disabled"}
+		}
+		avail := []string{latestVer}
+		if curVer != "" && curVer != latestVer {
+			avail = []string{latestVer, curVer}
+		}
+		items = append(items, models.ManagedItem{
+			TargetType:      models.TargetBrew,
+			Name:            c.Token,
+			CurrentVersion:  curVer,
+			LatestVersion:   latestVer,
+			AvailableTags:   avail,
+			Outdated:        isOutdated,
+			ReleaseNotesURL: "https://formulae.brew.sh/cask/" + c.Token,
 			EoL:             eol,
 			LastCheckedAt:   time.Now().UTC(),
 		})

@@ -27,10 +27,11 @@ type UpdateRequest struct {
 }
 
 type Manager struct {
-	cfg     *config.Config
-	store   db.Store
-	runner  scanner.CommandRunner
-	alerter *notifier.Alerter
+	cfg          *config.Config
+	store        db.Store
+	runner       scanner.CommandRunner
+	alerter      *notifier.Alerter
+	pollInterval time.Duration
 }
 
 func NewManager(cfg *config.Config, store db.Store, runner scanner.CommandRunner, alerter *notifier.Alerter) *Manager {
@@ -38,10 +39,11 @@ func NewManager(cfg *config.Config, store db.Store, runner scanner.CommandRunner
 		runner = scanner.NewOSCommandRunner()
 	}
 	return &Manager{
-		cfg:     cfg,
-		store:   store,
-		runner:  runner,
-		alerter: alerter,
+		cfg:          cfg,
+		store:        store,
+		runner:       runner,
+		alerter:      alerter,
+		pollInterval: 2 * time.Second,
 	}
 }
 
@@ -226,7 +228,7 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 5/5: Verifying container health (Dead-Man's Rollback armed=%v, timeout=%ds)...", req.EnableDeadMan, m.cfg.Updater.DeadManTimeoutSeconds))
 	verifyErr := upErr
 	if verifyErr == nil {
-		verifyErr = m.verifyContainerHealthy(ctx, ref.ContainerName)
+		verifyErr = m.verifyContainerHealthy(ctx, ref.ContainerName, svcName)
 	}
 
 	if verifyErr != nil {
@@ -323,16 +325,55 @@ func (m *Manager) inspectDigest(ctx context.Context, containerName, imageRef str
 	return ""
 }
 
-func (m *Manager) verifyContainerHealthy(ctx context.Context, containerName string) error {
-	out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{.State.Status}}", containerName)
-	if err != nil {
-		return fmt.Errorf("failed to inspect container %s: %w", containerName, err)
+func (m *Manager) verifyContainerHealthy(ctx context.Context, containerName string, svcName string) error {
+	timeoutSec := 60
+	if m.cfg != nil && m.cfg.Updater.DeadManTimeoutSeconds > 0 {
+		timeoutSec = m.cfg.Updater.DeadManTimeoutSeconds
 	}
-	status := strings.TrimSpace(string(out))
-	if status != "running" && status != "ok" {
-		return fmt.Errorf("container %s state is %q (expected running)", containerName, status)
+	poll := m.pollInterval
+	if poll <= 0 {
+		poll = 2 * time.Second
 	}
-	return nil
+	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
+
+	for {
+		out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{.State.Status}}", containerName)
+		if err != nil {
+			return fmt.Errorf("failed to inspect container %s: %w", containerName, err)
+		}
+		raw := strings.TrimSpace(string(out))
+
+		var stateObj struct {
+			Status       string `json:"Status"`
+			Restarting   bool   `json:"Restarting"`
+			HealthStatus string `json:"HealthStatus"`
+		}
+		if strings.HasPrefix(raw, "{") && json.Unmarshal([]byte(raw), &stateObj) == nil {
+			if stateObj.Restarting || (stateObj.Status != "running" && stateObj.Status != "ok") {
+				return fmt.Errorf("container %s state is %q (restarting=%v)", containerName, stateObj.Status, stateObj.Restarting)
+			}
+			if stateObj.HealthStatus == "unhealthy" {
+				return fmt.Errorf("container %s healthcheck reported unhealthy", containerName)
+			}
+			if stateObj.HealthStatus == "" || stateObj.HealthStatus == "healthy" {
+				return nil
+			}
+		} else {
+			if raw != "running" && raw != "ok" {
+				return fmt.Errorf("container %s state is %q (expected running)", containerName, raw)
+			}
+			return nil
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("container %s did not become healthy within %ds", containerName, timeoutSec)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(poll):
+		}
+	}
 }
 
 func (m *Manager) isCriticalService(svcName string) bool {

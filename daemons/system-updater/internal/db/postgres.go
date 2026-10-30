@@ -140,11 +140,22 @@ duration_ms = EXCLUDED.duration_ms;`,
 }
 
 func (p *PostgresBackend) InsertTaskLog(ctx context.Context, l models.TaskLogLine) error {
-	sql := fmt.Sprintf(`INSERT INTO task_logs (task_id, seq, logged_at, stream, line)
-VALUES (%s, %d, %s, %s, %s)
-ON CONFLICT (task_id, seq) DO NOTHING;`,
-		quoteLiteral(l.TaskID), l.Seq, quoteLiteral(l.LoggedAt.Format(time.RFC3339Nano)),
-		quoteLiteral(l.Stream), quoteLiteral(l.Line))
+	return p.InsertTaskLogsBatch(ctx, []models.TaskLogLine{l})
+}
+
+func (p *PostgresBackend) InsertTaskLogsBatch(ctx context.Context, lines []models.TaskLogLine) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	var values []string
+	for _, l := range lines {
+		lineB64 := base64.StdEncoding.EncodeToString([]byte(l.Line))
+		values = append(values, fmt.Sprintf("(%s, %d, %s, %s, convert_from(decode(%s, 'base64'), 'UTF8'))",
+			quoteLiteral(l.TaskID), l.Seq, quoteLiteral(l.LoggedAt.Format(time.RFC3339Nano)),
+			quoteLiteral(l.Stream), quoteLiteral(lineB64)))
+	}
+	sql := fmt.Sprintf("INSERT INTO task_logs (task_id, seq, logged_at, stream, line) VALUES %s ON CONFLICT (task_id, seq) DO NOTHING;",
+		strings.Join(values, ", "))
 	return p.execSQL(sql)
 }
 

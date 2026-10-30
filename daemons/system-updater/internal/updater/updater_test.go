@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jaewoook/system-updater/internal/config"
 	"github.com/jaewoook/system-updater/internal/db"
@@ -70,6 +71,28 @@ AUTHENTIK_TAG=2026.5.3
 	}
 	if !strings.Contains(string(npmOut), "'jc21/nginx-proxy-manager:2.11.3'") {
 		t.Fatalf("expected quoted tag updated to 2.11.3, got: %s", string(npmOut))
+	}
+
+	// Test multi-service compose file (like services/iot/compose.yml) updates ONLY the targeted serviceKey
+	iotCompose := filepath.Join(dir, "iot-compose.yml")
+	iotOriginal := `services:
+  homeassistant:
+    image: homeassistant/home-assistant:2026.9.4
+    container_name: homeassistant
+  matter-hub:
+    image: ghcr.io/riddix/home-assistant-matter-hub:2.0.57
+    container_name: matter-hub
+`
+	_ = os.WriteFile(iotCompose, []byte(iotOriginal), 0644)
+	iotOut, _, err := UpdateFileTag(iotCompose, "", "matter-hub", "2.0.60")
+	if err != nil {
+		t.Fatalf("UpdateFileTag(iot) failed: %v", err)
+	}
+	if !strings.Contains(string(iotOut), "homeassistant/home-assistant:2026.9.4") {
+		t.Fatalf("expected homeassistant tag to remain 2026.9.4 when updating matter-hub, got:\n%s", string(iotOut))
+	}
+	if !strings.Contains(string(iotOut), "ghcr.io/riddix/home-assistant-matter-hub:2.0.60") {
+		t.Fatalf("expected matter-hub tag updated to 2.0.60, got:\n%s", string(iotOut))
 	}
 }
 
@@ -159,3 +182,33 @@ func TestManager_RunUpdateSync_DeadManRollbackOnFailure(t *testing.T) {
 		t.Fatalf("expected rollback to re-tag previous digest sha256:4a91f8c0, commands were: %v", runner.cmds)
 	}
 }
+
+func TestManager_VerifyContainerHealthy_PollsUntilHealthyAndChecksUnhealthy(t *testing.T) {
+	ctx := context.Background()
+	cfg := config.DefaultConfig()
+	cfg.Updater.DeadManTimeoutSeconds = 2
+
+	attempts := 0
+	runner := &recordingRunner{
+		handler: func(cmdLine string) ([]byte, error) {
+			if strings.Contains(cmdLine, "docker inspect") {
+				attempts++
+				if attempts < 3 {
+					return []byte(`{"Status":"running","Restarting":false,"HealthStatus":"starting"}`), nil
+				}
+				return []byte(`{"Status":"running","Restarting":false,"HealthStatus":"healthy"}`), nil
+			}
+			return []byte("ok"), nil
+		},
+	}
+
+	mgr := NewManager(cfg, nil, runner, nil)
+	mgr.pollInterval = 10 * time.Millisecond
+	if err := mgr.verifyContainerHealthy(ctx, "postgresql", "db"); err != nil {
+		t.Fatalf("expected polling to succeed once container transitions starting->healthy, got: %v", err)
+	}
+	if attempts < 3 {
+		t.Fatalf("expected at least 3 poll attempts, got %d", attempts)
+	}
+}
+

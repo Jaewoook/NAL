@@ -10,10 +10,14 @@ import (
 var (
 	trailingEnvTagRe = regexp.MustCompile(`^(.*):\$\{([A-Za-z0-9_]+)(:-|-)?([^}]*)\}$`)
 	imageLineRe      = regexp.MustCompile(`^(\s*image:\s*)(['"]?)([^'"\s#]+)(['"]?)(\s*(?:#.*)?)$`)
+	serviceHeaderRe  = regexp.MustCompile(`^  ([A-Za-z0-9_.-]+):\s*(?:#.*)?$`)
+	topLevelHeaderRe = regexp.MustCompile(`^([A-Za-z0-9_.-]+):\s*(?:#.*)?$`)
 )
 
 // UpdateFileTag surgically updates the image tag in compose.yml and/or .env
-// without re-serializing YAML or stripping comments.
+// without re-serializing YAML or stripping comments. When serviceKey is set,
+// only that service (and any sibling service in the same file sharing the exact
+// same image expression, such as authentik server + worker) is updated.
 func UpdateFileTag(composePath, envPath, serviceKey, targetTag string) (updatedCompose []byte, updatedEnv []byte, err error) {
 	rawCompose, err := os.ReadFile(composePath)
 	if err != nil {
@@ -25,14 +29,63 @@ func UpdateFileTag(composePath, envPath, serviceKey, targetTag string) (updatedC
 	}
 
 	lines := strings.Split(string(rawCompose), "\n")
+
+	// First pass: find the image expression for serviceKey if specified
+	var targetExpr string
+	inServices := false
+	currentSvc := ""
+	for _, line := range lines {
+		if top := topLevelHeaderRe.FindStringSubmatch(line); len(top) == 2 {
+			inServices = (top[1] == "services")
+			currentSvc = ""
+			continue
+		}
+		if inServices {
+			if sh := serviceHeaderRe.FindStringSubmatch(line); len(sh) == 2 {
+				currentSvc = sh[1]
+				continue
+			}
+			if m := imageLineRe.FindStringSubmatch(line); len(m) > 0 {
+				if serviceKey != "" && currentSvc == serviceKey {
+					targetExpr = m[3]
+					break
+				}
+			}
+		}
+	}
+
 	var envVarToUpdate string
+	inServices = false
+	currentSvc = ""
 
 	for i, line := range lines {
+		if top := topLevelHeaderRe.FindStringSubmatch(line); len(top) == 2 {
+			inServices = (top[1] == "services")
+			currentSvc = ""
+			continue
+		}
+		if inServices {
+			if sh := serviceHeaderRe.FindStringSubmatch(line); len(sh) == 2 {
+				currentSvc = sh[1]
+				continue
+			}
+		}
+
 		m := imageLineRe.FindStringSubmatch(line)
 		if len(m) == 0 {
 			continue
 		}
 		prefix, quoteOpen, expr, quoteClose, trailing := m[1], m[2], m[3], m[4], m[5]
+
+		if serviceKey != "" {
+			if targetExpr != "" {
+				if expr != targetExpr {
+					continue
+				}
+			} else if currentSvc != serviceKey {
+				continue
+			}
+		}
 
 		// Case 1: Image expression ends with `:${VAR:-default}` or `:${VAR-default}`
 		if sub := trailingEnvTagRe.FindStringSubmatch(expr); len(sub) == 5 {

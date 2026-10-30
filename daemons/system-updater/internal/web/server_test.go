@@ -131,4 +131,35 @@ func TestServer_AuthDashboardSkipAndSSELogs(t *testing.T) {
 	if sseW.Code != http.StatusOK || !strings.Contains(sseW.Body.String(), "Upgrading openssl@3...") {
 		t.Fatalf("expected SSE stream to contain task log line, got %d: %s", sseW.Code, sseW.Body.String())
 	}
+
+	// 6. Live SSE stream when task is still running and finishes AFTER the last AppendTaskLog
+	liveTask, _ := store.CreateTask(context.Background(), &models.Task{
+		TaskType:   "docker_update",
+		TargetType: "docker",
+		TargetName: "cloudflare-tunnel",
+		Status:     "running",
+	})
+	go func() {
+		time.Sleep(25 * time.Millisecond)
+		_, _ = store.AppendTaskLog(context.Background(), liveTask.ID, "info", "Live log line 1")
+		time.Sleep(15 * time.Millisecond)
+		_ = store.FinishTask(context.Background(), liveTask.ID, "succeeded", "")
+	}()
+
+	liveReq := httptest.NewRequest(http.MethodGet, "/api/tasks/"+liveTask.ID+"/stream", nil)
+	liveReq.AddCookie(sessionCookie)
+	liveW := httptest.NewRecorder()
+	doneCh := make(chan struct{})
+	go func() {
+		h.ServeHTTP(liveW, liveReq)
+		close(doneCh)
+	}()
+	select {
+	case <-doneCh:
+		if !strings.Contains(liveW.Body.String(), "Live log line 1") || !strings.Contains(liveW.Body.String(), "event: done") {
+			t.Fatalf("expected live SSE stream to include log line and event: done, got: %s", liveW.Body.String())
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("SSE live stream deadlocked after FinishTask was called")
+	}
 }

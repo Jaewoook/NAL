@@ -182,15 +182,20 @@ func (e *EoLChecker) fetchProductReleases(ctx context.Context, product string) m
 	}
 	defer resp.Body.Close()
 
+	type relItem struct {
+		Name    string `json:"name"`
+		EoLFrom string `json:"eolFrom"`
+	}
 	var payload struct {
-		Result struct {
-			Releases []struct {
-				Name    string `json:"name"`
-				EoLFrom string `json:"eolFrom"`
-			} `json:"releases"`
+		Releases []relItem `json:"releases"`
+		Result   struct {
+			Releases []relItem `json:"releases"`
 		} `json:"result"`
 	}
 	if json.NewDecoder(resp.Body).Decode(&payload) == nil {
+		for _, rel := range payload.Releases {
+			out[rel.Name] = rel.EoLFrom
+		}
 		for _, rel := range payload.Result.Releases {
 			out[rel.Name] = rel.EoLFrom
 		}
