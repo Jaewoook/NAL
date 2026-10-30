@@ -1,0 +1,8 @@
+/system-updater
+config.yaml
+config.yml
+.env
+data/
+*.swp
+*.log
+*.log.*
