@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jaewoook/system-updater/internal/models"
 )
 
 type roundTripFunc func(req *http.Request) (*http.Response, error)
@@ -185,3 +188,116 @@ func TestBrewScanner_OutdatedAndBrokenLinkage(t *testing.T) {
 		t.Fatalf("expected node@22 to be flagged with broken linkage libsimdjson.33.dylib, got %+v", nodeItem)
 	}
 }
+
+func TestVulnScanner_OSVAndTrivyAndEoLAndSecurityOverride(t *testing.T) {
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			u := req.URL.String()
+			switch {
+			case strings.Contains(u, "osv.dev"):
+				return &http.Response{
+					StatusCode: 200,
+					Body: io.NopCloser(strings.NewReader(`{
+						"results": [
+							{
+								"vulns": [
+									{
+										"id": "GHSA-cf-compromise-2026",
+										"summary": "Cloudflare tunnel critical compromise",
+										"database_specific": {"severity": "CRITICAL"},
+										"affected": [{"ranges": [{"events": [{"introduced": "0"}, {"fixed": "2026.10.2"}]}]}]
+									}
+								]
+							},
+							{"vulns": []}
+						]
+					}`)),
+					Header: make(http.Header),
+				}, nil
+			case strings.HasSuffix(u, "/products/postgresql"):
+				return &http.Response{
+					StatusCode: 200,
+					Body: io.NopCloser(strings.NewReader(`{
+						"result": {
+							"releases": [
+								{"name": "16", "eolFrom": "2028-11-09"}
+							]
+						}
+					}`)),
+					Header: make(http.Header),
+				}, nil
+			case strings.HasSuffix(u, "/products/authentik"):
+				return &http.Response{
+					StatusCode: 200,
+					Body: io.NopCloser(strings.NewReader(`{
+						"result": {
+							"releases": [
+								{"name": "2026.5", "eolFrom": "2026-11-18"}
+							]
+						}
+					}`)),
+					Header: make(http.Header),
+				}, nil
+			default:
+				return &http.Response{
+					StatusCode: 404,
+					Body:       io.NopCloser(strings.NewReader(`{}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+		}),
+	}
+
+	items := []models.ManagedItem{
+		{
+			TargetType:     models.TargetDocker,
+			Name:           "cloudflare-tunnel",
+			ImageRef:       "cloudflare/cloudflared:2026.8.0",
+			CurrentVersion: "2026.8.0",
+			LatestVersion:  "2026.10.2",
+			Outdated:       true,
+		},
+		{
+			TargetType:     models.TargetDocker,
+			Name:           "auth",
+			ImageRef:       "ghcr.io/goauthentik/server:2026.5.3",
+			CurrentVersion: "2026.5.3",
+			LatestVersion:  "2026.5.5",
+			Outdated:       true,
+		},
+	}
+
+	vs := NewVulnScanner("https://api.osv.dev/v1/querybatch", httpClient, nil)
+	if err := vs.CheckVulnerabilities(context.Background(), items); err != nil {
+		t.Fatalf("CheckVulnerabilities failed: %v", err)
+	}
+	if items[0].CritCount != 1 || len(items[0].Vulnerabilities) != 1 || items[0].Vulnerabilities[0].FixedVersion != "2026.10.2" {
+		t.Fatalf("expected 1 critical CVE on cloudflare-tunnel fixed in 2026.10.2, got %+v", items[0])
+	}
+
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	ec := NewEoLChecker("https://endoflife.date/api/v1/products", httpClient)
+	if err := ec.CheckEoL(context.Background(), items, now, 30); err != nil {
+		t.Fatalf("CheckEoL failed: %v", err)
+	}
+	if items[0].EoL.Status != models.EoLSupported {
+		t.Fatalf("expected cloudflared 2026.8.0 to be supported within 1yr window, got %+v", items[0].EoL)
+	}
+	if items[1].EoL.Status != models.EoLExpiringSoon || items[1].EoL.DaysRemaining != 19 {
+		t.Fatalf("expected authentik 2026.5.3 to be expiring_soon with 19 days remaining, got %+v", items[1].EoL)
+	}
+
+	// Verify SecurityOverride when a version is skipped but current version has a CRITICAL CVE
+	skippedMap := map[string]string{
+		"docker:cloudflare-tunnel": "2026.10.2",
+		"docker:auth":              "2026.5.5",
+	}
+	ApplySkippedAndSummarize(items, skippedMap)
+	if !items[0].SecurityOverride || items[0].Skipped || !items[0].Outdated {
+		t.Fatalf("expected SecurityOverride on cloudflare-tunnel due to CRITICAL CVE, got %+v", items[0])
+	}
+	if !items[1].Skipped || items[1].Outdated {
+		t.Fatalf("expected auth 2026.5.5 (0 CVEs) to be marked Skipped and not Outdated, got %+v", items[1])
+	}
+}
+
