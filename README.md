@@ -18,15 +18,24 @@ Conceptual overview of access paths, security boundaries, compute services, and 
 
 All infrastructure is running on the following hardwares.
 
-### Apple Mac Mini
+### Apple Mac Mini (Axis)
 
+- Role: Ingress Gateway & Container Virtualization Host
 - Processor: Apple M2
-- RAM: 16GM
+- RAM: 16GB
 - Storage: 256GB SSD
 - Network: 1Gbps wired connection
 
+### Apple Mac Studio (Atlas)
+
+- Role: Dedicated Local LLM Compute Server
+- Processor: Apple M5 Max
+- RAM: 64GB
+- Storage: 1TB SSD
+
 ### Synology DS925+
 
+- Role: Central Persistence & Storage (NAS)
 - Processor: AMD Ryzen V1500B
 - RAM: 4GB
 - Storage: 32TB HDD
@@ -57,12 +66,13 @@ Start, stop, or restart one or more services with:
 
 | Service          | Endpoint | Description | Status |
 | ---------------- | :------: | ----------- | :----: |
-| VPN              | N/A | Wireguard VPN Proxy | Stable |
+| VPN              | N/A | Wireguard VPN Proxy | Deprecated |
 | DDNS             | N/A | Cloudflare DDNS Daemon | Stable |
 | Tunnel           | N/A | Cloudflare Tunnel Daemon | Stable |
 | Proxy            | <ul><li>https://nginx.jaewook.dev</li><ul>   | Nginx web management console | Stable |
 | Virt             | <ul><li>https://docker.jaewook.dev</li></ul> | Docker stack management console | Stable |
 | LLM              | <ul><li>https://llm.jaewook.dev</li><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM web service ([`services/llm`](./services/llm)) | Experimental |
+| Remote Desktop   | <ul><li>https://remote.jaewook.dev</li></ul> | Apache Guacamole clientless remote desktop gateway for Atlas ([`services/remote`](./services/remote)) | Experimental |
 | Auth             | <ul><li>https://auth.jaewook.dev</li></ul> | Authenticate/Authorize + LDAP | Stable |
 | DB               | N/A | Shared PostgreSQL database server | Work in progress |
 | Homebrew NAL Tap | <ul><li>https://homebrew-nal.jaewook.dev</li></ul> | [Homebrew tap](https://github.com/Jaewoook/homebrew-nal) registry | Stable |
@@ -134,7 +144,7 @@ data → `./manage-services.sh start all`.
 
 ## Daemons (Host-Level Background Services)
 
-Unlike Docker services running inside the container virtualization layer, daemons run natively on the physical Mac mini host to monitor hardware, OS metrics, and external reachability directly.
+Unlike Docker services running inside the container virtualization layer, daemons run natively on the physical Mac mini (Axis) host to monitor hardware, OS metrics, and external reachability directly.
 
 | Daemon | Path | Description | Management |
 | :--- | :--- | :--- | :--- |
