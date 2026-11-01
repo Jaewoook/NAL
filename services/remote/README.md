@@ -109,10 +109,12 @@ GUACAMOLE_DB_PASS=<your_secure_password>
 
 GUACAMOLE_OIDC_CLIENT_ID=nal-guacamole
 OPENID_AUTHORIZATION_ENDPOINT=https://auth.jaewook.dev/application/o/authorize/
-OPENID_JWKS_ENDPOINT=https://auth.jaewook.dev/application/o/remote-desktop/jwks/
+OPENID_JWKS_ENDPOINT=http://authentik-server:9000/application/o/remote-desktop/jwks/
 OPENID_ISSUER=https://auth.jaewook.dev/application/o/remote-desktop/
 OPENID_REDIRECT_URI=https://remote.jaewook.dev/
 ```
+
+> **Note on `OPENID_JWKS_ENDPOINT`:** This is fetched server-side by Guacamole's Java backend to verify JWT tokens. Using the internal Docker service URL `http://authentik-server:9000/...` avoids Cloudflare WAF / Browser Integrity Check blocking the Java User-Agent with HTTP 403 (Error 1010). The browser-facing `OPENID_AUTHORIZATION_ENDPOINT` and `OPENID_REDIRECT_URI` remain public HTTPS URLs.
 
 ---
 
