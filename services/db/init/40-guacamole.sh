@@ -21,6 +21,8 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
 
     SELECT 'CREATE DATABASE ${GUACAMOLE_DB_NAME:-guacamole_db} OWNER ${GUACAMOLE_DB_USER:-guacamole}'
     WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${GUACAMOLE_DB_NAME:-guacamole_db}')\gexec
+
+    ALTER USER "${GUACAMOLE_DB_USER:-guacamole}" WITH PASSWORD '${GUACAMOLE_DB_PASS:-guacamole_pass}';
 EOSQL
 
 # 2. Grant initial database and schema permissions
