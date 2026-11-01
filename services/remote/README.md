@@ -89,7 +89,7 @@ GUACAMOLE_DB_PASS=<your_secure_password>
 If the PostgreSQL container is already running with an existing data volume, execute the provisioning script manually:
 ```bash
 # From repository root:
-docker exec -i postgresql /bin/bash < services/db/init/40-guacamole.sh
+docker exec -i postgresql /docker-entrypoint-initdb.d/40-guacamole.sh
 ```
 This script will:
 - Create the `guacamole` role and `guacamole_db` database.
@@ -158,7 +158,12 @@ Guacamole requires full WebSocket pass-through for low-latency interactive strea
    - **Force SSL:** `ON`
    - **HTTP/2 Support:** `ON`
    - **HSTS Enabled:** `ON`
-4. Click **Save**.
+4. Under the **Advanced** tab (**Custom Nginx Configuration**):
+   Add the following directive (*Mandatory: disables response buffering so desktop video streams render with zero stutter*):
+   ```nginx
+   proxy_buffering off;
+   ```
+5. Click **Save**.
 
 ---
 
@@ -201,6 +206,8 @@ Configure Screen Sharing on the Mac Studio:
    - Save.
 
 > **Auto-Connect Behavior:** When a user is permitted to access exactly **one** connection, Apache Guacamole automatically launches that desktop upon login without displaying the intermediate connection list.
+
+> **Security Hardening:** The initial Guacamole database schema creates a fallback administrative user `guacadmin` with password `guacadmin`. Once you have verified your Authentik SSO administrator login as `jaewook`, navigate to **Settings** -> **Users** and either change the password for `guacadmin` to a strong random passphrase or disable the user.
 
 ---
 

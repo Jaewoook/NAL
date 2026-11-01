@@ -31,6 +31,10 @@ services:
       POSTGRESQL_DATABASE: ${GUACAMOLE_DB_NAME:-guacamole_db}
       POSTGRESQL_USER: ${GUACAMOLE_DB_USER:-guacamole}
       POSTGRESQL_PASSWORD: ${GUACAMOLE_DB_PASS:?database password required}
+      POSTGRESQL_AUTO_CREATE_ACCOUNTS: "true"
+
+      # Authentication Extension Priority (Redirect to Authentik immediately)
+      EXTENSION_PRIORITY: "openid, *"
 
       # Authentik OpenID Connect Configuration
       OPENID_AUTHORIZATION_ENDPOINT: ${OPENID_AUTHORIZATION_ENDPOINT:-https://auth.jaewook.dev/application/o/authorize/}
@@ -46,7 +50,7 @@ services:
     expose:
       - 8080
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

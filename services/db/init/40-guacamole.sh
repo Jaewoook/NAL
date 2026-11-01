@@ -1,8 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+elif [[ -d "/docker-entrypoint-initdb.d" ]]; then
+    SCRIPT_DIR="/docker-entrypoint-initdb.d"
+else
+    SCRIPT_DIR="$(pwd)"
+fi
+
 SCHEMA_FILE="${SCRIPT_DIR}/40-guacamole-schema.sql.inc"
+if [[ ! -f "$SCHEMA_FILE" && -f "/docker-entrypoint-initdb.d/40-guacamole-schema.sql.inc" ]]; then
+    SCHEMA_FILE="/docker-entrypoint-initdb.d/40-guacamole-schema.sql.inc"
+fi
 
 # 1. Create dedicated user and database
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
@@ -43,9 +53,16 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${GUACAMOLE_DB_NAM
     WHERE name = 'jaewook' AND type = 'USER'
     ON CONFLICT (entity_id) DO NOTHING;
 
-    -- Grant system administrator permissions
+    -- Grant comprehensive system administrator permissions
     INSERT INTO guacamole_system_permission (entity_id, permission)
-    SELECT entity_id, 'ADMINISTER'
+    SELECT entity_id, unnest(ARRAY[
+        'ADMINISTER',
+        'CREATE_CONNECTION',
+        'CREATE_CONNECTION_GROUP',
+        'CREATE_SHARING_PROFILE',
+        'CREATE_USER',
+        'CREATE_USER_GROUP'
+    ]::guacamole_system_permission_type[])
     FROM guacamole_entity
     WHERE name = 'jaewook' AND type = 'USER'
     ON CONFLICT (entity_id, permission) DO NOTHING;
