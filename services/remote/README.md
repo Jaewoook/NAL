@@ -109,8 +109,8 @@ GUACAMOLE_DB_PASS=<your_secure_password>
 
 GUACAMOLE_OIDC_CLIENT_ID=nal-guacamole
 OPENID_AUTHORIZATION_ENDPOINT=https://auth.jaewook.dev/application/o/authorize/
-OPENID_JWKS_ENDPOINT=https://auth.jaewook.dev/application/o/guacamole/jwks/
-OPENID_ISSUER=https://auth.jaewook.dev/application/o/guacamole/
+OPENID_JWKS_ENDPOINT=https://auth.jaewook.dev/application/o/remote-desktop/jwks/
+OPENID_ISSUER=https://auth.jaewook.dev/application/o/remote-desktop/
 OPENID_REDIRECT_URI=https://remote.jaewook.dev/
 ```
 
@@ -134,7 +134,7 @@ Guacamole uses the OpenID Connect implicit/PKCE flow to authenticate tokens via 
 3. Click **Finish**.
 4. Navigate to **Applications** -> **Applications** -> Click **Create**:
    - **Name:** `Remote Desktop`
-   - **Slug:** `guacamole`
+   - **Slug:** `remote-desktop`
    - **Provider:** `NAL Remote Desktop`
    - **Launch URL:** `https://remote.jaewook.dev/`
 
