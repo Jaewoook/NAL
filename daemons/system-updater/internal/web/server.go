@@ -119,7 +119,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) buildNodesOverview(ctx context.Context) []models.NodeInfo {
-	hubName := "Axis"
+	hubName := config.DefaultNodeName()
 	if s.cfg != nil && s.cfg.NodeName != "" {
 		hubName = s.cfg.NodeName
 	}
@@ -201,7 +201,7 @@ func (s *Server) requireAgentToken(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) handleAgentInfo(w http.ResponseWriter, r *http.Request) {
-	nodeName := "Atlas"
+	nodeName := config.DefaultNodeName()
 	if s.cfg != nil && s.cfg.NodeName != "" {
 		nodeName = s.cfg.NodeName
 	}
@@ -224,7 +224,7 @@ func (s *Server) handleAgentScan(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	nodeName := "Atlas"
+	nodeName := config.DefaultNodeName()
 	if s.cfg != nil && s.cfg.NodeName != "" {
 		nodeName = s.cfg.NodeName
 	}
@@ -310,7 +310,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	skipped, _ := s.store.ListSkippedVersions(ctx)
 	snapshots, _ := s.store.ListSnapshots(ctx)
-	hubName := "Axis"
+	hubName := config.DefaultNodeName()
 	if s.cfg != nil && s.cfg.NodeName != "" {
 		hubName = s.cfg.NodeName
 	}

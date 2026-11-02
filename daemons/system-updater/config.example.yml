@@ -2,7 +2,8 @@
 # NAL System Updater & Security Scanner - Configuration Example
 # ==============================================================================
 
-node_name: "Axis"
+# Leave node_name empty to auto-detect from system hostname, or set an explicit name
+node_name: ""
 agent_token: "replace-with-shared-lan-agent-secret"
 
 web:

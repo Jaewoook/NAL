@@ -25,14 +25,15 @@ A zero-dependency, single-binary host-level system updater, CVE vulnerability sc
 - **Resilient Task Logs in `services/db` with Local Spooling:**
   - Streams live task logs over SSE and persists all task logs to `services/db` (`system_updater` database).
   - Always writes to a local write-ahead spool (`daemons/system-updater/data/`) first—if PostgreSQL is down or upgrading, logs are served from the local spool and flushed to PostgreSQL automatically once `postgresql` is healthy again.
-- **Multi-Server Hub $\rightarrow$ Agent Architecture (`Axis`, `Atlas`, & Dynamic Nodes):**
-  - Manage multiple machines from a single dashboard on **Axis** (Mac mini M2 Hub) while running lightweight LAN agents (`./system-updater agent`) on **Atlas** (Mac Studio M5 Max LLM Server) or any future nodes.
+- **Multi-Server Hub $\rightarrow$ Agent Architecture:**
+  - Manage multiple machines from a single Hub dashboard while running lightweight LAN agents (`./system-updater agent`) on remote compute nodes.
+  - Node names auto-detect from the host's system hostname (`os.Hostname()`) by default, or can be explicitly set via `node_name` in `config.yml`, `UPDATER_NODE_NAME`, or `-name <node-name>`.
   - Dynamically add or remove compute nodes at any time via the Web UI (**⚙ Manage Nodes**) or CLI (`./system-updater node add|list|remove`).
-  - **Graceful Component Auto-Detection:** Automatically skips uninstalled or stopped components on each machine (e.g., if Docker is not installed or stopped on `Atlas`, only Homebrew, `ollama`, and macOS updates are scanned without error).
+  - **Graceful Component Auto-Detection:** Automatically skips uninstalled or stopped components on each machine (e.g., if Docker is not installed or stopped on a remote node, only Homebrew, `ollama`, and macOS updates are scanned without error).
 
 ---
 
-## Quick Start (Hub on `Axis`)
+## Quick Start (Hub)
 
 ```bash
 cd daemons/system-updater
@@ -49,22 +50,22 @@ go build -o system-updater ./cmd/system-updater
 # 4. Generate a 5-minute break-glass login link for initial setup
 ./system-updater auth login-link
 
-# 5. Start the web dashboard & background scanner on Axis (default port 10246)
+# 5. Start the web dashboard & background scanner (default port 10246)
 ./system-updater run
 ```
 
-## Multi-Node Setup (Adding `Atlas` or Future Servers)
+## Multi-Node Setup (Adding Remote Agents)
 
-1. **On `Atlas` (Mac Studio LLM Server):**
+1. **On the Remote Compute Node:**
    ```bash
    cd daemons/system-updater
    go build -o system-updater ./cmd/system-updater
-   ./system-updater agent -name Atlas -port 10247 -token "<shared-lan-secret>"
+   ./system-updater agent -name <node-name> -port 10247 -token "<shared-lan-secret>"
    ```
-2. **On `Axis` (Mac mini Hub) — via Web UI or CLI:**
-   - **Web UI:** Click **⚙ Manage Nodes** $\rightarrow$ Enter `Atlas`, `http://<atlas-lan-ip>:10247`, and `<shared-lan-secret>`.
+2. **On the Hub — via Web UI or CLI:**
+   - **Web UI:** Click **⚙ Manage Nodes** $\rightarrow$ Enter `<node-name>`, `http://<agent-lan-ip>:10247`, and `<shared-lan-secret>`.
    - **CLI:**
      ```bash
-     ./system-updater node add Atlas http://192.168.1.50:10247 -token "<shared-lan-secret>"
+     ./system-updater node add <node-name> http://<agent-lan-ip>:10247 -token "<shared-lan-secret>"
      ./system-updater node list
      ```

@@ -35,7 +35,7 @@ async function loadDashboard() {
 function getFilteredItems() {
   const all = (dashboardData && dashboardData.scan && dashboardData.scan.items) || [];
   if (currentNodeFilter === 'all') return all;
-  return all.filter(i => (i.node || dashboardData.hub_node || 'Axis') === currentNodeFilter);
+  return all.filter(i => (i.node || dashboardData.hub_node || 'local') === currentNodeFilter);
 }
 
 function selectNodeFilter(nodeName) {
@@ -49,7 +49,7 @@ function selectNodeFilter(nodeName) {
 function renderNodeBar() {
   const container = document.getElementById('node-pills-container');
   if (!container) return;
-  const nodes = (dashboardData && dashboardData.nodes) || [{name: 'Axis', role: 'hub', online: true}];
+  const nodes = (dashboardData && dashboardData.nodes) || [{name: (dashboardData && dashboardData.hub_node) || 'local', role: 'hub', online: true}];
   let html = `<button class="node-pill ${currentNodeFilter === 'all' ? 'active' : ''}" onclick='selectNodeFilter("all")'>All Nodes (${nodes.length})</button>`;
   nodes.forEach(n => {
     const dot = n.online ? 'green' : 'amber';
@@ -125,7 +125,7 @@ function renderItemsTable() {
   }
 
   items.forEach((item, idx) => {
-    const nodeName = item.node || (dashboardData && dashboardData.hub_node) || 'Axis';
+    const nodeName = item.node || (dashboardData && dashboardData.hub_node) || 'local';
     const tr = document.createElement('tr');
     const dotClass = (item.crit_count > 0 || item.broken_linkage || item.eol?.status === 'expired') ? 'red'
       : (item.high_count > 0 || item.eol?.status === 'expiring_soon' || item.outdated) ? 'amber' : 'green';
@@ -198,7 +198,7 @@ function renderItemsTable() {
 function openUpdateModal(item, selectId) {
   const sel = document.getElementById(selectId);
   const targetVer = sel ? sel.value : item.latest_version;
-  const nodeName = item.node || (dashboardData && dashboardData.hub_node) || 'Axis';
+  const nodeName = item.node || (dashboardData && dashboardData.hub_node) || 'local';
   pendingUpdateReq = {
     node: nodeName,
     target_type: item.target_type,
@@ -283,7 +283,7 @@ async function saveRemoteNode() {
   const url = document.getElementById('inp-node-url').value.trim();
   const token = document.getElementById('inp-node-token').value.trim();
   if (!name || !url) {
-    alert('Please provide both the device name (e.g., Atlas) and the LAN Agent URL.');
+    alert('Please provide both the device name and the LAN Agent URL.');
     return;
   }
   await fetch('/api/nodes', {

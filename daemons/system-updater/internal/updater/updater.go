@@ -99,7 +99,7 @@ func (m *Manager) logStep(ctx context.Context, taskID, stream, msg string) {
 }
 
 func (m *Manager) RunUpdateSync(ctx context.Context, taskID string, req UpdateRequest) error {
-	localNode := "Axis"
+	localNode := config.DefaultNodeName()
 	if m.cfg != nil && m.cfg.NodeName != "" {
 		localNode = m.cfg.NodeName
 	}
@@ -344,7 +344,7 @@ func (m *Manager) RollbackService(ctx context.Context, serviceName, triggeredBy 
 }
 
 func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceName, triggeredBy string) (*models.Task, error) {
-	localNode := "Axis"
+	localNode := config.DefaultNodeName()
 	if m.cfg != nil && m.cfg.NodeName != "" {
 		localNode = m.cfg.NodeName
 	}

@@ -187,15 +187,13 @@ func runCLI(args []string, out io.Writer) int {
 
 	case "agent":
 		fs := flag.NewFlagSet("agent", flag.ContinueOnError)
-		nameFlag := fs.String("name", "", "Node name (e.g., Atlas)")
+		nameFlag := fs.String("name", "", "Node name (defaults to system hostname)")
 		hostFlag := fs.String("host", "", "Bind host (default 0.0.0.0)")
 		portFlag := fs.Int("port", 10247, "Agent bind port (default 10247)")
 		tokenFlag := fs.String("token", "", "Shared X-NAL-Node-Token secret")
 		_ = fs.Parse(rest)
 		if *nameFlag != "" {
 			cfg.NodeName = *nameFlag
-		} else if cfg.NodeName == "" || cfg.NodeName == "Axis" {
-			cfg.NodeName = "Atlas"
 		}
 		if *hostFlag != "" {
 			cfg.Web.Host = *hostFlag
@@ -387,8 +385,8 @@ func printUsage(out io.Writer) {
   system-updater <command> [flags]
 
 Commands:
-  run                Run the Hub scanner, spool syncer, and web dashboard (default: Axis)
-  agent              Run the lightweight LAN Agent on a compute node (e.g., Atlas)
+  run                Run the Hub scanner, spool syncer, and web dashboard
+  agent              Run the lightweight LAN Agent on a remote compute node
   node <action>      Manage registered compute nodes (add, list, remove)
   scan               Run an immediate multi-node Docker, Homebrew, CVE, and EoL scan
   rollback <service> Roll back a Docker service to its previous snapshot

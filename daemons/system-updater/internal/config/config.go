@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -84,9 +85,16 @@ type Config struct {
 	Logging       LoggingConfig       `yaml:"logging"`
 }
 
+func DefaultNodeName() string {
+	if h, err := os.Hostname(); err == nil && strings.TrimSpace(h) != "" {
+		return strings.TrimSuffix(strings.TrimSpace(h), ".local")
+	}
+	return "local"
+}
+
 func DefaultConfig() *Config {
 	return &Config{
-		NodeName: "Axis",
+		NodeName: DefaultNodeName(),
 		Web: WebConfig{
 			Host:      "0.0.0.0",
 			Port:      10246,
@@ -244,8 +252,8 @@ func ApplyEnvOverrides(cfg *Config) {
 }
 
 func ValidateAndApplyDefaults(cfg *Config) {
-	if cfg.NodeName == "" {
-		cfg.NodeName = "Axis"
+	if strings.TrimSpace(cfg.NodeName) == "" {
+		cfg.NodeName = DefaultNodeName()
 	}
 	if cfg.Web.Port <= 0 {
 		cfg.Web.Port = 10246

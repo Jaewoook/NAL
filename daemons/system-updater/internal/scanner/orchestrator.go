@@ -87,7 +87,7 @@ func ApplySkippedAndSummarize(items []models.ManagedItem, skipped map[string]str
 func (o *Orchestrator) ScanLocalNode(ctx context.Context) ([]models.ManagedItem, error) {
 	nodeName := o.cfg.NodeName
 	if nodeName == "" {
-		nodeName = "Axis"
+		nodeName = config.DefaultNodeName()
 	}
 	var localItems []models.ManagedItem
 	if dockerItems, err := o.dockerScanner.ScanDockerServices(ctx); err == nil {
@@ -142,7 +142,7 @@ func (o *Orchestrator) fetchRemoteAgentScan(ctx context.Context, node models.Nod
 func (o *Orchestrator) RunFullScan(ctx context.Context) (*models.ScanResult, error) {
 	hubName := o.cfg.NodeName
 	if hubName == "" {
-		hubName = "Axis"
+		hubName = config.DefaultNodeName()
 	}
 	var taskID string
 	if o.store != nil {
