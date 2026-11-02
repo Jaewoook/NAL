@@ -33,24 +33,128 @@ A zero-dependency, single-binary host-level system updater, CVE vulnerability sc
 
 ---
 
+## Configuration
+
+`system-updater` reads configuration from `config.yml` in the working directory and supports environment variable overrides (environment variables take precedence).
+
+Before provisioning the database or starting the daemon, copy the example configuration and adjust your credentials:
+
+```bash
+cd daemons/system-updater
+cp config.example.yml config.yml
+```
+
+### `config.yml` Reference
+
+```yaml
+# Leave node_name empty to auto-detect from system hostname, or set an explicit name
+node_name: ""
+agent_token: "replace-with-shared-lan-agent-secret"
+
+web:
+  host: "0.0.0.0"
+  port: 10246
+  public_url: "https://updater.jaewook.dev"
+
+auth:
+  oidc_issuer: "https://auth.jaewook.dev/application/o/system-updater/"
+  oidc_client_id: "system-updater"
+  oidc_client_secret: ""
+  redirect_url: "https://updater.jaewook.dev/api/auth/oidc/callback"
+  session_secret: "replace-with-openssl-rand-hex-32"
+  session_ttl_hours: 24
+  rp_id: "updater.jaewook.dev"
+  rp_origin: "https://updater.jaewook.dev"
+
+database:
+  dsn: "postgres://system_updater:system_updater_pass@127.0.0.1:5432/system_updater?sslmode=disable"
+  container_name: "postgresql"
+  db_name: "system_updater"
+  db_user: "system_updater"
+  db_pass: "system_updater_pass"
+  data_dir: "data"
+
+scanner:
+  interval_hours: 6
+  eol_warning_days: 30
+  services_dir: "../../services"
+  daemons_dir: ".."
+
+updater:
+  batch_dir: "../../batch"
+  deadman_timeout_seconds: 60
+  external_probe_url: "https://auth.jaewook.dev"
+  critical_services:
+    - "cloudflare-tunnel"
+    - "nginx-proxy"
+    - "auth"
+    - "db"
+    - "dns"
+  stateful_volumes:
+    db: "nal_main_db"
+    dns: "nal_dns_config"
+    iot: "nal_ha_config"
+    nginx-proxy: "nginx_proxy_data"
+
+notifications:
+  email:
+    enabled: false
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    use_tls: true
+    username: ""
+    password: ""
+    from_email: ""
+    to_email: ""
+```
+
+### Environment Variable Overrides
+
+| Variable | Description |
+| :--- | :--- |
+| `UPDATER_NODE_NAME` / `NODE_NAME` | Explicit node name (defaults to system hostname via `os.Hostname()`) |
+| `UPDATER_AGENT_TOKEN` / `NODE_TOKEN` | Shared `X-NAL-Node-Token` secret for Hub $\leftrightarrow$ Agent LAN communication |
+| `UPDATER_HOST` | Bind address (default: `0.0.0.0`) |
+| `UPDATER_PORT` / `PORT` | HTTP listen port (default: `10246` for Hub, `10247` for Agent) |
+| `UPDATER_PUBLIC_URL` | External dashboard URL (e.g., `https://updater.jaewook.dev`) |
+| `AUTHENTIK_ISSUER` / `OIDC_ISSUER` | Authentik OIDC provider issuer URL |
+| `AUTHENTIK_CLIENT_ID` / `OIDC_CLIENT_ID` | Authentik OIDC Client ID |
+| `AUTHENTIK_CLIENT_SECRET` / `OIDC_CLIENT_SECRET` | Authentik OIDC Client Secret |
+| `SESSION_SECRET` / `NEXTAUTH_SECRET` | HMAC-SHA256 secret used to sign stateless session cookies |
+| `SYSTEM_UPDATER_DB_NAME` / `PG_DB` | PostgreSQL database name in `services/db` (default: `system_updater`) |
+| `SYSTEM_UPDATER_DB_USER` / `PG_USER` | PostgreSQL role in `services/db` (default: `system_updater`) |
+| `SYSTEM_UPDATER_DB_PASS` / `PG_PASS` | Password for the `system_updater` PostgreSQL role |
+| `UPDATER_DATA_DIR` | Local write-ahead spool directory (default: `data`) |
+| `EMAIL_HOST` / `SMTP_HOST` | SMTP server hostname (default: `smtp.gmail.com`) |
+| `EMAIL_PORT` / `SMTP_PORT` | SMTP port (default: `587`) |
+| `EMAIL_USERNAME` / `SMTP_USERNAME` | SMTP username |
+| `EMAIL_PASSWORD` / `SMTP_PASSWORD` | SMTP password or app password |
+| `EMAIL_FROM` / `SMTP_FROM` | Sender email address |
+| `EMAIL_TO` / `SMTP_TO` | Recipient email address (setting this automatically enables email alerts) |
+
+---
+
 ## Quick Start (Hub)
 
 ```bash
 cd daemons/system-updater
 
-# 1. Build binary
+# 1. Copy & edit configuration
+cp config.example.yml config.yml
+
+# 2. Build binary
 go build -o system-updater ./cmd/system-updater
 
-# 2. Provision database in services/db (if postgresql is running)
+# 3. Provision database in services/db (if postgresql is running)
 ./system-updater db init
 
-# 3. Run a one-off CLI scan
+# 4. Run a one-off CLI scan
 ./system-updater scan
 
-# 4. Generate a 5-minute break-glass login link for initial setup
+# 5. Generate a 5-minute break-glass login link for initial setup
 ./system-updater auth login-link
 
-# 5. Start the web dashboard & background scanner (default port 10246)
+# 6. Start the web dashboard & background scanner (default port 10246)
 ./system-updater run
 ```
 
