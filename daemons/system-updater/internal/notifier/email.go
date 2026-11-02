@@ -2,8 +2,10 @@ package notifier
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/smtp"
 	"strings"
 	"time"
@@ -13,22 +15,161 @@ import (
 	"github.com/jaewoook/system-updater/internal/models"
 )
 
-type sendMailFunc func(addr string, a smtp.Auth, from string, to []string, msg []byte) error
+type sendMailFunc func(ctx context.Context, cfg config.EmailConfig, addr string, a smtp.Auth, from string, to []string, msg []byte) error
+
+type dialerFunc func(ctx context.Context, addr string, isImplicit bool, tlsConfig *tls.Config) (net.Conn, error)
 
 type Alerter struct {
 	cfg          config.EmailConfig
 	store        db.Store
 	sendMailFunc sendMailFunc
+	dialer       dialerFunc
 	timeout      time.Duration
+}
+
+func defaultDial(ctx context.Context, addr string, isImplicit bool, tlsConfig *tls.Config) (net.Conn, error) {
+	if isImplicit {
+		tlsDialer := &tls.Dialer{
+			Config: tlsConfig,
+		}
+		return tlsDialer.DialContext(ctx, "tcp", addr)
+	}
+	netDialer := &net.Dialer{}
+	return netDialer.DialContext(ctx, "tcp", addr)
 }
 
 func NewAlerter(cfg config.EmailConfig, store db.Store) *Alerter {
 	return &Alerter{
 		cfg:          cfg,
 		store:        store,
-		sendMailFunc: smtp.SendMail,
-		timeout:      10 * time.Second,
+		sendMailFunc: nil, // set to nil so sendEmail uses a.sendWithDialer
+		dialer:       defaultDial,
+		timeout:      25 * time.Second,
 	}
+}
+
+type forcedTLSAuth struct {
+	auth smtp.Auth
+}
+
+func (f forcedTLSAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	s := *server
+	s.TLS = true
+	return f.auth.Start(&s)
+}
+
+func (f forcedTLSAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	return f.auth.Next(fromServer, more)
+}
+
+type loginAuth struct {
+	username string
+	password string
+	host     string
+}
+
+func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	if server.Name != a.host {
+		return "", nil, errors.New("wrong host name")
+	}
+	return "LOGIN", []byte(a.username), nil
+}
+
+func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if more {
+		return []byte(a.password), nil
+	}
+	return nil, nil
+}
+
+func sendMailWithDialer(ctx context.Context, dialer dialerFunc, cfg config.EmailConfig, addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+	host := cfg.SMTPHost
+	isImplicit := cfg.SMTPPort == 465 || (cfg.UseTLS && cfg.SMTPPort != 587 && cfg.SMTPPort != 25 && cfg.SMTPPort != 2525 && cfg.SMTPPort != 2587)
+
+	tlsConfig := &tls.Config{
+		ServerName: host,
+	}
+	if host == "127.0.0.1" || host == "localhost" {
+		tlsConfig.InsecureSkipVerify = true
+	}
+
+	if dialer == nil {
+		dialer = defaultDial
+	}
+
+	conn, err := dialer(ctx, addr, isImplicit, tlsConfig)
+	if err != nil {
+		if isImplicit {
+			return fmt.Errorf("tls dial failed for %s: %w", addr, err)
+		}
+		return fmt.Errorf("dial failed for %s: %w", addr, err)
+	}
+	defer conn.Close()
+
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return fmt.Errorf("smtp handshake failed for %s: %w", addr, err)
+	}
+	defer client.Close()
+
+	if !isImplicit && (cfg.UseTLS || cfg.SMTPPort == 587) {
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			if err := client.StartTLS(tlsConfig); err != nil {
+				return fmt.Errorf("smtp starttls failed for %s: %w", addr, err)
+			}
+		}
+	}
+
+	if a != nil {
+		authToSend := a
+		if isImplicit {
+			authToSend = forcedTLSAuth{auth: a}
+		}
+		if ok, authMechanisms := client.Extension("AUTH"); ok {
+			upper := strings.ToUpper(authMechanisms)
+			if !strings.Contains(upper, "PLAIN") && strings.Contains(upper, "LOGIN") && cfg.Username != "" {
+				authToSend = &loginAuth{
+					username: cfg.Username,
+					password: cfg.Password,
+					host:     host,
+				}
+			}
+			if err := client.Auth(authToSend); err != nil {
+				return fmt.Errorf("smtp auth failed: %w", err)
+			}
+		}
+	}
+
+	if err := client.Mail(from); err != nil {
+		return fmt.Errorf("smtp mail from failed: %w", err)
+	}
+	for _, rcpt := range to {
+		if err := client.Rcpt(rcpt); err != nil {
+			return fmt.Errorf("smtp rcpt to failed for %s: %w", rcpt, err)
+		}
+	}
+
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("smtp data failed: %w", err)
+	}
+	if _, err := w.Write(msg); err != nil {
+		return fmt.Errorf("smtp write message failed: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("smtp close data writer failed: %w", err)
+	}
+
+	_ = client.Quit()
+	return nil
+}
+
+func defaultSendMail(ctx context.Context, cfg config.EmailConfig, addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+	return sendMailWithDialer(ctx, defaultDial, cfg, addr, a, from, to, msg)
 }
 
 type pendingFinding struct {
@@ -109,7 +250,7 @@ func (a *Alerter) NotifyScanFindings(ctx context.Context, scan *models.ScanResul
 
 	subject := fmt.Sprintf("[NAL Security Alert] %d New Vulnerability / EoL Finding(s)", len(findings))
 	if a.cfg.Enabled {
-		if err := a.sendEmail(subject, body.String()); err != nil {
+		if err := a.sendEmail(ctx, subject, body.String()); err != nil {
 			return 0, err
 		}
 	}
@@ -136,16 +277,16 @@ func (a *Alerter) NotifyDeadManRollback(ctx context.Context, serviceName, fromVe
 		"Reason:           %s\n"+
 		"Timestamp:        %s\n",
 		serviceName, toVer, fromVer, reason, time.Now().UTC().Format(time.RFC1123Z))
-	return a.sendEmail(subject, body)
+	return a.sendEmail(ctx, subject, body)
 }
 
 func (a *Alerter) SendTestEmail(ctx context.Context) error {
 	subject := "[NAL System Updater] Test Notification"
 	body := "This is a test email from NAL System Updater (daemons/system-updater)."
-	return a.sendEmail(subject, body)
+	return a.sendEmail(ctx, subject, body)
 }
 
-func (a *Alerter) sendEmail(subject, body string) error {
+func (a *Alerter) sendEmail(ctx context.Context, subject, body string) error {
 	if a.cfg.SMTPHost == "" {
 		return errors.New("smtp_host is not configured")
 	}
@@ -173,15 +314,34 @@ func (a *Alerter) sendEmail(subject, body string) error {
 		"Date: %s\r\n\r\n%s",
 		from, a.cfg.ToEmail, subject, now, body))
 
-	ctx, cancel := context.WithTimeout(context.Background(), a.timeout)
-	defer cancel()
+	timeout := a.timeout
+	if timeout <= 0 {
+		timeout = 25 * time.Second
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	done := make(chan error, 1)
 	go func() {
-		done <- a.sendMailFunc(addr, auth, from, []string{a.cfg.ToEmail}, msg)
+		if a.sendMailFunc != nil {
+			done <- a.sendMailFunc(ctx, a.cfg, addr, auth, from, []string{a.cfg.ToEmail}, msg)
+		} else {
+			dialer := a.dialer
+			if dialer == nil {
+				dialer = defaultDial
+			}
+			done <- sendMailWithDialer(ctx, dialer, a.cfg, addr, auth, from, []string{a.cfg.ToEmail}, msg)
+		}
 	}()
 	select {
 	case <-ctx.Done():
-		return fmt.Errorf("smtp send timed out: %w", ctx.Err())
+		return fmt.Errorf("smtp send timed out after %v: %w", timeout, ctx.Err())
 	case err := <-done:
 		return err
 	}
