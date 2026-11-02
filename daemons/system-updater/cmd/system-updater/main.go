@@ -202,7 +202,7 @@ func runCLI(args []string, out io.Writer) int {
 		}
 		if *portFlag > 0 {
 			cfg.Web.Port = *portFlag
-		} else if cfg.Web.Port == 0 || cfg.Web.Port == 10246 {
+		} else if cfg.Web.Port == 0 || cfg.Web.Port == 10311 {
 			if os.Getenv("UPDATER_PORT") == "" && os.Getenv("PORT") == "" {
 				cfg.Web.Port = 10247
 			}

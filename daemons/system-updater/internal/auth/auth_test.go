@@ -26,7 +26,7 @@ func TestManager_StatelessCookieBreakGlassAndWebAuthnPasskey(t *testing.T) {
 		SessionSecret:   "super-secret-signing-key-32-bytes",
 		SessionTTLHours: 24,
 		RPID:            "localhost",
-		RPOrigin:        "http://localhost:10246",
+		RPOrigin:        "http://localhost:10311",
 	}
 
 	mgr, err := NewManager(cfg, stateFile)
@@ -129,7 +129,7 @@ func TestManager_StatelessCookieBreakGlassAndWebAuthnPasskey(t *testing.T) {
 	clientDataJSON, _ := json.Marshal(map[string]string{
 		"type":      "webauthn.get",
 		"challenge": loginOpts.Challenge,
-		"origin":    "http://localhost:10246",
+		"origin":    "http://localhost:10311",
 	})
 	clientHash := sha256.Sum256(clientDataJSON)
 	signedPayload := append(append([]byte{}, authData...), clientHash[:]...)

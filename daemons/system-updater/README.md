@@ -56,7 +56,7 @@ Before starting the Hub or any remote Agent, prepare the following secrets and p
 3. **Configure Authentik OIDC Provider (Optional — for NAL Account SSO):**
    - In Authentik (`https://auth.jaewook.dev`), create an **OAuth2/OpenID Provider** and Application named `system-updater`:
      - **Client Type:** `Confidential`
-     - **Redirect URI:** `https://updater.jaewook.dev/api/auth/oidc/callback` (or `http://localhost:10246/api/auth/oidc/callback` for local access)
+     - **Redirect URI:** `https://updater.jaewook.dev/api/auth/oidc/callback` (or `http://localhost:10311/api/auth/oidc/callback` for local access)
    - Copy the **Client ID** and **Client Secret** into `auth.oidc_client_id` and `auth.oidc_client_secret` in `config.yml`.
    - *Note:* Even before Authentik is configured, you can sign in immediately using `./system-updater auth login-link` and register a local hardware/TouchID **Passkey**.
 4. **Configure SMTP App Password (Optional — for Email Alerts):**
@@ -82,7 +82,7 @@ agent_token: "replace-with-shared-lan-agent-secret"
 
 web:
   host: "0.0.0.0"
-  port: 10246
+  port: 10311
   public_url: "https://updater.jaewook.dev"
 
 auth:
@@ -144,7 +144,7 @@ notifications:
 | `UPDATER_NODE_NAME` / `NODE_NAME` | Explicit node name (defaults to system hostname via `os.Hostname()`) |
 | `UPDATER_AGENT_TOKEN` / `NODE_TOKEN` | Shared `X-NAL-Node-Token` secret for Hub $\leftrightarrow$ Agent LAN communication |
 | `UPDATER_HOST` | Bind address (default: `0.0.0.0`) |
-| `UPDATER_PORT` / `PORT` | HTTP listen port (default: `10246` for Hub, `10247` for Agent) |
+| `UPDATER_PORT` / `PORT` | HTTP listen port (default: `10311` for Hub, `10247` for Agent) |
 | `UPDATER_PUBLIC_URL` | External dashboard URL (e.g., `https://updater.jaewook.dev`) |
 | `AUTHENTIK_ISSUER` / `OIDC_ISSUER` | Authentik OIDC provider issuer URL |
 | `AUTHENTIK_CLIENT_ID` / `OIDC_CLIENT_ID` | Authentik OIDC Client ID |
@@ -183,7 +183,7 @@ go build -o system-updater ./cmd/system-updater
 # 5. Generate a 5-minute break-glass login link for initial setup
 ./system-updater auth login-link
 
-# 6. Start the web dashboard & background scanner (default port 10246)
+# 6. Start the web dashboard & background scanner (default port 10311)
 ./system-updater run
 ```
 

@@ -97,17 +97,17 @@ func DefaultConfig() *Config {
 		NodeName: DefaultNodeName(),
 		Web: WebConfig{
 			Host:      "0.0.0.0",
-			Port:      10246,
-			PublicURL: "http://localhost:10246",
+			Port:      10311,
+			PublicURL: "http://localhost:10311",
 		},
 		Auth: AuthConfig{
 			OIDCIssuer:      "",
 			OIDCClientID:    "system-updater",
-			RedirectURL:     "http://localhost:10246/api/auth/oidc/callback",
+			RedirectURL:     "http://localhost:10311/api/auth/oidc/callback",
 			SessionSecret:   "default-dev-session-secret-change-in-prod",
 			SessionTTLHours: 24,
 			RPID:            "localhost",
-			RPOrigin:        "http://localhost:10246",
+			RPOrigin:        "http://localhost:10311",
 		},
 		Database: DatabaseConfig{
 			DSN:           "postgres://system_updater:system_updater_pass@127.0.0.1:5432/system_updater?sslmode=disable",
@@ -256,7 +256,7 @@ func ValidateAndApplyDefaults(cfg *Config) {
 		cfg.NodeName = DefaultNodeName()
 	}
 	if cfg.Web.Port <= 0 {
-		cfg.Web.Port = 10246
+		cfg.Web.Port = 10311
 	}
 	if cfg.Auth.SessionTTLHours <= 0 {
 		cfg.Auth.SessionTTLHours = 24
