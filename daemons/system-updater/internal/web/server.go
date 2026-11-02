@@ -92,9 +92,14 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	username := claims.Subject
+	if atIdx := strings.Index(username, "@"); atIdx != -1 {
+		username = username[:atIdx]
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"authenticated":   true,
 		"subject":         claims.Subject,
+		"username":        username,
 		"method":          claims.Method,
 		"has_passkeys":    s.authMgr.HasRegisteredPasskeys(),
 		"oidc_configured": s.cfg.Auth.OIDCIssuer != "",

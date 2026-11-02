@@ -1,5 +1,5 @@
 # ==============================================================================
-# NAL System Updater & Security Scanner - Configuration Example
+# NAL Security Hub - Configuration Example
 # ==============================================================================
 
 # Leave node_name empty to auto-detect from system hostname, or set an explicit name

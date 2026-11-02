@@ -1,6 +1,6 @@
-# NAL System Updater (`system-updater`)
+# NAL Security Hub (`system-updater`)
 
-A zero-dependency, single-binary host-level system updater, CVE vulnerability scanner, and LTS/End-of-Life (EoL) monitor for NAL Docker services (`services/*`), Homebrew packages (`brew`), and macOS host daemons (`daemons/*`).
+A zero-dependency, single-binary host-level security hub, CVE vulnerability scanner, and LTS/End-of-Life (EoL) monitor for NAL Docker services (`services/*`), Homebrew packages (`brew`), and macOS host daemons (`daemons/*`).
 
 ---
 

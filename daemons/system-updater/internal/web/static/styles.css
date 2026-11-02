@@ -42,17 +42,105 @@ header {
   font-weight: 800;
 }
 .header-right { display: flex; align-items: center; gap: 10px; font-size: 13px; }
-.auth-pill {
-  display: flex;
+.user-dropdown {
+  position: relative;
+  display: inline-block;
+}
+.user-chip-btn {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   background: var(--panel);
   border: 1px solid var(--border);
-  padding: 6px 12px;
+  padding: 6px 14px;
   border-radius: 999px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.user-chip-btn:hover {
+  background: var(--panel-hover);
+  border-color: var(--accent);
+}
+.dropdown-caret {
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.dropdown-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: #0b1120;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  min-width: 210px;
+  padding: 6px 0;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.65), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+}
+.dropdown-header {
+  padding: 8px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
   color: var(--muted);
 }
-.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dropdown-header-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.dropdown-item:hover {
+  background: var(--panel-hover);
+  color: #fff;
+}
+.dropdown-item.danger {
+  color: #f87171;
+}
+.dropdown-item.danger:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+.dropdown-icon {
+  font-size: 13px;
+  width: 16px;
+  display: inline-flex;
+  justify-content: center;
+}
+.dropdown-ext {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+.dropdown-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .dot.green { background: var(--ok); }
 .dot.red { background: var(--crit); }
 .dot.amber { background: var(--warn); }
@@ -155,8 +243,39 @@ td { padding: 14px 16px; border-bottom: 1px solid var(--border); vertical-align:
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: var(--panel-hover); }
 
+.svc-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.svc-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.badge-node {
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+  border: 1px solid #475569;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+}
+.svc-name-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+  font-size: 14.5px;
+  color: var(--text);
+  margin: 1px 0;
+}
 .svc-name { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; }
-.svc-sub { font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.svc-sub { font-size: 12px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
 
 .badge {
   display: inline-flex;
@@ -172,14 +291,87 @@ tr:hover td { background: var(--panel-hover); }
 .badge.ok { background: var(--ok-bg); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.35); }
 .badge.skip { background: rgba(100,116,139,0.2); color: #cbd5e1; border: 1px solid #475569; }
 
+.badge-btn {
+  cursor: pointer;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  background: var(--crit-bg);
+  color: #fca5a5;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+.badge-btn:hover {
+  background: rgba(239, 68, 68, 0.28);
+  border-color: #ef4444;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.tooltip-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
+.tooltip-box {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0b1120;
+  color: #f8fafc;
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: normal;
+  min-width: 180px;
+  max-width: 300px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7);
+  z-index: 100;
+  pointer-events: none;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+  text-align: center;
+  line-height: 1.4;
+}
+.tooltip-box::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: #0b1120 transparent transparent transparent;
+}
+.tooltip-wrapper:hover .tooltip-box {
+  visibility: visible;
+  opacity: 1;
+}
+
 select.ver-select {
-  background: #0f172a;
+  background-color: #0f172a;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
   color: var(--text);
   border: 1px solid var(--border);
-  padding: 6px 10px;
+  padding: 6px 32px 6px 12px;
   border-radius: 6px;
   font-size: 12.5px;
   font-family: ui-monospace, SFMono-Regular, monospace;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+select.ver-select:hover, select.ver-select:focus {
+  border-color: var(--accent);
+  outline: none;
 }
 
 .actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }

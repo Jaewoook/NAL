@@ -240,13 +240,13 @@ func (a *Alerter) NotifyScanFindings(ctx context.Context, scan *models.ScanResul
 	}
 
 	var body strings.Builder
-	body.WriteString("NAL System Updater — Security & Lifecycle Alert\n")
+	body.WriteString("NAL Security Hub — Security & Lifecycle Alert\n")
 	body.WriteString(strings.Repeat("=", 52) + "\n\n")
 	body.WriteString(fmt.Sprintf("Detected %d new security/lifecycle finding(s) requiring attention:\n\n", len(findings)))
 	for _, f := range findings {
 		body.WriteString(f.line + "\n")
 	}
-	body.WriteString("\nOpen your NAL System Updater web dashboard to review and trigger controlled updates.\n")
+	body.WriteString("\nOpen your NAL Security Hub web dashboard to review and trigger controlled updates.\n")
 
 	subject := fmt.Sprintf("[NAL Security Alert] %d New Vulnerability / EoL Finding(s)", len(findings))
 	if a.cfg.Enabled {
@@ -269,7 +269,7 @@ func (a *Alerter) NotifyDeadManRollback(ctx context.Context, serviceName, fromVe
 		return nil
 	}
 	subject := fmt.Sprintf("[NAL ROLLBACK ALERT] %s automatically rolled back to %s", serviceName, fromVer)
-	body := fmt.Sprintf("NAL System Updater — Automatic 60s Dead-Man's Rollback Executed\n"+
+	body := fmt.Sprintf("NAL Security Hub — Automatic 60s Dead-Man's Rollback Executed\n"+
 		"===============================================================\n"+
 		"Service:          %s\n"+
 		"Attempted Target: %s\n"+
@@ -281,8 +281,8 @@ func (a *Alerter) NotifyDeadManRollback(ctx context.Context, serviceName, fromVe
 }
 
 func (a *Alerter) SendTestEmail(ctx context.Context) error {
-	subject := "[NAL System Updater] Test Notification"
-	body := "This is a test email from NAL System Updater (daemons/system-updater)."
+	subject := "[NAL Security Hub] Test Notification"
+	body := "This is a test email from NAL Security Hub (daemons/system-updater)."
 	return a.sendEmail(ctx, subject, body)
 }
 

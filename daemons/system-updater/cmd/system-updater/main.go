@@ -144,7 +144,7 @@ func runCLI(args []string, out io.Writer) int {
 			fmt.Fprintf(out, "Scan failed: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(out, "=== NAL System Updater Scan Summary ===\n")
+		fmt.Fprintf(out, "=== NAL Security Hub Scan Summary ===\n")
 		fmt.Fprintf(out, "Items Scanned:     %d\n", len(res.Items))
 		fmt.Fprintf(out, "Critical CVEs:     %d\n", res.TotalCritCVEs)
 		fmt.Fprintf(out, "High CVEs:         %d\n", res.TotalHighCVEs)
@@ -340,7 +340,7 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 		_ = httpSrv.Shutdown(shutCtx)
 	}()
 
-	fmt.Fprintf(out, "NAL System Updater listening on http://%s\n", addr)
+	fmt.Fprintf(out, "NAL Security Hub listening on http://%s\n", addr)
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(out, "HTTP server error: %v\n", err)
 		return 1
@@ -378,7 +378,7 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 		_ = httpSrv.Shutdown(shutCtx)
 	}()
 
-	fmt.Fprintf(out, "NAL System Updater Agent [%s] listening on http://%s\n", cfg.NodeName, addr)
+	fmt.Fprintf(out, "NAL Security Hub Agent [%s] listening on http://%s\n", cfg.NodeName, addr)
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(out, "Agent HTTP server error: %v\n", err)
 		return 1

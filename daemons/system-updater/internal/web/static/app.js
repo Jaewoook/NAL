@@ -16,8 +16,41 @@ async function initApp() {
   document.getElementById('view-login').style.display = 'none';
   document.getElementById('view-dashboard').style.display = 'block';
   document.getElementById('header-actions').style.display = 'flex';
-  document.getElementById('auth-user-label').textContent = `${session.method.toUpperCase()}: ${session.subject}`;
+
+  const username = session.username || (session.subject ? session.subject.split('@')[0] : 'admin');
+  const userBtn = document.getElementById('auth-username');
+  if (userBtn) userBtn.textContent = username;
+  const userDetail = document.getElementById('auth-user-detail');
+  if (userDetail) userDetail.textContent = `${username} (${(session.method || 'sso').toUpperCase()})`;
+
   await loadDashboard();
+}
+
+function toggleUserDropdown(e) {
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('user-menu');
+  if (!menu) return;
+  const isShown = menu.style.display === 'flex';
+  menu.style.display = isShown ? 'none' : 'flex';
+}
+
+function closeUserDropdown() {
+  const menu = document.getElementById('user-menu');
+  if (menu) menu.style.display = 'none';
+}
+
+function openBrokenLinkageModal(pkgName, details) {
+  const pkgEl = document.getElementById('modal-linkage-pkg');
+  if (pkgEl) pkgEl.textContent = pkgName;
+  const bodyEl = document.getElementById('modal-linkage-body');
+  if (bodyEl) bodyEl.textContent = details || 'Missing shared library dependency';
+  const modal = document.getElementById('modal-linkage');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeBrokenLinkageModal() {
+  const modal = document.getElementById('modal-linkage');
+  if (modal) modal.style.display = 'none';
 }
 
 async function loadDashboard() {
@@ -110,6 +143,23 @@ function switchTab(tab) {
   }
 }
 
+function getItemSortRank(item) {
+  // 1. Critical: crit_count > 0, broken_linkage, or eol expired
+  if (item.crit_count > 0 || item.broken_linkage || (item.eol && item.eol.status === 'expired')) {
+    return 0;
+  }
+  // 2. High: high_count > 0, or eol expiring soon
+  if (item.high_count > 0 || (item.eol && item.eol.status === 'expiring_soon')) {
+    return 1;
+  }
+  // 3. Update available: outdated
+  if (item.outdated) {
+    return 2;
+  }
+  // 4. Normal: everything else
+  return 3;
+}
+
 function renderItemsTable() {
   const tbody = document.getElementById('items-tbody');
   tbody.innerHTML = '';
@@ -124,6 +174,16 @@ function renderItemsTable() {
     return;
   }
 
+  // Sort list: 1. critical / high / update available / normal, 2. name order (ascending)
+  items.sort((a, b) => {
+    const rankA = getItemSortRank(a);
+    const rankB = getItemSortRank(b);
+    if (rankA !== rankB) {
+      return rankA - rankB;
+    }
+    return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+  });
+
   items.forEach((item, idx) => {
     const nodeName = item.node || (dashboardData && dashboardData.hub_node) || 'local';
     const tr = document.createElement('tr');
@@ -131,8 +191,15 @@ function renderItemsTable() {
       : (item.high_count > 0 || item.eol?.status === 'expiring_soon' || item.outdated) ? 'amber' : 'green';
 
     let secHtml = `<span class="badge ok">✓ 0 CVEs</span>`;
-    if (item.broken_linkage) {
-      secHtml = `<span class="badge crit">Broken Linkage: ${escapeHtml(item.linkage_details || 'missing dylib')}</span>`;
+    if (item.broken_linkage && (item.crit_count > 0 || item.high_count > 0)) {
+      secHtml = `
+        <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
+          <button class="badge crit badge-btn" onclick='openBrokenLinkageModal(${JSON.stringify(item.name)}, ${JSON.stringify(item.linkage_details || "Broken dylib dependency")})'>⚠ Broken Linkage (Details)</button>
+          <span class="badge crit">● ${item.crit_count} Crit / ${item.high_count} High</span>
+        </div>
+      `;
+    } else if (item.broken_linkage) {
+      secHtml = `<button class="badge crit badge-btn" onclick='openBrokenLinkageModal(${JSON.stringify(item.name)}, ${JSON.stringify(item.linkage_details || "Broken dylib dependency")})' title="Click to view broken linkage details">⚠ Broken Linkage (Details)</button>`;
     } else if (item.crit_count > 0 || item.high_count > 0) {
       const firstId = item.vulnerabilities?.[0]?.id || 'CVE';
       secHtml = `<span class="badge crit">● ${item.crit_count} Crit / ${item.high_count} High (${escapeHtml(firstId)})</span>`;
@@ -141,11 +208,28 @@ function renderItemsTable() {
     let eolHtml = `<span class="badge ok">Supported</span>`;
     if (item.eol) {
       if (item.eol.status === 'expired') {
-        eolHtml = `<span class="badge crit">✖ EoL Expired (${escapeHtml(item.eol.eol_date || item.eol.message || '')})</span>`;
+        const tooltipText = item.eol.message || (item.eol.eol_date ? `End of Life reached on ${item.eol.eol_date}` : 'End of Life reached');
+        eolHtml = `
+          <div class="tooltip-wrapper">
+            <span class="badge crit">✖ EoL Expired</span>
+            <div class="tooltip-box">${escapeHtml(tooltipText)}</div>
+          </div>
+        `;
       } else if (item.eol.status === 'expiring_soon') {
-        eolHtml = `<span class="badge warn">⚠ EoL in ${item.eol.days_remaining}d (${escapeHtml(item.eol.eol_date || '')})</span>`;
+        const tooltipText = item.eol.message || `End of Life scheduled in ${item.eol.days_remaining}d (${item.eol.eol_date || 'soon'})`;
+        eolHtml = `
+          <div class="tooltip-wrapper">
+            <span class="badge warn">⚠ EoL in ${item.eol.days_remaining}d</span>
+            <div class="tooltip-box">${escapeHtml(tooltipText)}</div>
+          </div>
+        `;
       } else if (item.eol.eol_date) {
-        eolHtml = `<span class="badge ok">Supported until ${escapeHtml(item.eol.eol_date)}</span>`;
+        eolHtml = `
+          <div class="tooltip-wrapper">
+            <span class="badge ok">Supported</span>
+            <div class="tooltip-box">Supported until ${escapeHtml(item.eol.eol_date)}</div>
+          </div>
+        `;
       }
     }
 
@@ -172,15 +256,21 @@ function renderItemsTable() {
       actionsHtml += `<a class="btn btn-ghost" href="${escapeHtml(item.release_notes_url)}" target="_blank" style="text-decoration:none;">Notes ↗</a>`;
     }
 
+    const subType = item.target_type === 'brew' ? 'brew' : (item.image_ref || item.target_type);
+
     tr.innerHTML = `
       <td>
-        <div class="svc-name">
-          <span class="dot ${dotClass}"></span>
-          <span class="badge skip" style="font-size:11px; padding:1px 6px;">${escapeHtml(nodeName)}</span>
-          <span>${escapeHtml(item.name)}</span>
-          ${item.critical_path ? '<span class="badge warn" style="font-size:10px;">Critical Path</span>' : ''}
+        <div class="svc-col">
+          <div class="svc-tags">
+            <span class="badge-node">${escapeHtml(nodeName)}</span>
+            ${item.critical_path ? '<span class="badge warn" style="font-size:10px; padding:1px 6px;">Critical Path</span>' : ''}
+          </div>
+          <div class="svc-name-title">
+            <span class="dot ${dotClass}"></span>
+            <span>${escapeHtml(item.name)}</span>
+          </div>
+          <div class="svc-sub">${escapeHtml(subType)}</div>
         </div>
-        <div class="svc-sub">${escapeHtml(item.image_ref || item.target_type)}</div>
       </td>
       <td>
         <div>${escapeHtml(item.current_version)}</div>
@@ -408,7 +498,7 @@ async function registerPasskey() {
   const cred = await navigator.credentials.create({
     publicKey: {
       challenge: b64urlToUint8Array(opts.challenge),
-      rp: {name: 'NAL System Updater', id: window.location.hostname},
+      rp: {name: 'NAL Security Hub', id: window.location.hostname},
       user: {id: new Uint8Array([1, 2, 3, 4]), name: opts.user, displayName: opts.user},
       pubKeyCredParams: [{type: 'public-key', alg: -7}],
       timeout: 60000
@@ -459,5 +549,12 @@ async function loginWithPasskey() {
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
+
+window.addEventListener('click', (e) => {
+  const dropdown = document.getElementById('user-dropdown');
+  if (dropdown && !dropdown.contains(e.target)) {
+    closeUserDropdown();
+  }
+});
 
 window.addEventListener('DOMContentLoaded', initApp);

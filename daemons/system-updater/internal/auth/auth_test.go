@@ -154,3 +154,26 @@ func TestManager_StatelessCookieBreakGlassAndWebAuthnPasskey(t *testing.T) {
 		t.Fatal("expected session cookie issued after Passkey login")
 	}
 }
+
+func TestExtractUsernameFromJWT(t *testing.T) {
+	// Case 1: preferred_username takes precedence
+	claims1 := `{"sub":"user-123","email":"dev.jaewook@gmail.com","preferred_username":"jaewook"}`
+	jwt1 := "header." + base64.RawURLEncoding.EncodeToString([]byte(claims1)) + ".sig"
+	if u := extractUsernameFromJWT(jwt1); u != "jaewook" {
+		t.Fatalf("expected jaewook, got %q", u)
+	}
+
+	// Case 2: email fallback strips domain to username
+	claims2 := `{"sub":"user-456","email":"admin.ops@company.org"}`
+	jwt2 := "header." + base64.RawURLEncoding.EncodeToString([]byte(claims2)) + ".sig"
+	if u := extractUsernameFromJWT(jwt2); u != "admin.ops" {
+		t.Fatalf("expected admin.ops, got %q", u)
+	}
+
+	// Case 3: subject fallback
+	claims3 := `{"sub":"service-account"}`
+	jwt3 := "header." + base64.RawURLEncoding.EncodeToString([]byte(claims3)) + ".sig"
+	if u := extractUsernameFromJWT(jwt3); u != "service-account" {
+		t.Fatalf("expected service-account, got %q", u)
+	}
+}

@@ -280,7 +280,7 @@ func (m *Manager) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subject := extractEmailFromJWT(tokResp.IDToken)
+	subject := extractUsernameFromJWT(tokResp.IDToken)
 	if subject == "" {
 		subject = "nal-admin"
 	}
@@ -288,7 +288,7 @@ func (m *Manager) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func extractEmailFromJWT(jwt string) string {
+func extractUsernameFromJWT(jwt string) string {
 	parts := strings.Split(jwt, ".")
 	if len(parts) < 2 {
 		return ""
@@ -298,16 +298,25 @@ func extractEmailFromJWT(jwt string) string {
 		return ""
 	}
 	var payload struct {
-		Email             string `json:"email"`
 		PreferredUsername string `json:"preferred_username"`
+		Nickname          string `json:"nickname"`
+		Name              string `json:"name"`
+		Email             string `json:"email"`
 		Sub               string `json:"sub"`
 	}
 	_ = json.Unmarshal(raw, &payload)
-	if payload.Email != "" {
-		return payload.Email
-	}
 	if payload.PreferredUsername != "" {
 		return payload.PreferredUsername
+	}
+	if payload.Nickname != "" {
+		return payload.Nickname
+	}
+	if payload.Email != "" {
+		parts := strings.Split(payload.Email, "@")
+		return parts[0]
+	}
+	if payload.Name != "" {
+		return payload.Name
 	}
 	return payload.Sub
 }
