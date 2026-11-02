@@ -37,10 +37,10 @@ func NewPostgresBackend(containerName, dbName, dbUser string, runner CLIRunner) 
 		containerName = "postgresql"
 	}
 	if dbName == "" {
-		dbName = "system_updater"
+		dbName = "security_hub"
 	}
 	if dbUser == "" {
-		dbUser = "system_updater"
+		dbUser = "security_hub"
 	}
 	return &PostgresBackend{
 		containerName: containerName,
@@ -210,10 +210,10 @@ func ProvisionDatabase(ctx context.Context, containerName, dbName, dbUser, dbPas
 		containerName = "postgresql"
 	}
 	if dbName == "" {
-		dbName = "system_updater"
+		dbName = "security_hub"
 	}
 	if dbUser == "" {
-		dbUser = "system_updater"
+		dbUser = "security_hub"
 	}
 
 	roleSQL := fmt.Sprintf("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = %s) THEN CREATE USER %s WITH PASSWORD %s; ELSE ALTER USER %s WITH PASSWORD %s; END IF; END $$;",

@@ -110,11 +110,11 @@ func DefaultConfig() *Config {
 			RPOrigin:        "http://localhost:10311",
 		},
 		Database: DatabaseConfig{
-			DSN:           "postgres://system_updater:system_updater_pass@127.0.0.1:5432/system_updater?sslmode=disable",
+			DSN:           "postgres://security_hub:security_hub_pass@127.0.0.1:5432/security_hub?sslmode=disable",
 			ContainerName: "postgresql",
-			DBName:        "system_updater",
-			DBUser:        "system_updater",
-			DBPass:        "system_updater_pass",
+			DBName:        "security_hub",
+			DBUser:        "security_hub",
+			DBPass:        "security_hub_pass",
 			DataDir:       "data",
 		},
 		Scanner: ScannerConfig{
@@ -181,21 +181,21 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 func ApplyEnvOverrides(cfg *Config) {
-	if v := getEnv("SECURITY_HUB_NODE_NAME", "UPDATER_NODE_NAME", "NODE_NAME"); v != "" {
+	if v := getEnv("SECURITY_HUB_NODE_NAME", "NODE_NAME"); v != "" {
 		cfg.NodeName = v
 	}
-	if v := getEnv("SECURITY_HUB_AGENT_TOKEN", "UPDATER_AGENT_TOKEN", "NODE_TOKEN"); v != "" {
+	if v := getEnv("SECURITY_HUB_AGENT_TOKEN", "NODE_TOKEN"); v != "" {
 		cfg.AgentToken = v
 	}
-	if v := getEnv("SECURITY_HUB_HOST", "UPDATER_HOST"); v != "" {
+	if v := getEnv("SECURITY_HUB_HOST"); v != "" {
 		cfg.Web.Host = v
 	}
-	if v := getEnv("SECURITY_HUB_PORT", "UPDATER_PORT", "PORT"); v != "" {
+	if v := getEnv("SECURITY_HUB_PORT", "PORT"); v != "" {
 		if p, err := strconv.Atoi(v); err == nil && p > 0 {
 			cfg.Web.Port = p
 		}
 	}
-	if v := getEnv("SECURITY_HUB_PUBLIC_URL", "UPDATER_PUBLIC_URL"); v != "" {
+	if v := getEnv("SECURITY_HUB_PUBLIC_URL"); v != "" {
 		cfg.Web.PublicURL = v
 	}
 	if v := getEnv("AUTHENTIK_ISSUER", "OIDC_ISSUER"); v != "" {
@@ -213,16 +213,16 @@ func ApplyEnvOverrides(cfg *Config) {
 	if v := getEnv("PG_DSN", "DATABASE_URL"); v != "" {
 		cfg.Database.DSN = v
 	}
-	if v := getEnv("SECURITY_HUB_DB_NAME", "SYSTEM_UPDATER_DB_NAME", "PG_DB"); v != "" {
+	if v := getEnv("SECURITY_HUB_DB_NAME", "PG_DB"); v != "" {
 		cfg.Database.DBName = v
 	}
-	if v := getEnv("SECURITY_HUB_DB_USER", "SYSTEM_UPDATER_DB_USER", "PG_USER"); v != "" {
+	if v := getEnv("SECURITY_HUB_DB_USER", "PG_USER"); v != "" {
 		cfg.Database.DBUser = v
 	}
-	if v := getEnv("SECURITY_HUB_DB_PASS", "SYSTEM_UPDATER_DB_PASS", "PG_PASS"); v != "" {
+	if v := getEnv("SECURITY_HUB_DB_PASS", "PG_PASS"); v != "" {
 		cfg.Database.DBPass = v
 	}
-	if v := getEnv("SECURITY_HUB_DATA_DIR", "UPDATER_DATA_DIR"); v != "" {
+	if v := getEnv("SECURITY_HUB_DATA_DIR"); v != "" {
 		cfg.Database.DataDir = v
 	}
 	if v := getEnv("EMAIL_HOST", "SMTP_HOST"); v != "" {

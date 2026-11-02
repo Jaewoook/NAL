@@ -203,7 +203,7 @@ func runCLI(args []string, out io.Writer) int {
 		if *portFlag > 0 {
 			cfg.Web.Port = *portFlag
 		} else if cfg.Web.Port == 0 || cfg.Web.Port == 10311 {
-			if os.Getenv("UPDATER_PORT") == "" && os.Getenv("PORT") == "" {
+			if os.Getenv("SECURITY_HUB_PORT") == "" && os.Getenv("PORT") == "" {
 				cfg.Web.Port = 10247
 			}
 		}
@@ -350,7 +350,7 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 
 func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 	if cfg.AgentToken == "" {
-		fmt.Fprintln(out, "Error: agent_token (or -token / UPDATER_AGENT_TOKEN) is required in agent mode")
+		fmt.Fprintln(out, "Error: agent_token (or -token / SECURITY_HUB_AGENT_TOKEN) is required in agent mode")
 		return 1
 	}
 	store, err := db.NewSpoolStore(cfg.Database.DataDir, nil)
@@ -397,7 +397,7 @@ Commands:
   scan               Run an immediate multi-node Docker, Homebrew, CVE, and EoL scan
   rollback <service> Roll back a Docker service to its previous snapshot
   auth login-link    Generate a 5-minute break-glass web login link
-  db init            Provision the system_updater database in services/db
+  db init            Provision the security_hub database in services/db
   test-alert         Send a test SMTP email alert
   service <action>   Manage macOS launchd service (install, start, stop, restart, status)`)
 }

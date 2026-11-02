@@ -20,10 +20,7 @@ import (
 	"github.com/jaewoook/security-hub/internal/config"
 )
 
-const (
-	SessionCookieName       = "nal_security_hub_session"
-	LegacySessionCookieName = "nal_updater_session"
-)
+const SessionCookieName = "nal_security_hub_session"
 
 type SessionClaims struct {
 	Subject   string `json:"sub"`
@@ -144,22 +141,12 @@ func (m *Manager) ClearSessionCookie(w http.ResponseWriter) {
 		HttpOnly: true,
 		MaxAge:   -1,
 	})
-	http.SetCookie(w, &http.Cookie{
-		Name:     LegacySessionCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		MaxAge:   -1,
-	})
 }
 
 func (m *Manager) VerifyRequest(r *http.Request) (*SessionClaims, error) {
 	c, err := r.Cookie(SessionCookieName)
 	if err != nil || c.Value == "" {
-		c, err = r.Cookie(LegacySessionCookieName)
-		if err != nil || c.Value == "" {
-			return nil, errors.New("missing session cookie")
-		}
+		return nil, errors.New("missing session cookie")
 	}
 	parts := strings.Split(c.Value, ".")
 	if len(parts) != 2 {

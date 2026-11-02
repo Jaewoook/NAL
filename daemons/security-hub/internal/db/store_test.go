@@ -196,7 +196,7 @@ func TestSpoolStore_OfflineDuringPostgresUpgradeAndIdempotentFlush(t *testing.T)
 
 func TestPostgresBackend_BatchedLogsAndBase64SafeEncoding(t *testing.T) {
 	var executedSQL []string
-	pg := NewPostgresBackend("postgresql", "system_updater", "system_updater", func(name string, args ...string) ([]byte, error) {
+	pg := NewPostgresBackend("postgresql", "security_hub", "security_hub", func(name string, args ...string) ([]byte, error) {
 		if len(args) > 0 {
 			executedSQL = append(executedSQL, args[len(args)-1])
 		}
@@ -252,7 +252,7 @@ func TestSpoolStore_NodeRegistryAddListRemove(t *testing.T) {
 
 func TestProvisionDatabase_UsesContainerPostgresUserEnv(t *testing.T) {
 	var calls []string
-	err := ProvisionDatabase(context.Background(), "postgresql", "system_updater", "system_updater", "s3cr3t", func(name string, args ...string) ([]byte, error) {
+	err := ProvisionDatabase(context.Background(), "postgresql", "security_hub", "security_hub", "s3cr3t", func(name string, args ...string) ([]byte, error) {
 		cmd := name + " " + strings.Join(args, " ")
 		calls = append(calls, cmd)
 		if strings.Contains(cmd, "SELECT 1 FROM pg_database") {

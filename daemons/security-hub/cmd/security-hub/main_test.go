@@ -16,8 +16,8 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	}
 
 	tmpDir := t.TempDir()
-	t.Setenv("UPDATER_DATA_DIR", tmpDir)
-	t.Setenv("UPDATER_PUBLIC_URL", "http://localhost:10311")
+	t.Setenv("SECURITY_HUB_DATA_DIR", tmpDir)
+	t.Setenv("SECURITY_HUB_PUBLIC_URL", "http://localhost:10311")
 
 	var out bytes.Buffer
 	code := runCLI([]string{"auth", "login-link"}, &out)

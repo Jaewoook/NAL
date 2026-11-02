@@ -23,11 +23,11 @@ A zero-dependency, single-binary host-level security hub, CVE vulnerability scan
   - Authenticates via Authentik OIDC (`https://auth.jaewook.dev`) with a self-contained HMAC-SHA256 session cookie that survives while `auth` or `db` restarts.
   - Supports local WebAuthn Passkey (TouchID / Hardware Key) registration and offline login, plus a CLI break-glass login link (`./security-hub auth login-link`).
 - **Resilient Task Logs in `services/db` with Local Spooling:**
-  - Streams live task logs over SSE and persists all task logs to `services/db` (`system_updater` database).
+  - Streams live task logs over SSE and persists all task logs to `services/db` (`security_hub` database).
   - Always writes to a local write-ahead spool (`daemons/security-hub/data/`) first—if PostgreSQL is down or upgrading, logs are served from the local spool and flushed to PostgreSQL automatically once `postgresql` is healthy again.
 - **Multi-Server Hub $\rightarrow$ Agent Architecture:**
   - Manage multiple machines from a single Hub dashboard while running lightweight LAN agents (`./security-hub agent`) on remote compute nodes.
-  - Node names auto-detect from the host's system hostname (`os.Hostname()`) by default, or can be explicitly set via `node_name` in `config.yml`, `SECURITY_HUB_NODE_NAME` / `UPDATER_NODE_NAME`, or `-name <node-name>`.
+  - Node names auto-detect from the host's system hostname (`os.Hostname()`) by default, or can be explicitly set via `node_name` in `config.yml`, `SECURITY_HUB_NODE_NAME`, or `-name <node-name>`.
   - Dynamically add or remove compute nodes at any time via the Web UI (**⚙ Manage Nodes**) or CLI (`./security-hub node add|list|remove`).
   - **Graceful Component Auto-Detection:** Automatically skips uninstalled or stopped components on each machine (e.g., if Docker is not installed or stopped on a remote node, only Homebrew, `ollama`, and macOS updates are scanned without error).
 
@@ -51,12 +51,12 @@ Before starting the Hub or any remote Agent, prepare the following secrets and p
    openssl rand -hex 32
    ```
 2. **Prepare `services/db` (PostgreSQL on Hub):**
-   - Ensure `services/db/.env` has `SYSTEM_UPDATER_DB_USER` and `SYSTEM_UPDATER_DB_PASS` (matching `database.db_user` and `database.db_pass` in `config.yml`).
+   - Ensure `services/db/.env` has `SECURITY_HUB_DB_USER` and `SECURITY_HUB_DB_PASS` (matching `database.db_user` and `database.db_pass` in `config.yml`).
    - Ensure `services/db/compose.yml` exposes `127.0.0.1:5432:5432` so the host daemon can reach `postgresql`.
 3. **Configure Authentik OIDC Provider (Optional — for NAL Account SSO):**
    - In Authentik (`https://auth.jaewook.dev`), create an **OAuth2/OpenID Provider** and Application named `security-hub`:
      - **Client Type:** `Confidential`
-     - **Redirect URI:** `https://updater.jaewook.dev/api/auth/oidc/callback` (or `http://localhost:10311/api/auth/oidc/callback` for local access)
+     - **Redirect URI:** `https://securityhub.jaewook.dev/api/auth/oidc/callback` (or `http://localhost:10311/api/auth/oidc/callback` for local access)
    - Copy the **Client ID** and **Client Secret** into `auth.oidc_client_id` and `auth.oidc_client_secret` in `config.yml`.
    - *Note:* Even before Authentik is configured, you can sign in immediately using `./security-hub auth login-link` and register a local hardware/TouchID **Passkey**.
 4. **Configure SMTP App Password (Optional — for Email Alerts):**
@@ -83,24 +83,24 @@ agent_token: "replace-with-shared-lan-agent-secret"
 web:
   host: "0.0.0.0"
   port: 10311
-  public_url: "https://updater.jaewook.dev"
+  public_url: "https://securityhub.jaewook.dev"
 
 auth:
   oidc_issuer: "https://auth.jaewook.dev/application/o/security-hub/"
   oidc_client_id: "security-hub"
   oidc_client_secret: ""
-  redirect_url: "https://updater.jaewook.dev/api/auth/oidc/callback"
+  redirect_url: "https://securityhub.jaewook.dev/api/auth/oidc/callback"
   session_secret: "replace-with-openssl-rand-hex-32"
   session_ttl_hours: 24
-  rp_id: "updater.jaewook.dev"
-  rp_origin: "https://updater.jaewook.dev"
+  rp_id: "securityhub.jaewook.dev"
+  rp_origin: "https://securityhub.jaewook.dev"
 
 database:
-  dsn: "postgres://system_updater:system_updater_pass@127.0.0.1:5432/system_updater?sslmode=disable"
+  dsn: "postgres://security_hub:security_hub_pass@127.0.0.1:5432/security_hub?sslmode=disable"
   container_name: "postgresql"
-  db_name: "system_updater"
-  db_user: "system_updater"
-  db_pass: "system_updater_pass"
+  db_name: "security_hub"
+  db_user: "security_hub"
+  db_pass: "security_hub_pass"
   data_dir: "data"
 
 scanner:
@@ -141,19 +141,19 @@ notifications:
 
 | Variable | Description |
 | :--- | :--- |
-| `SECURITY_HUB_NODE_NAME` / `UPDATER_NODE_NAME` / `NODE_NAME` | Explicit node name (defaults to system hostname via `os.Hostname()`) |
-| `SECURITY_HUB_AGENT_TOKEN` / `UPDATER_AGENT_TOKEN` / `NODE_TOKEN` | Shared `X-NAL-Node-Token` secret for Hub $\leftrightarrow$ Agent LAN communication |
-| `SECURITY_HUB_HOST` / `UPDATER_HOST` | Bind address (default: `0.0.0.0`) |
-| `SECURITY_HUB_PORT` / `UPDATER_PORT` / `PORT` | HTTP listen port (default: `10311` for Hub, `10247` for Agent) |
-| `SECURITY_HUB_PUBLIC_URL` / `UPDATER_PUBLIC_URL` | External dashboard URL (e.g., `https://updater.jaewook.dev`) |
+| `SECURITY_HUB_NODE_NAME` / `NODE_NAME` | Explicit node name (defaults to system hostname via `os.Hostname()`) |
+| `SECURITY_HUB_AGENT_TOKEN` / `NODE_TOKEN` | Shared `X-NAL-Node-Token` secret for Hub $\leftrightarrow$ Agent LAN communication |
+| `SECURITY_HUB_HOST` | Bind address (default: `0.0.0.0`) |
+| `SECURITY_HUB_PORT` / `PORT` | HTTP listen port (default: `10311` for Hub, `10247` for Agent) |
+| `SECURITY_HUB_PUBLIC_URL` | External dashboard URL (e.g., `https://securityhub.jaewook.dev`) |
 | `AUTHENTIK_ISSUER` / `OIDC_ISSUER` | Authentik OIDC provider issuer URL |
 | `AUTHENTIK_CLIENT_ID` / `OIDC_CLIENT_ID` | Authentik OIDC Client ID |
 | `AUTHENTIK_CLIENT_SECRET` / `OIDC_CLIENT_SECRET` | Authentik OIDC Client Secret |
 | `SESSION_SECRET` / `NEXTAUTH_SECRET` | HMAC-SHA256 secret used to sign stateless session cookies |
-| `SECURITY_HUB_DB_NAME` / `SYSTEM_UPDATER_DB_NAME` / `PG_DB` | PostgreSQL database name in `services/db` (default: `system_updater`) |
-| `SECURITY_HUB_DB_USER` / `SYSTEM_UPDATER_DB_USER` / `PG_USER` | PostgreSQL role in `services/db` (default: `system_updater`) |
-| `SECURITY_HUB_DB_PASS` / `SYSTEM_UPDATER_DB_PASS` / `PG_PASS` | Password for the `system_updater` PostgreSQL role |
-| `SECURITY_HUB_DATA_DIR` / `UPDATER_DATA_DIR` | Local write-ahead spool directory (default: `data`) |
+| `SECURITY_HUB_DB_NAME` / `PG_DB` | PostgreSQL database name in `services/db` (default: `security_hub`) |
+| `SECURITY_HUB_DB_USER` / `PG_USER` | PostgreSQL role in `services/db` (default: `security_hub`) |
+| `SECURITY_HUB_DB_PASS` / `PG_PASS` | Password for the `security_hub` PostgreSQL role |
+| `SECURITY_HUB_DATA_DIR` | Local write-ahead spool directory (default: `data`) |
 | `EMAIL_HOST` / `SMTP_HOST` | SMTP server hostname (default: `smtp.gmail.com`) |
 | `EMAIL_PORT` / `SMTP_PORT` | SMTP port (default: `587`) |
 | `EMAIL_USERNAME` / `SMTP_USERNAME` | SMTP username |

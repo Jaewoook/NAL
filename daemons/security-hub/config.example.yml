@@ -12,8 +12,8 @@ web:
   public_url: "https://securityhub.jaewook.dev"
 
 auth:
-  oidc_issuer: "https://auth.jaewook.dev/application/o/security-hub/"
-  oidc_client_id: "security-hub"
+  oidc_issuer: "https://auth.jaewook.dev/application/o/nal-security-hub/"
+  oidc_client_id: "nal-security-hub"
   oidc_client_secret: ""
   redirect_url: "https://securityhub.jaewook.dev/api/auth/oidc/callback"
   session_secret: "replace-with-openssl-rand-hex-32"
@@ -22,11 +22,11 @@ auth:
   rp_origin: "https://securityhub.jaewook.dev"
 
 database:
-  dsn: "postgres://system_updater:system_updater_pass@127.0.0.1:5432/system_updater?sslmode=disable"
+  dsn: "postgres://security_hub:security_hub_pass@127.0.0.1:5432/security_hub?sslmode=disable"
   container_name: "postgresql"
-  db_name: "system_updater"
-  db_user: "system_updater"
-  db_pass: "system_updater_pass"
+  db_name: "security_hub"
+  db_user: "security_hub"
+  db_pass: "security_hub_pass"
   data_dir: "data"
 
 scanner:
@@ -64,5 +64,5 @@ notifications:
 
 logging:
   enabled: true
-  file_path: "security-hub.log"
+  file_path: "nal-security-hub.log"
   console: true
