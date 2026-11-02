@@ -103,11 +103,11 @@ cp services/remote/.env.example services/remote/.env
 ```
 Ensure values match your deployment:
 ```dotenv
-GUACAMOLE_DB_NAME=guacamole_db
-GUACAMOLE_DB_USER=guacamole
-GUACAMOLE_DB_PASS=<your_secure_password>
+POSTGRESQL_DATABASE=guacamole_db
+POSTGRESQL_USER=guacamole
+POSTGRESQL_PASSWORD=<your_secure_password>
 
-GUACAMOLE_OIDC_CLIENT_ID=nal-guacamole
+OPENID_CLIENT_ID=nal-guacamole
 OPENID_AUTHORIZATION_ENDPOINT=https://auth.jaewook.dev/application/o/authorize/
 OPENID_JWKS_ENDPOINT=http://authentik-server:9000/application/o/remote-desktop/jwks/
 OPENID_ISSUER=https://auth.jaewook.dev/application/o/remote-desktop/

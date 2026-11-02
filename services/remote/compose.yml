@@ -18,34 +18,20 @@ services:
     env_file:
       - .env
     environment:
-      # Daemon Link
+      # Fixed Internal Topology
       GUACD_HOSTNAME: guacd
       GUACD_PORT: 4822
-
-      # Webapp Context (serve directly on root /)
-      WEBAPP_CONTEXT: ROOT
-
-      # PostgreSQL Metadata Storage
       POSTGRESQL_HOSTNAME: postgresql
       POSTGRESQL_PORT: 5432
-      POSTGRESQL_DATABASE: ${GUACAMOLE_DB_NAME:-guacamole_db}
-      POSTGRESQL_USER: ${GUACAMOLE_DB_USER:-guacamole}
-      POSTGRESQL_PASSWORD: ${GUACAMOLE_DB_PASS:?database password required}
+      WEBAPP_CONTEXT: ROOT
+
+      # Static Feature Flags
       POSTGRESQL_AUTO_CREATE_ACCOUNTS: "true"
-
-      # Authentication Extension Priority (Redirect to Authentik immediately)
       EXTENSION_PRIORITY: "openid, *"
-
-      # Authentik OpenID Connect Configuration
-      OPENID_AUTHORIZATION_ENDPOINT: ${OPENID_AUTHORIZATION_ENDPOINT:-https://auth.jaewook.dev/application/o/authorize/}
-      OPENID_JWKS_ENDPOINT: ${OPENID_JWKS_ENDPOINT:-http://authentik-server:9000/application/o/remote-desktop/jwks/}
-      OPENID_ISSUER: ${OPENID_ISSUER:-https://auth.jaewook.dev/application/o/remote-desktop/}
-      OPENID_CLIENT_ID: ${GUACAMOLE_OIDC_CLIENT_ID:?OIDC client id required}
-      OPENID_REDIRECT_URI: ${OPENID_REDIRECT_URI:-https://remote.jaewook.dev/}
       OPENID_USERNAME_CLAIM_TYPE: preferred_username
       OPENID_SCOPE: "openid profile email"
 
-      # Memory Optimization (Cap JVM Heap)
+      # JVM Memory Cap
       JAVA_OPTS: "-Xms128m -Xmx384m"
     expose:
       - 8080
