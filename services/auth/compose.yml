@@ -28,12 +28,19 @@ services:
       # - "Branding favicon" > `branding/favicon.svg` (or `/media/public/branding/favicon.svg`)
       # - "Default flow background" > `branding/bg_signin.jpg`
       # - "Custom CSS" > loaded directly into Brand via ak shell or System > Brands
+      # - "App icons" > `apps/<app_name>.<svg|png>` (or `/media/public/apps/<app_name>.<svg|png>`)
       - ./assets/images/bg_signin.jpg:/data/media/public/branding/bg_signin.jpg:ro
       - ./assets/images/logo.svg:/data/media/public/branding/logo.svg:ro
       - ./assets/images/logo.png:/data/media/public/branding/logo.png:ro
       - ./assets/images/favicon.svg:/data/media/public/branding/favicon.svg:ro
       - ./assets/images/favicon.png:/data/media/public/branding/favicon.png:ro
       - ./assets/custom.css:/data/media/public/branding/custom.css:ro
+      - ./assets/icons/apps/guacamole.svg:/data/media/public/apps/guacamole.svg:ro
+      - ./assets/icons/apps/homebrew.svg:/data/media/public/apps/homebrew.svg:ro
+      - ./assets/icons/apps/linuxcontainers.svg:/data/media/public/apps/linuxcontainers.svg:ro
+      - ./assets/icons/apps/nginx-proxy-manager.svg:/data/media/public/apps/nginx-proxy-manager.svg:ro
+      - ./assets/icons/apps/synology-dsm.svg:/data/media/public/apps/synology-dsm.svg:ro
+      - ./assets/icons/apps/technitium-dns.png:/data/media/public/apps/technitium-dns.png:ro
 
   worker:
     image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}
