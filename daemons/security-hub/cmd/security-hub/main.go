@@ -397,7 +397,7 @@ Commands:
   scan               Run an immediate multi-node Docker, Homebrew, CVE, and EoL scan
   rollback <service> Roll back a Docker service to its previous snapshot
   auth login-link    Generate a 5-minute break-glass web login link
-  db init            Provision the security_hub database in services/db
+  db init            Provision the security_hub_db database in services/db
   test-alert         Send a test SMTP email alert
   service <action>   Manage macOS launchd service (install, start, stop, restart, status)`)
 }

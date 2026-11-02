@@ -23,7 +23,7 @@ A zero-dependency, single-binary host-level security hub, CVE vulnerability scan
   - Authenticates via Authentik OIDC (`https://auth.jaewook.dev`) with a self-contained HMAC-SHA256 session cookie that survives while `auth` or `db` restarts.
   - Supports local WebAuthn Passkey (TouchID / Hardware Key) registration and offline login, plus a CLI break-glass login link (`./security-hub auth login-link`).
 - **Resilient Task Logs in `services/db` with Local Spooling:**
-  - Streams live task logs over SSE and persists all task logs to `services/db` (`security_hub` database).
+  - Streams live task logs over SSE and persists all task logs to `services/db` (`security_hub_db` database).
   - Always writes to a local write-ahead spool (`daemons/security-hub/data/`) first—if PostgreSQL is down or upgrading, logs are served from the local spool and flushed to PostgreSQL automatically once `postgresql` is healthy again.
 - **Multi-Server Hub $\rightarrow$ Agent Architecture:**
   - Manage multiple machines from a single Hub dashboard while running lightweight LAN agents (`./security-hub agent`) on remote compute nodes.
@@ -150,7 +150,7 @@ notifications:
 | `AUTHENTIK_CLIENT_ID` / `OIDC_CLIENT_ID` | Authentik OIDC Client ID |
 | `AUTHENTIK_CLIENT_SECRET` / `OIDC_CLIENT_SECRET` | Authentik OIDC Client Secret |
 | `SESSION_SECRET` / `NEXTAUTH_SECRET` | HMAC-SHA256 secret used to sign stateless session cookies |
-| `SECURITY_HUB_DB_NAME` / `PG_DB` | PostgreSQL database name in `services/db` (default: `security_hub`) |
+| `SECURITY_HUB_DB_NAME` / `PG_DB` | PostgreSQL database name in `services/db` (default: `security_hub_db`) |
 | `SECURITY_HUB_DB_USER` / `PG_USER` | PostgreSQL role in `services/db` (default: `security_hub`) |
 | `SECURITY_HUB_DB_PASS` / `PG_PASS` | Password for the `security_hub` PostgreSQL role |
 | `SECURITY_HUB_DATA_DIR` | Local write-ahead spool directory (default: `data`) |
