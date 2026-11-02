@@ -110,9 +110,9 @@ func DefaultConfig() *Config {
 			RPOrigin:        "http://localhost:10311",
 		},
 		Database: DatabaseConfig{
-			DSN:           "postgres://security_hub:security_hub_pass@127.0.0.1:5432/security_hub?sslmode=disable",
+			DSN:           "postgres://security_hub:security_hub_pass@127.0.0.1:5432/security_hub_db?sslmode=disable",
 			ContainerName: "postgresql",
-			DBName:        "security_hub",
+			DBName:        "security_hub_db",
 			DBUser:        "security_hub",
 			DBPass:        "security_hub_pass",
 			DataDir:       "data",

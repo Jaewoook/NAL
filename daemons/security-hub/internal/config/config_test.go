@@ -15,7 +15,7 @@ func TestDefaultConfigAndEnvOverrides(t *testing.T) {
 	t.Setenv("SECURITY_HUB_PORT", "10311")
 	t.Setenv("AUTHENTIK_ISSUER", "https://auth.jaewook.dev/application/o/security-hub/")
 	t.Setenv("AUTHENTIK_CLIENT_ID", "security-hub")
-	t.Setenv("PG_DSN", "postgres://security_hub:secret@127.0.0.1:5432/security_hub?sslmode=disable")
+	t.Setenv("PG_DSN", "postgres://security_hub:secret@127.0.0.1:5432/security_hub_db?sslmode=disable")
 	t.Setenv("EMAIL_TO", "admin@jaewook.dev")
 
 	cfg := DefaultConfigWithEnv()

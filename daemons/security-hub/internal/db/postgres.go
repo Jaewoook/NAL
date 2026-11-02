@@ -37,7 +37,7 @@ func NewPostgresBackend(containerName, dbName, dbUser string, runner CLIRunner) 
 		containerName = "postgresql"
 	}
 	if dbName == "" {
-		dbName = "security_hub"
+		dbName = "security_hub_db"
 	}
 	if dbUser == "" {
 		dbUser = "security_hub"
@@ -210,7 +210,7 @@ func ProvisionDatabase(ctx context.Context, containerName, dbName, dbUser, dbPas
 		containerName = "postgresql"
 	}
 	if dbName == "" {
-		dbName = "security_hub"
+		dbName = "security_hub_db"
 	}
 	if dbUser == "" {
 		dbUser = "security_hub"
