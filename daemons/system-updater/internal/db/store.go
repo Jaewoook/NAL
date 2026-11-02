@@ -38,6 +38,10 @@ type Store interface {
 	ListSkippedVersions(ctx context.Context) (map[string]string, error)
 	RecordAlertSent(ctx context.Context, fingerprint, alertType string) error
 	HasAlertBeenSent(ctx context.Context, fingerprint string) (bool, error)
+	UpsertNode(ctx context.Context, node models.NodeInfo) error
+	RemoveNode(ctx context.Context, name string) error
+	GetNode(ctx context.Context, name string) (*models.NodeInfo, error)
+	ListNodes(ctx context.Context) ([]models.NodeInfo, error)
 	SaveScanResult(ctx context.Context, scan *models.ScanResult) error
 	LoadLatestScanResult(ctx context.Context) (*models.ScanResult, error)
 	FlushPending(ctx context.Context) error
@@ -51,6 +55,7 @@ type localStateFile struct {
 	Snapshots   map[string]models.RollbackSnapshot `json:"snapshots"`
 	Skipped     map[string]models.SkippedVersion   `json:"skipped"`
 	Alerts      map[string]string                  `json:"alerts"`
+	Nodes       map[string]models.NodeInfo         `json:"nodes"`
 }
 
 type SpoolStore struct {
@@ -84,6 +89,7 @@ func NewSpoolStore(dataDir string, pg Backend) (*SpoolStore, error) {
 			Snapshots:   make(map[string]models.RollbackSnapshot),
 			Skipped:     make(map[string]models.SkippedVersion),
 			Alerts:      make(map[string]string),
+			Nodes:       make(map[string]models.NodeInfo),
 		},
 	}
 	if raw, err := os.ReadFile(s.statePath); err == nil {
@@ -105,6 +111,9 @@ func NewSpoolStore(dataDir string, pg Backend) (*SpoolStore, error) {
 		}
 		if s.state.Alerts == nil {
 			s.state.Alerts = make(map[string]string)
+		}
+		if s.state.Nodes == nil {
+			s.state.Nodes = make(map[string]models.NodeInfo)
 		}
 	}
 	return s, nil
@@ -395,6 +404,54 @@ func (s *SpoolStore) HasAlertBeenSent(ctx context.Context, fingerprint string) (
 	defer s.mu.RUnlock()
 	_, ok := s.state.Alerts[fingerprint]
 	return ok, nil
+}
+
+func (s *SpoolStore) UpsertNode(ctx context.Context, node models.NodeInfo) error {
+	if node.Name == "" {
+		return fmt.Errorf("node name is required")
+	}
+	if node.Role == "" {
+		node.Role = "agent"
+	}
+	s.mu.Lock()
+	if existing, ok := s.state.Nodes[node.Name]; ok && node.Token == "" {
+		node.Token = existing.Token
+	}
+	s.state.Nodes[node.Name] = node
+	err := s.saveStateLocked()
+	s.mu.Unlock()
+	return err
+}
+
+func (s *SpoolStore) RemoveNode(ctx context.Context, name string) error {
+	s.mu.Lock()
+	delete(s.state.Nodes, name)
+	err := s.saveStateLocked()
+	s.mu.Unlock()
+	return err
+}
+
+func (s *SpoolStore) GetNode(ctx context.Context, name string) (*models.NodeInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n, ok := s.state.Nodes[name]
+	if !ok {
+		return nil, fmt.Errorf("node %q not found", name)
+	}
+	return &n, nil
+}
+
+func (s *SpoolStore) ListNodes(ctx context.Context) ([]models.NodeInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var list []models.NodeInfo
+	for _, n := range s.state.Nodes {
+		list = append(list, n)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].Name < list[j].Name
+	})
+	return list, nil
 }
 
 func (s *SpoolStore) SaveScanResult(ctx context.Context, scan *models.ScanResult) error {

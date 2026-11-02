@@ -365,4 +365,21 @@ func TestBrewCasksAndDaemonSoftwareUpdate(t *testing.T) {
 	}
 }
 
+func TestDockerScanner_GracefullyIgnoresStoppedOrMissingDocker(t *testing.T) {
+	runner := &fakeRunner{
+		handler: func(name string, args ...string) ([]byte, error) {
+			if name == "docker" && len(args) > 0 && args[0] == "info" {
+				return []byte("Cannot connect to the Docker daemon"), errors.New("exit status 1")
+			}
+			return nil, nil
+		},
+	}
+	ds := NewDockerScanner(t.TempDir(), nil, nil, runner, nil)
+	items, err := ds.ScanDockerServices(context.Background())
+	if err != nil || len(items) != 0 {
+		t.Fatalf("expected graceful empty slice and nil error when Docker is stopped/uninstalled, got items=%v err=%v", items, err)
+	}
+}
+
+
 

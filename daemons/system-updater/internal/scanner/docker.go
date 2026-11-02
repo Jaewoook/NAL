@@ -240,8 +240,17 @@ func ReleaseNotesURLForImage(repo string) string {
 }
 
 func (d *DockerScanner) ScanDockerServices(ctx context.Context) ([]models.ManagedItem, error) {
+	if d.runner != nil {
+		if _, err := d.runner.Run(ctx, "docker", "info"); err != nil {
+			// Gracefully ignore Docker when daemon is stopped or not installed on this host (e.g., Atlas)
+			return nil, nil
+		}
+	}
 	entries, err := os.ReadDir(d.servicesDir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	var items []models.ManagedItem

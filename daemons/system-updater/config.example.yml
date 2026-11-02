@@ -2,6 +2,9 @@
 # NAL System Updater & Security Scanner - Configuration Example
 # ==============================================================================
 
+node_name: "Axis"
+agent_token: "replace-with-shared-lan-agent-secret"
+
 web:
   host: "0.0.0.0"
   port: 10246

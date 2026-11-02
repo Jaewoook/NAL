@@ -23,7 +23,8 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 	}
 	infoOut, err := b.runner.Run(ctx, "brew", "info", "--json=v2", "--installed")
 	if err != nil {
-		return nil, err
+		// Gracefully ignore Homebrew if not installed or unavailable on this host
+		return nil, nil
 	}
 
 	var infoPayload struct {

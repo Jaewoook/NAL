@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -161,5 +162,168 @@ func TestServer_AuthDashboardSkipAndSSELogs(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatal("SSE live stream deadlocked after FinishTask was called")
+	}
+
+	// 7. Multi-Node Registry API (/api/nodes) & Agent Endpoint (/api/agent/scan)
+	nodeBody, _ := json.Marshal(map[string]string{
+		"name":  "Atlas",
+		"url":   "http://192.168.1.50:10247",
+		"token": "atlas-secret-token",
+	})
+	nodeAddReq := httptest.NewRequest(http.MethodPost, "/api/nodes", bytes.NewReader(nodeBody))
+	nodeAddReq.AddCookie(sessionCookie)
+	nodeAddW := httptest.NewRecorder()
+	h.ServeHTTP(nodeAddW, nodeAddReq)
+	if nodeAddW.Code != http.StatusOK {
+		t.Fatalf("POST /api/nodes returned %d: %s", nodeAddW.Code, nodeAddW.Body.String())
+	}
+
+	nodeListReq := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+	nodeListReq.AddCookie(sessionCookie)
+	nodeListW := httptest.NewRecorder()
+	h.ServeHTTP(nodeListW, nodeListReq)
+	if nodeListW.Code != http.StatusOK || !strings.Contains(nodeListW.Body.String(), `"Atlas"`) {
+		t.Fatalf("expected Atlas in GET /api/nodes, got %d: %s", nodeListW.Code, nodeListW.Body.String())
+	}
+
+	// Verify Agent mode endpoint rejects missing/wrong X-NAL-Node-Token and accepts valid token
+	cfg.AgentToken = "atlas-secret-token"
+	cfg.NodeName = "Atlas"
+	agentUnauthW := httptest.NewRecorder()
+	h.ServeHTTP(agentUnauthW, httptest.NewRequest(http.MethodGet, "/api/agent/info", nil))
+	if agentUnauthW.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 on /api/agent/info without token, got %d", agentUnauthW.Code)
+	}
+
+	agentAuthReq := httptest.NewRequest(http.MethodGet, "/api/agent/info", nil)
+	agentAuthReq.Header.Set("X-NAL-Node-Token", "atlas-secret-token")
+	agentAuthW := httptest.NewRecorder()
+	h.ServeHTTP(agentAuthW, agentAuthReq)
+	if agentAuthW.Code != http.StatusOK || !strings.Contains(agentAuthW.Body.String(), `"Atlas"`) {
+		t.Fatalf("expected 200 with Atlas info on /api/agent/info, got %d: %s", agentAuthW.Code, agentAuthW.Body.String())
+	}
+}
+
+type handlerRoundTripper struct {
+	handler http.Handler
+}
+
+func (rt *handlerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if strings.HasPrefix(req.URL.Host, "atlas.lan") {
+		w := httptest.NewRecorder()
+		rt.handler.ServeHTTP(w, req)
+		return w.Result(), nil
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       http.NoBody,
+		Header:     make(http.Header),
+	}, nil
+}
+
+type mockCmdRunner struct {
+	fn func(name string, args ...string) ([]byte, error)
+}
+
+func (m *mockCmdRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	return m.fn(name, args...)
+}
+
+func TestHubToAgent_MultiNodeScanAndRemoteUpdate(t *testing.T) {
+	// 1. Setup Atlas Agent (no Docker installed, only Ollama & Brew)
+	atlasDir := t.TempDir()
+	atlasCfg := config.DefaultConfig()
+	atlasCfg.NodeName = "Atlas"
+	atlasCfg.AgentToken = "shared-secret-xyz"
+	atlasCfg.Database.DataDir = atlasDir
+	atlasCfg.Scanner.ServicesDir = filepath.Join(atlasDir, "no-services")
+
+	var upgradedOnAtlas bool
+	atlasRunner := &mockCmdRunner{
+		fn: func(name string, args ...string) ([]byte, error) {
+			if name == "docker" {
+				return []byte("docker not installed"), errors.New("exit status 127")
+			}
+			if name == "ollama" && len(args) > 0 && args[0] == "--version" {
+				return []byte("ollama version is 0.4.2"), nil
+			}
+			if name == "brew" && len(args) >= 2 && args[0] == "upgrade" && args[1] == "ollama" {
+				upgradedOnAtlas = true
+				return []byte("==> Upgrading ollama 0.4.2 -> 0.5.1 on Atlas"), nil
+			}
+			if name == "brew" && len(args) >= 2 && args[0] == "linkage" {
+				return []byte(""), nil
+			}
+			return []byte(`{"formulae":[],"casks":[]}`), nil
+		},
+	}
+	atlasStore, _ := db.NewSpoolStore(atlasDir, nil)
+	atlasAuth, _ := auth.NewManager(atlasCfg.Auth, filepath.Join(atlasDir, "auth.json"))
+	atlasOrch := scanner.NewOrchestrator(atlasCfg, atlasStore, atlasRunner, &http.Client{Transport: &handlerRoundTripper{}})
+	atlasUpd := updater.NewManager(atlasCfg, atlasStore, atlasRunner, nil)
+	atlasSrv := NewServer(atlasCfg, atlasStore, atlasOrch, atlasUpd, atlasAuth, nil)
+
+	// 2. Setup Axis Hub connected to Atlas via in-memory LAN HTTP transport
+	axisDir := t.TempDir()
+	axisCfg := config.DefaultConfig()
+	axisCfg.NodeName = "Axis"
+	axisCfg.Database.DataDir = axisDir
+	axisCfg.Scanner.ServicesDir = filepath.Join(axisDir, "services")
+	axisStore, _ := db.NewSpoolStore(axisDir, nil)
+	_ = axisStore.UpsertNode(context.Background(), models.NodeInfo{
+		Name:  "Atlas",
+		URL:   "http://atlas.lan:10247",
+		Token: "shared-secret-xyz",
+		Role:  "agent",
+	})
+
+	lanHTTP := &http.Client{Transport: &handlerRoundTripper{handler: atlasSrv.Handler()}}
+	axisRunner := &mockCmdRunner{
+		fn: func(name string, args ...string) ([]byte, error) {
+			return []byte(`{"formulae":[],"casks":[]}`), nil
+		},
+	}
+	axisOrch := scanner.NewOrchestrator(axisCfg, axisStore, axisRunner, lanHTTP)
+
+	// 3. Run multi-node scan from Axis Hub -> verifies Atlas items are aggregated and Docker on Atlas is skipped gracefully
+	scanRes, err := axisOrch.RunFullScan(context.Background())
+	if err != nil {
+		t.Fatalf("RunFullScan failed: %v", err)
+	}
+	var foundAtlasOllama bool
+	for _, it := range scanRes.Items {
+		if it.Node == "Atlas" && it.Name == "ollama" && it.CurrentVersion == "0.4.2" {
+			foundAtlasOllama = true
+		}
+	}
+	if !foundAtlasOllama {
+		t.Fatalf("expected Axis multi-node scan to discover ollama 0.4.2 on Atlas, got items=%+v", scanRes.Items)
+	}
+
+	// 4. Trigger update for Atlas's ollama from Axis Hub -> verifies remote execution & log aggregation in Axis SpoolStore
+	axisUpd := updater.NewManager(axisCfg, axisStore, axisRunner, nil)
+	axisUpd.SetHTTPClient(lanHTTP)
+	hubTask, _ := axisStore.CreateTask(context.Background(), &models.Task{
+		Node:       "Atlas",
+		TaskType:   "daemon_upgrade",
+		TargetType: "daemon",
+		TargetName: "ollama",
+		ToVersion:  "0.5.1",
+	})
+	if err := axisUpd.RunUpdateSync(context.Background(), hubTask.ID, updater.UpdateRequest{
+		Node:          "Atlas",
+		TargetType:    "daemon",
+		TargetName:    "ollama",
+		TargetVersion: "0.5.1",
+		TriggeredBy:   "oidc:admin",
+	}); err != nil {
+		t.Fatalf("remote update on Atlas failed: %v", err)
+	}
+	if !upgradedOnAtlas {
+		t.Fatal("expected brew upgrade ollama to have executed on Atlas agent")
+	}
+	finalTask, logs, _ := axisStore.GetTaskWithLogs(context.Background(), hubTask.ID)
+	if finalTask.Status != "succeeded" || len(logs) == 0 {
+		t.Fatalf("expected succeeded task with logs from Atlas, got task=%+v logs=%+v", finalTask, logs)
 	}
 }

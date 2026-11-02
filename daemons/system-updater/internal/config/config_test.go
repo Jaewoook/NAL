@@ -41,4 +41,7 @@ func TestDefaultConfigAndEnvOverrides(t *testing.T) {
 	if loaded.Scanner.EoLWarningDays != 45 {
 		t.Fatalf("expected 45, got %d", loaded.Scanner.EoLWarningDays)
 	}
+	if loaded.NodeName != "Axis" {
+		t.Fatalf("expected default NodeName='Axis', got %q", loaded.NodeName)
+	}
 }

@@ -1,6 +1,8 @@
 package web
 
 import (
+	"context"
+	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -8,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jaewoook/system-updater/internal/auth"
 	"github.com/jaewoook/system-updater/internal/config"
@@ -57,12 +60,19 @@ func (s *Server) Handler() http.Handler {
 
 	// Protected API endpoints
 	mux.HandleFunc("/api/dashboard", s.authMgr.RequireAuth(s.handleDashboard))
+	mux.HandleFunc("/api/nodes", s.authMgr.RequireAuth(s.handleNodes))
 	mux.HandleFunc("/api/scan", s.authMgr.RequireAuth(s.handleScan))
 	mux.HandleFunc("/api/update", s.authMgr.RequireAuth(s.handleUpdate))
 	mux.HandleFunc("/api/rollback", s.authMgr.RequireAuth(s.handleRollback))
 	mux.HandleFunc("/api/skip", s.authMgr.RequireAuth(s.handleSkip))
 	mux.HandleFunc("/api/tasks", s.authMgr.RequireAuth(s.handleTasksList))
 	mux.HandleFunc("/api/tasks/", s.authMgr.RequireAuth(s.handleTaskDetailOrStream))
+
+	// Remote Agent LAN endpoints (authenticated via X-NAL-Node-Token)
+	mux.HandleFunc("/api/agent/info", s.requireAgentToken(s.handleAgentInfo))
+	mux.HandleFunc("/api/agent/scan", s.requireAgentToken(s.handleAgentScan))
+	mux.HandleFunc("/api/agent/update", s.requireAgentToken(s.handleAgentUpdate))
+	mux.HandleFunc("/api/agent/rollback", s.requireAgentToken(s.handleAgentRollback))
 
 	// Static dashboard files
 	subFS, _ := fs.Sub(staticEmbedFS, "static")
@@ -108,6 +118,190 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "logged_out"})
 }
 
+func (s *Server) buildNodesOverview(ctx context.Context) []models.NodeInfo {
+	hubName := "Axis"
+	if s.cfg != nil && s.cfg.NodeName != "" {
+		hubName = s.cfg.NodeName
+	}
+	out := []models.NodeInfo{
+		{
+			Name:       hubName,
+			Role:       "hub",
+			Online:     true,
+			LastSeenAt: time.Now().UTC(),
+		},
+	}
+	if s.store != nil {
+		registered, _ := s.store.ListNodes(ctx)
+		for _, n := range registered {
+			if n.Name == hubName {
+				continue
+			}
+			n.Token = ""
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case http.MethodGet:
+		_ = json.NewEncoder(w).Encode(s.buildNodesOverview(ctx))
+	case http.MethodPost:
+		var req models.NodeInfo
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.URL) == "" {
+			http.Error(w, `{"error":"name and url are required"}`, http.StatusBadRequest)
+			return
+		}
+		req.Name = strings.TrimSpace(req.Name)
+		req.URL = strings.TrimSpace(req.URL)
+		req.Role = "agent"
+		if err := s.store.UpsertNode(ctx, req); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "saved",
+			"nodes":  s.buildNodesOverview(ctx),
+		})
+	case http.MethodDelete:
+		name := strings.TrimSpace(r.URL.Query().Get("name"))
+		if name == "" {
+			http.Error(w, `{"error":"name query parameter required"}`, http.StatusBadRequest)
+			return
+		}
+		_ = s.store.RemoveNode(ctx, name)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": "removed",
+			"nodes":  s.buildNodesOverview(ctx),
+		})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) requireAgentToken(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		expected := ""
+		if s.cfg != nil {
+			expected = s.cfg.AgentToken
+		}
+		got := r.Header.Get("X-NAL-Node-Token")
+		if expected == "" || subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid or missing X-NAL-Node-Token"})
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) handleAgentInfo(w http.ResponseWriter, r *http.Request) {
+	nodeName := "Atlas"
+	if s.cfg != nil && s.cfg.NodeName != "" {
+		nodeName = s.cfg.NodeName
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(models.NodeInfo{
+		Name:       nodeName,
+		Role:       "agent",
+		Online:     true,
+		LastSeenAt: time.Now().UTC(),
+	})
+}
+
+func (s *Server) handleAgentScan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	items, err := s.orch.ScanLocalNode(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	nodeName := "Atlas"
+	if s.cfg != nil && s.cfg.NodeName != "" {
+		nodeName = s.cfg.NodeName
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"node":  nodeName,
+		"items": items,
+	})
+}
+
+func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req updater.UpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	req.Node = s.cfg.NodeName
+	task, err := s.store.CreateTask(r.Context(), &models.Task{
+		Node:        s.cfg.NodeName,
+		TaskType:    "agent_update",
+		TargetType:  req.TargetType,
+		TargetName:  req.TargetName,
+		ToVersion:   req.TargetVersion,
+		TriggeredBy: req.TriggeredBy,
+		Status:      "running",
+	})
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	_ = s.updMgr.RunUpdateSync(r.Context(), task.ID, req)
+	finalTask, logs, _ := s.store.GetTaskWithLogs(r.Context(), task.ID)
+	status := "succeeded"
+	errMsg := ""
+	if finalTask != nil {
+		status = finalTask.Status
+		errMsg = finalTask.ErrorMsg
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":    status,
+		"error_msg": errMsg,
+		"logs":      logs,
+	})
+}
+
+func (s *Server) handleAgentRollback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ServiceName string `json:"service_name"`
+		TriggeredBy string `json:"triggered_by"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ServiceName == "" {
+		http.Error(w, `{"error":"service_name required"}`, http.StatusBadRequest)
+		return
+	}
+	task, err := s.updMgr.RollbackService(r.Context(), req.ServiceName, req.TriggeredBy)
+	if err != nil && task == nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	finalTask, logs, _ := s.store.GetTaskWithLogs(r.Context(), task.ID)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":    finalTask.Status,
+		"error_msg": finalTask.ErrorMsg,
+		"logs":      logs,
+	})
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	scan, err := s.store.LoadLatestScanResult(ctx)
@@ -116,19 +310,33 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	skipped, _ := s.store.ListSkippedVersions(ctx)
 	snapshots, _ := s.store.ListSnapshots(ctx)
+	hubName := "Axis"
+	if s.cfg != nil && s.cfg.NodeName != "" {
+		hubName = s.cfg.NodeName
+	}
 	for i := range scan.Items {
-		if snap, ok := snapshots[scan.Items[i].Name]; ok {
+		if scan.Items[i].Node == "" {
+			scan.Items[i].Node = hubName
+		}
+		if snap, ok := snapshots[scan.Items[i].Node+":"+scan.Items[i].Name]; ok {
+			scan.Items[i].HasRollback = true
+			scan.Items[i].RollbackVersion = snap.PreviousVersion
+		} else if snap, ok := snapshots[scan.Items[i].Name]; ok && scan.Items[i].Node == hubName {
 			scan.Items[i].HasRollback = true
 			scan.Items[i].RollbackVersion = snap.PreviousVersion
 		}
 	}
+	nodes := s.buildNodesOverview(ctx)
 	summarized := scanner.ApplySkippedAndSummarize(scan.Items, skipped)
 	summarized.ScannedAt = scan.ScannedAt
+	summarized.Nodes = nodes
 
 	tasks, _ := s.store.ListTasks(ctx, "", 25)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
+		"hub_node":        hubName,
+		"nodes":           nodes,
 		"scan":            summarized,
 		"recent_tasks":    tasks,
 		"snapshots_count": len(snapshots),
@@ -182,6 +390,7 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 	}
 	claims, _ := s.authMgr.VerifyRequest(r)
 	var req struct {
+		Node        string `json:"node"`
 		ServiceName string `json:"service_name"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ServiceName == "" {
@@ -192,7 +401,7 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 	if claims != nil {
 		actor = claims.Method + ":" + claims.Subject
 	}
-	task, err := s.updMgr.RollbackService(r.Context(), req.ServiceName, actor)
+	task, err := s.updMgr.RollbackServiceOnNode(r.Context(), req.Node, req.ServiceName, actor)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
 		return

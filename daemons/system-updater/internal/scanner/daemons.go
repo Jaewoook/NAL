@@ -59,28 +59,33 @@ func (ds *DaemonScanner) fetchLatestOllamaVersion(ctx context.Context, fallback 
 func (ds *DaemonScanner) ScanDaemonsAndOS(ctx context.Context) ([]models.ManagedItem, error) {
 	var items []models.ManagedItem
 
-	// 1. Ollama host daemon
+	// 1. Ollama host daemon (gracefully skip if ollama binary is not installed)
 	ollamaVer := "installed"
+	ollamaInstalled := true
 	if ds.runner != nil {
 		if out, err := ds.runner.Run(ctx, "ollama", "--version"); err == nil {
 			if m := ollamaVerRe.FindStringSubmatch(string(out)); len(m) > 1 {
 				ollamaVer = m[1]
 			}
+		} else {
+			ollamaInstalled = false
 		}
 	}
-	latestOllama := ds.fetchLatestOllamaVersion(ctx, ollamaVer)
-	ollamaOutdated := ollamaVer != "installed" && latestOllama != "" && latestOllama != ollamaVer
-	items = append(items, models.ManagedItem{
-		TargetType:      models.TargetDaemon,
-		Name:            "ollama",
-		CurrentVersion:  ollamaVer,
-		LatestVersion:   latestOllama,
-		Outdated:        ollamaOutdated,
-		AvailableTags:   []string{latestOllama},
-		ReleaseNotesURL: "https://github.com/ollama/ollama/releases",
-		EoL:             models.EoLInfo{Status: models.EoLSupported, Message: "Active host daemon"},
-		LastCheckedAt:   time.Now().UTC(),
-	})
+	if ollamaInstalled {
+		latestOllama := ds.fetchLatestOllamaVersion(ctx, ollamaVer)
+		ollamaOutdated := ollamaVer != "installed" && latestOllama != "" && latestOllama != ollamaVer
+		items = append(items, models.ManagedItem{
+			TargetType:      models.TargetDaemon,
+			Name:            "ollama",
+			CurrentVersion:  ollamaVer,
+			LatestVersion:   latestOllama,
+			Outdated:        ollamaOutdated,
+			AvailableTags:   []string{latestOllama},
+			ReleaseNotesURL: "https://github.com/ollama/ollama/releases",
+			EoL:             models.EoLInfo{Status: models.EoLSupported, Message: "Active host daemon"},
+			LastCheckedAt:   time.Now().UTC(),
+		})
+	}
 
 	// 2. Server Monitor daemon
 	items = append(items, models.ManagedItem{

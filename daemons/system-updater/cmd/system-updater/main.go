@@ -16,6 +16,7 @@ import (
 	"github.com/jaewoook/system-updater/internal/auth"
 	"github.com/jaewoook/system-updater/internal/config"
 	"github.com/jaewoook/system-updater/internal/db"
+	"github.com/jaewoook/system-updater/internal/models"
 	"github.com/jaewoook/system-updater/internal/notifier"
 	"github.com/jaewoook/system-updater/internal/scanner"
 	"github.com/jaewoook/system-updater/internal/service"
@@ -184,6 +185,81 @@ func runCLI(args []string, out io.Writer) int {
 	case "run":
 		return runDaemon(cfg, out)
 
+	case "agent":
+		fs := flag.NewFlagSet("agent", flag.ContinueOnError)
+		nameFlag := fs.String("name", "", "Node name (e.g., Atlas)")
+		hostFlag := fs.String("host", "", "Bind host (default 0.0.0.0)")
+		portFlag := fs.Int("port", 10247, "Agent bind port (default 10247)")
+		tokenFlag := fs.String("token", "", "Shared X-NAL-Node-Token secret")
+		_ = fs.Parse(rest)
+		if *nameFlag != "" {
+			cfg.NodeName = *nameFlag
+		} else if cfg.NodeName == "" || cfg.NodeName == "Axis" {
+			cfg.NodeName = "Atlas"
+		}
+		if *hostFlag != "" {
+			cfg.Web.Host = *hostFlag
+		}
+		if *portFlag > 0 {
+			cfg.Web.Port = *portFlag
+		}
+		if *tokenFlag != "" {
+			cfg.AgentToken = *tokenFlag
+		}
+		return runAgentDaemon(cfg, out)
+
+	case "node":
+		if len(rest) == 0 {
+			fmt.Fprintln(out, "Usage: system-updater node <add|list|remove>")
+			return 1
+		}
+		store, err := db.NewSpoolStore(cfg.Database.DataDir, nil)
+		if err != nil {
+			fmt.Fprintf(out, "Failed to open spool store: %v\n", err)
+			return 1
+		}
+		switch rest[0] {
+		case "add":
+			if len(rest) < 3 {
+				fmt.Fprintln(out, "Usage: system-updater node add <Name> <URL> [-token <secret>]")
+				return 1
+			}
+			nodeName := rest[1]
+			nodeURL := rest[2]
+			fs := flag.NewFlagSet("node add", flag.ContinueOnError)
+			tokFlag := fs.String("token", cfg.AgentToken, "Shared X-NAL-Node-Token secret")
+			_ = fs.Parse(rest[3:])
+			if err := store.UpsertNode(context.Background(), models.NodeInfo{
+				Name:  nodeName,
+				URL:   nodeURL,
+				Token: *tokFlag,
+				Role:  "agent",
+			}); err != nil {
+				fmt.Fprintf(out, "Failed to add node: %v\n", err)
+				return 1
+			}
+			fmt.Fprintf(out, "Registered node %s (%s)\n", nodeName, nodeURL)
+			return 0
+		case "list":
+			nodes, _ := store.ListNodes(context.Background())
+			fmt.Fprintf(out, "• %s (Hub, Local)\n", cfg.NodeName)
+			for _, n := range nodes {
+				fmt.Fprintf(out, "• %s (%s) — online=%v\n", n.Name, n.URL, n.Online)
+			}
+			return 0
+		case "remove":
+			if len(rest) < 2 {
+				fmt.Fprintln(out, "Usage: system-updater node remove <Name>")
+				return 1
+			}
+			_ = store.RemoveNode(context.Background(), rest[1])
+			fmt.Fprintf(out, "Removed node %s\n", rest[1])
+			return 0
+		default:
+			fmt.Fprintln(out, "Usage: system-updater node <add|list|remove>")
+			return 1
+		}
+
 	default:
 		printUsage(out)
 		return 1
@@ -268,13 +344,53 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 	return 0
 }
 
+func runAgentDaemon(cfg *config.Config, out io.Writer) int {
+	if cfg.AgentToken == "" {
+		fmt.Fprintln(out, "Error: agent_token (or -token / UPDATER_AGENT_TOKEN) is required in agent mode")
+		return 1
+	}
+	store, err := db.NewSpoolStore(cfg.Database.DataDir, nil)
+	if err != nil {
+		fmt.Fprintf(out, "Failed to initialize agent spool store: %v\n", err)
+		return 1
+	}
+	authMgr, _ := auth.NewManager(cfg.Auth, filepath.Join(cfg.Database.DataDir, "auth_state.json"))
+	orch := scanner.NewOrchestrator(cfg, store, nil, nil)
+	updMgr := updater.NewManager(cfg, store, nil, nil)
+	srv := web.NewServer(cfg, store, orch, updMgr, authMgr, nil)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	addr := fmt.Sprintf("%s:%d", cfg.Web.Host, cfg.Web.Port)
+	httpSrv := &http.Server{
+		Addr:    addr,
+		Handler: srv.Handler(),
+	}
+	go func() {
+		<-ctx.Done()
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(shutCtx)
+	}()
+
+	fmt.Fprintf(out, "NAL System Updater Agent [%s] listening on http://%s\n", cfg.NodeName, addr)
+	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Fprintf(out, "Agent HTTP server error: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
 func printUsage(out io.Writer) {
 	fmt.Fprintln(out, `Usage:
   system-updater <command> [flags]
 
 Commands:
-  run                Run the background scanner, spool syncer, and web dashboard
-  scan               Run an immediate Docker, Homebrew, CVE, and EoL scan
+  run                Run the Hub scanner, spool syncer, and web dashboard (default: Axis)
+  agent              Run the lightweight LAN Agent on a compute node (e.g., Atlas)
+  node <action>      Manage registered compute nodes (add, list, remove)
+  scan               Run an immediate multi-node Docker, Homebrew, CVE, and EoL scan
   rollback <service> Roll back a Docker service to its previous snapshot
   auth login-link    Generate a 5-minute break-glass web login link
   db init            Provision the system_updater database in services/db

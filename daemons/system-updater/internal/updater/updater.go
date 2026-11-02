@@ -1,9 +1,11 @@
 package updater
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +19,7 @@ import (
 )
 
 type UpdateRequest struct {
+	Node          string `json:"node,omitempty"`
 	TargetType    string `json:"target_type"`
 	TargetName    string `json:"target_name"`
 	TargetVersion string `json:"target_version"`
@@ -31,6 +34,7 @@ type Manager struct {
 	store        db.Store
 	runner       scanner.CommandRunner
 	alerter      *notifier.Alerter
+	httpClient   *http.Client
 	pollInterval time.Duration
 }
 
@@ -43,7 +47,14 @@ func NewManager(cfg *config.Config, store db.Store, runner scanner.CommandRunner
 		store:        store,
 		runner:       runner,
 		alerter:      alerter,
+		httpClient:   &http.Client{Timeout: 5 * time.Minute},
 		pollInterval: 2 * time.Second,
+	}
+}
+
+func (m *Manager) SetHTTPClient(c *http.Client) {
+	if c != nil {
+		m.httpClient = c
 	}
 }
 
@@ -51,8 +62,15 @@ func (m *Manager) newTaskModel(req UpdateRequest, fromVer string) *models.Task {
 	taskType := "docker_update"
 	if req.TargetType == string(models.TargetBrew) {
 		taskType = "brew_upgrade"
+	} else if req.TargetType == string(models.TargetDaemon) {
+		taskType = "daemon_upgrade"
+	}
+	nodeName := req.Node
+	if nodeName == "" && m.cfg != nil {
+		nodeName = m.cfg.NodeName
 	}
 	return &models.Task{
+		Node:        nodeName,
 		TaskType:    taskType,
 		TargetType:  req.TargetType,
 		TargetName:  req.TargetName,
@@ -81,10 +99,77 @@ func (m *Manager) logStep(ctx context.Context, taskID, stream, msg string) {
 }
 
 func (m *Manager) RunUpdateSync(ctx context.Context, taskID string, req UpdateRequest) error {
-	if req.TargetType == string(models.TargetBrew) {
+	localNode := "Axis"
+	if m.cfg != nil && m.cfg.NodeName != "" {
+		localNode = m.cfg.NodeName
+	}
+	if req.Node != "" && req.Node != localNode {
+		return m.forwardUpdateToAgent(ctx, taskID, req)
+	}
+	if req.TargetType == string(models.TargetBrew) || (req.TargetType == string(models.TargetDaemon) && req.TargetName == "ollama") {
 		return m.runBrewUpgrade(ctx, taskID, req)
 	}
 	return m.runDockerUpdate(ctx, taskID, req)
+}
+
+func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req UpdateRequest) error {
+	nodeInfo, err := m.store.GetNode(ctx, req.Node)
+	if err != nil {
+		errMsg := fmt.Sprintf("unknown remote node %q: %v", req.Node, err)
+		m.logStep(ctx, taskID, "error", errMsg)
+		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf(errMsg)
+	}
+	m.logStep(ctx, taskID, "info", fmt.Sprintf("Forwarding update for %s (%s -> %s) to remote agent %s (%s)...", req.TargetName, req.TargetType, req.TargetVersion, nodeInfo.Name, nodeInfo.URL))
+	agentReq := req
+	agentReq.Node = nodeInfo.Name
+	body, _ := json.Marshal(agentReq)
+	endpoint := strings.TrimRight(nodeInfo.URL, "/") + "/api/agent/update"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		_ = m.store.FinishTask(ctx, taskID, "failed", err.Error())
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if nodeInfo.Token != "" {
+		httpReq.Header.Set("X-NAL-Node-Token", nodeInfo.Token)
+	}
+	resp, err := m.httpClient.Do(httpReq)
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to contact remote agent %s: %v", nodeInfo.Name, err)
+		m.logStep(ctx, taskID, "error", errMsg)
+		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf(errMsg)
+	}
+	defer resp.Body.Close()
+
+	var payload struct {
+		Status   string               `json:"status"`
+		ErrorMsg string               `json:"error_msg"`
+		Logs     []models.TaskLogLine `json:"logs"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		errMsg := fmt.Sprintf("invalid response from agent %s (HTTP %d): %v", nodeInfo.Name, resp.StatusCode, err)
+		m.logStep(ctx, taskID, "error", errMsg)
+		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf(errMsg)
+	}
+	for _, l := range payload.Logs {
+		m.logStep(ctx, taskID, l.Stream, fmt.Sprintf("[%s] %s", nodeInfo.Name, l.Line))
+	}
+	status := payload.Status
+	if status == "" {
+		if resp.StatusCode == http.StatusOK {
+			status = "succeeded"
+		} else {
+			status = "failed"
+		}
+	}
+	_ = m.store.FinishTask(ctx, taskID, status, payload.ErrorMsg)
+	if status != "succeeded" {
+		return fmt.Errorf("remote agent %s task finished with status %s: %s", nodeInfo.Name, status, payload.ErrorMsg)
+	}
+	return nil
 }
 
 func (m *Manager) runBrewUpgrade(ctx context.Context, taskID string, req UpdateRequest) error {
@@ -255,11 +340,74 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 }
 
 func (m *Manager) RollbackService(ctx context.Context, serviceName, triggeredBy string) (*models.Task, error) {
+	return m.RollbackServiceOnNode(ctx, "", serviceName, triggeredBy)
+}
+
+func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceName, triggeredBy string) (*models.Task, error) {
+	localNode := "Axis"
+	if m.cfg != nil && m.cfg.NodeName != "" {
+		localNode = m.cfg.NodeName
+	}
+	if nodeName != "" && nodeName != localNode {
+		nodeInfo, err := m.store.GetNode(ctx, nodeName)
+		if err != nil {
+			return nil, err
+		}
+		task, err := m.store.CreateTask(ctx, &models.Task{
+			Node:        nodeName,
+			TaskType:    "docker_rollback",
+			TargetType:  "docker",
+			TargetName:  serviceName,
+			FromVersion: "current",
+			ToVersion:   "snapshot",
+			TriggeredBy: triggeredBy,
+			Status:      "running",
+		})
+		if err != nil {
+			return nil, err
+		}
+		body, _ := json.Marshal(map[string]string{
+			"service_name": serviceName,
+			"triggered_by": triggeredBy,
+		})
+		endpoint := strings.TrimRight(nodeInfo.URL, "/") + "/api/agent/rollback"
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+		if err != nil {
+			_ = m.store.FinishTask(ctx, task.ID, "failed", err.Error())
+			return task, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		if nodeInfo.Token != "" {
+			httpReq.Header.Set("X-NAL-Node-Token", nodeInfo.Token)
+		}
+		resp, err := m.httpClient.Do(httpReq)
+		if err != nil {
+			_ = m.store.FinishTask(ctx, task.ID, "failed", err.Error())
+			return task, err
+		}
+		defer resp.Body.Close()
+		var payload struct {
+			Status   string               `json:"status"`
+			ErrorMsg string               `json:"error_msg"`
+			Logs     []models.TaskLogLine `json:"logs"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&payload)
+		for _, l := range payload.Logs {
+			m.logStep(ctx, task.ID, l.Stream, fmt.Sprintf("[%s] %s", nodeName, l.Line))
+		}
+		if payload.Status == "" {
+			payload.Status = "succeeded"
+		}
+		_ = m.store.FinishTask(ctx, task.ID, payload.Status, payload.ErrorMsg)
+		return task, nil
+	}
+
 	snap, err := m.store.GetLatestSnapshot(ctx, serviceName)
 	if err != nil {
 		return nil, err
 	}
 	task, err := m.store.CreateTask(ctx, &models.Task{
+		Node:        localNode,
 		TaskType:    "docker_rollback",
 		TargetType:  "docker",
 		TargetName:  serviceName,

@@ -219,3 +219,35 @@ func TestPostgresBackend_BatchedLogsAndBase64SafeEncoding(t *testing.T) {
 	}
 }
 
+func TestSpoolStore_NodeRegistryAddListRemove(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewSpoolStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = store.UpsertNode(ctx, models.NodeInfo{
+		Name:  "Atlas",
+		URL:   "http://192.168.1.50:10247",
+		Token: "shared-secret",
+		Role:  "agent",
+	})
+	if err != nil {
+		t.Fatalf("UpsertNode failed: %v", err)
+	}
+
+	nodes, err := store.ListNodes(ctx)
+	if err != nil || len(nodes) != 1 || nodes[0].Name != "Atlas" {
+		t.Fatalf("expected 1 node Atlas, got err=%v nodes=%+v", err, nodes)
+	}
+
+	if err := store.RemoveNode(ctx, "Atlas"); err != nil {
+		t.Fatalf("RemoveNode failed: %v", err)
+	}
+	nodesAfter, _ := store.ListNodes(ctx)
+	if len(nodesAfter) != 0 {
+		t.Fatalf("expected 0 nodes after RemoveNode, got %d", len(nodesAfter))
+	}
+}
+
+

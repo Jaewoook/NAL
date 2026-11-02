@@ -73,6 +73,8 @@ type LoggingConfig struct {
 }
 
 type Config struct {
+	NodeName      string              `yaml:"node_name"`
+	AgentToken    string              `yaml:"agent_token"`
 	Web           WebConfig           `yaml:"web"`
 	Auth          AuthConfig          `yaml:"auth"`
 	Database      DatabaseConfig      `yaml:"database"`
@@ -84,6 +86,7 @@ type Config struct {
 
 func DefaultConfig() *Config {
 	return &Config{
+		NodeName: "Axis",
 		Web: WebConfig{
 			Host:      "0.0.0.0",
 			Port:      10246,
@@ -170,6 +173,12 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 func ApplyEnvOverrides(cfg *Config) {
+	if v := getEnv("UPDATER_NODE_NAME", "NODE_NAME"); v != "" {
+		cfg.NodeName = v
+	}
+	if v := getEnv("UPDATER_AGENT_TOKEN", "NODE_TOKEN"); v != "" {
+		cfg.AgentToken = v
+	}
 	if v := getEnv("UPDATER_HOST"); v != "" {
 		cfg.Web.Host = v
 	}
@@ -235,6 +244,9 @@ func ApplyEnvOverrides(cfg *Config) {
 }
 
 func ValidateAndApplyDefaults(cfg *Config) {
+	if cfg.NodeName == "" {
+		cfg.NodeName = "Axis"
+	}
 	if cfg.Web.Port <= 0 {
 		cfg.Web.Port = 10246
 	}

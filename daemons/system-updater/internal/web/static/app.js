@@ -1,4 +1,5 @@
 let currentTab = 'docker';
+let currentNodeFilter = 'all';
 let dashboardData = null;
 let pendingUpdateReq = null;
 let activeEventSource = null;
@@ -25,22 +26,68 @@ async function loadDashboard() {
     return initApp();
   }
   dashboardData = await res.json();
+  renderNodeBar();
   renderSummary();
   renderItemsTable();
   renderTaskList();
 }
 
+function getFilteredItems() {
+  const all = (dashboardData && dashboardData.scan && dashboardData.scan.items) || [];
+  if (currentNodeFilter === 'all') return all;
+  return all.filter(i => (i.node || dashboardData.hub_node || 'Axis') === currentNodeFilter);
+}
+
+function selectNodeFilter(nodeName) {
+  currentNodeFilter = nodeName;
+  renderNodeBar();
+  renderSummary();
+  renderItemsTable();
+  renderTaskList();
+}
+
+function renderNodeBar() {
+  const container = document.getElementById('node-pills-container');
+  if (!container) return;
+  const nodes = (dashboardData && dashboardData.nodes) || [{name: 'Axis', role: 'hub', online: true}];
+  let html = `<button class="node-pill ${currentNodeFilter === 'all' ? 'active' : ''}" onclick='selectNodeFilter("all")'>All Nodes (${nodes.length})</button>`;
+  nodes.forEach(n => {
+    const dot = n.online ? 'green' : 'amber';
+    const roleTag = n.role === 'hub' ? 'Hub' : 'Agent';
+    const title = n.last_error ? `Offline: ${n.last_error}` : (n.url || 'Local Host');
+    html += `
+      <button class="node-pill ${currentNodeFilter === n.name ? 'active' : ''}" title="${escapeHtml(title)}" onclick='selectNodeFilter("${escapeHtml(n.name)}")'>
+        <span class="dot ${dot}"></span>
+        <span>${escapeHtml(n.name)}</span>
+        <span class="node-role">${roleTag}</span>
+      </button>
+    `;
+  });
+  container.innerHTML = html;
+}
+
 function renderSummary() {
   const scan = dashboardData.scan || {};
   const tasks = dashboardData.recent_tasks || [];
-  document.getElementById('stat-cves').textContent = `${scan.total_crit_cves || 0} Critical / ${scan.total_high_cves || 0} High`;
-  document.getElementById('stat-eol').textContent = `${scan.total_eol_issues || 0} Expiring/EoL`;
-  document.getElementById('stat-outdated').textContent = `${scan.total_outdated || 0} Updates`;
-  document.getElementById('stat-outdated-sub').textContent = `${scan.total_skipped || 0} Skipped · ${scan.total_broken_brew || 0} Broken Linkage`;
+  const items = getFilteredItems();
+
+  let crit = 0, high = 0, eol = 0, outdated = 0, skipped = 0, broken = 0;
+  items.forEach(it => {
+    crit += (it.crit_count || 0);
+    high += (it.high_count || 0);
+    if (it.eol && (it.eol.status === 'expired' || it.eol.status === 'expiring_soon')) eol++;
+    if (it.outdated) outdated++;
+    if (it.skipped) skipped++;
+    if (it.broken_linkage) broken++;
+  });
+
+  document.getElementById('stat-cves').textContent = `${crit} Critical / ${high} High`;
+  document.getElementById('stat-eol').textContent = `${eol} Expiring/EoL`;
+  document.getElementById('stat-outdated').textContent = `${outdated} Updates`;
+  document.getElementById('stat-outdated-sub').textContent = `${skipped} Skipped · ${broken} Broken Linkage`;
   document.getElementById('stat-tasks').textContent = `${tasks.length} Runs`;
   document.getElementById('stat-last-scan').textContent = scan.scanned_at ? `Last scan: ${new Date(scan.scanned_at).toLocaleString()}` : 'Last scan: Not yet run';
 
-  const items = scan.items || [];
   document.getElementById('badge-docker').textContent = items.filter(i => i.target_type === 'docker').length;
   document.getElementById('badge-brew').textContent = items.filter(i => i.target_type === 'brew').length;
   document.getElementById('badge-daemons').textContent = items.filter(i => i.target_type === 'daemon' || i.target_type === 'macos').length;
@@ -66,18 +113,19 @@ function switchTab(tab) {
 function renderItemsTable() {
   const tbody = document.getElementById('items-tbody');
   tbody.innerHTML = '';
-  const items = ((dashboardData && dashboardData.scan && dashboardData.scan.items) || []).filter(item => {
+  const items = getFilteredItems().filter(item => {
     if (currentTab === 'docker') return item.target_type === 'docker';
     if (currentTab === 'brew') return item.target_type === 'brew';
     return item.target_type === 'daemon' || item.target_type === 'macos';
   });
 
   if (items.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center; padding:28px;">No items scanned yet. Click <strong>↻ Scan Now</strong> in the top bar.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="muted" style="text-align:center; padding:28px;">No components on this node/tab (uninstalled or stopped components are ignored automatically). Click <strong>↻ Scan Now</strong> to refresh.</td></tr>`;
     return;
   }
 
   items.forEach((item, idx) => {
+    const nodeName = item.node || (dashboardData && dashboardData.hub_node) || 'Axis';
     const tr = document.createElement('tr');
     const dotClass = (item.crit_count > 0 || item.broken_linkage || item.eol?.status === 'expired') ? 'red'
       : (item.high_count > 0 || item.eol?.status === 'expiring_soon' || item.outdated) ? 'amber' : 'green';
@@ -106,7 +154,7 @@ function renderItemsTable() {
     const optionsHtml = tags.map(t => `<option value="${escapeHtml(t)}" ${t === item.latest_version ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('');
 
     let actionsHtml = '';
-    if (item.target_type === 'docker' || item.target_type === 'brew') {
+    if (item.target_type === 'docker' || item.target_type === 'brew' || (item.target_type === 'daemon' && item.name === 'ollama')) {
       const btnClass = (item.crit_count > 0 || item.broken_linkage) ? 'btn-danger' : 'btn-primary';
       const btnLabel = item.broken_linkage ? 'Upgrade & Fix' : 'Update';
       actionsHtml += `<button class="btn ${btnClass}" onclick='openUpdateModal(${JSON.stringify(item)}, "${selectId}")'>${btnLabel}</button>`;
@@ -117,7 +165,7 @@ function renderItemsTable() {
         actionsHtml += `<button class="btn btn-ghost" onclick='skipItem("${item.target_type}", "${item.name}", "${selectId}")'>Skip</button>`;
       }
       if (item.has_rollback) {
-        actionsHtml += `<button class="btn btn-ghost" onclick='rollbackService("${item.name}")'>Rollback (${escapeHtml(item.rollback_version)})</button>`;
+        actionsHtml += `<button class="btn btn-ghost" onclick='rollbackService("${escapeHtml(nodeName)}", "${item.name}")'>Rollback (${escapeHtml(item.rollback_version)})</button>`;
       }
     }
     if (item.release_notes_url) {
@@ -128,6 +176,7 @@ function renderItemsTable() {
       <td>
         <div class="svc-name">
           <span class="dot ${dotClass}"></span>
+          <span class="badge skip" style="font-size:11px; padding:1px 6px;">${escapeHtml(nodeName)}</span>
           <span>${escapeHtml(item.name)}</span>
           ${item.critical_path ? '<span class="badge warn" style="font-size:10px;">Critical Path</span>' : ''}
         </div>
@@ -149,15 +198,17 @@ function renderItemsTable() {
 function openUpdateModal(item, selectId) {
   const sel = document.getElementById(selectId);
   const targetVer = sel ? sel.value : item.latest_version;
+  const nodeName = item.node || (dashboardData && dashboardData.hub_node) || 'Axis';
   pendingUpdateReq = {
+    node: nodeName,
     target_type: item.target_type,
     target_name: item.name,
     target_version: targetVer,
     broken_linkage: !!item.broken_linkage,
     stateful: !!item.stateful
   };
-  document.getElementById('modal-title').textContent = `Confirm Update: ${item.name}`;
-  document.getElementById('modal-desc').textContent = `Updating ${item.name} from ${item.current_version} → ${targetVer}`;
+  document.getElementById('modal-title').textContent = `Confirm Update on [${nodeName}]: ${item.name}`;
+  document.getElementById('modal-desc').textContent = `Updating ${item.name} on ${nodeName} from ${item.current_version} → ${targetVer}`;
   document.getElementById('chk-backup').checked = !!item.stateful;
   document.getElementById('lbl-backup').style.display = item.target_type === 'docker' ? 'flex' : 'none';
   document.getElementById('modal-update').style.display = 'flex';
@@ -189,17 +240,70 @@ async function confirmAndStartUpdate() {
   }
 }
 
-async function rollbackService(serviceName) {
-  if (!confirm(`Roll back ${serviceName} to its previous snapshot version and digest?`)) return;
+async function rollbackService(nodeName, serviceName) {
+  if (!confirm(`Roll back ${serviceName} on ${nodeName} to its previous snapshot version and digest?`)) return;
   const res = await fetch('/api/rollback', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({service_name: serviceName})
+    body: JSON.stringify({node: nodeName, service_name: serviceName})
   });
   const task = await res.json();
   await loadDashboard();
   switchTab('logs');
   if (task && task.id) streamTaskLogs(task.id);
+}
+
+function openNodesModal() {
+  renderNodesModalList();
+  document.getElementById('modal-nodes').style.display = 'flex';
+}
+
+function closeNodesModal() {
+  document.getElementById('modal-nodes').style.display = 'none';
+}
+
+function renderNodesModalList() {
+  const box = document.getElementById('nodes-modal-list');
+  const nodes = (dashboardData && dashboardData.nodes) || [];
+  box.innerHTML = nodes.map(n => `
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border);">
+      <div>
+        <span class="dot ${n.online ? 'green' : 'amber'}"></span>
+        <strong>${escapeHtml(n.name)}</strong>
+        <span class="badge skip" style="margin-left:6px;">${escapeHtml(n.role)}</span>
+        <div class="svc-sub">${escapeHtml(n.url || 'Local Hub Host')} ${n.last_error ? '· ' + escapeHtml(n.last_error) : ''}</div>
+      </div>
+      ${n.role !== 'hub' ? `<button class="btn btn-danger" onclick='deleteRemoteNode("${escapeHtml(n.name)}")'>Remove</button>` : ''}
+    </div>
+  `).join('');
+}
+
+async function saveRemoteNode() {
+  const name = document.getElementById('inp-node-name').value.trim();
+  const url = document.getElementById('inp-node-url').value.trim();
+  const token = document.getElementById('inp-node-token').value.trim();
+  if (!name || !url) {
+    alert('Please provide both the device name (e.g., Atlas) and the LAN Agent URL.');
+    return;
+  }
+  await fetch('/api/nodes', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, url, token})
+  });
+  document.getElementById('inp-node-name').value = '';
+  document.getElementById('inp-node-url').value = '';
+  document.getElementById('inp-node-token').value = '';
+  await loadDashboard();
+  renderNodesModalList();
+}
+
+async function deleteRemoteNode(name) {
+  if (!confirm(`Remove compute node "${name}" from the registry?`)) return;
+  await fetch(`/api/nodes?name=${encodeURIComponent(name)}`, {method: 'DELETE'});
+  if (currentNodeFilter === name) currentNodeFilter = 'all';
+  await loadDashboard();
+  renderNodesModalList();
 }
 
 async function skipItem(targetType, targetName, selectId) {
@@ -240,10 +344,11 @@ function renderTaskList() {
   }
   container.innerHTML = tasks.map(t => {
     const badgeClass = t.status === 'succeeded' ? 'ok' : (t.status === 'rolled_back' || t.status === 'running') ? 'warn' : 'crit';
+    const nodeLabel = t.node ? `[${escapeHtml(t.node)}] ` : '';
     return `
       <div class="task-list-item" onclick='streamTaskLogs("${t.id}")'>
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <strong>${escapeHtml(t.id)} · ${escapeHtml(t.task_type)}</strong>
+          <strong>${escapeHtml(t.id)} · ${nodeLabel}${escapeHtml(t.task_type)}</strong>
           <span class="badge ${badgeClass}">${escapeHtml(t.status)}</span>
         </div>
         <div class="svc-sub" style="margin-top:4px;">${escapeHtml(t.target_name)} (${escapeHtml(t.from_version || '')} → ${escapeHtml(t.to_version || '')})</div>

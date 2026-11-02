@@ -35,4 +35,18 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("expected exit code 0 for service install, got %d (%s)", code, out.String())
 	}
+
+	// Verify CLI node add / list / remove
+	out.Reset()
+	if code := runCLI([]string{"node", "add", "Atlas", "http://192.168.1.50:10247", "-token", "sec"}, &out); code != 0 {
+		t.Fatalf("expected exit code 0 for node add, got %d (%s)", code, out.String())
+	}
+	out.Reset()
+	if code := runCLI([]string{"node", "list"}, &out); code != 0 || !strings.Contains(out.String(), "Atlas") {
+		t.Fatalf("expected Atlas in node list output, got code=%d out=%s", code, out.String())
+	}
+	out.Reset()
+	if code := runCLI([]string{"node", "remove", "Atlas"}, &out); code != 0 {
+		t.Fatalf("expected exit code 0 for node remove, got %d (%s)", code, out.String())
+	}
 }

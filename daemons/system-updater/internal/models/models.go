@@ -46,7 +46,19 @@ type EoLInfo struct {
 	Message       string    `json:"message,omitempty"`
 }
 
+type NodeInfo struct {
+	Name       string    `json:"name"`
+	URL        string    `json:"url"`
+	Token      string    `json:"token,omitempty"`
+	Role       string    `json:"role"` // "hub" or "agent"
+	Online     bool      `json:"online"`
+	LastSeenAt time.Time `json:"last_seen_at,omitempty"`
+	LastError  string    `json:"last_error,omitempty"`
+	OSVersion  string    `json:"os_version,omitempty"`
+}
+
 type ManagedItem struct {
+	Node             string          `json:"node,omitempty"`
 	TargetType       TargetType      `json:"target_type"`
 	Name             string          `json:"name"`
 	ServiceKey       string          `json:"service_key,omitempty"`
@@ -78,6 +90,7 @@ type ManagedItem struct {
 
 type ScanResult struct {
 	ScannedAt       time.Time     `json:"scanned_at"`
+	Nodes           []NodeInfo    `json:"nodes,omitempty"`
 	Items           []ManagedItem `json:"items"`
 	TotalCritCVEs   int           `json:"total_crit_cves"`
 	TotalHighCVEs   int           `json:"total_high_cves"`
@@ -89,6 +102,7 @@ type ScanResult struct {
 
 type Task struct {
 	ID          string    `json:"id"`
+	Node        string    `json:"node,omitempty"`
 	TaskType    string    `json:"task_type"`
 	TargetType  string    `json:"target_type"`
 	TargetName  string    `json:"target_name"`
