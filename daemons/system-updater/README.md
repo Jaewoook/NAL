@@ -33,11 +33,40 @@ A zero-dependency, single-binary host-level system updater, CVE vulnerability sc
 
 ---
 
-## Configuration
+## Configuration & Preparation
 
 `system-updater` reads configuration from `config.yml` in the working directory and supports environment variable overrides (environment variables take precedence).
 
-Before provisioning the database or starting the daemon, copy the example configuration and adjust your credentials:
+### 1. Preparation & Secret Generation
+
+Before starting the Hub or any remote Agent, prepare the following secrets and prerequisites:
+
+1. **Generate the `session_secret` (Hub Cookie Signing Key) & `agent_token` (Shared LAN Agent Secret):**
+   Use `openssl` (pre-installed on macOS) to generate cryptographically random 32-byte hex tokens:
+   ```bash
+   # Generate session_secret (for Hub config.yml -> auth.session_secret):
+   openssl rand -hex 32
+
+   # Generate agent_token (shared between Hub and remote Agents via X-NAL-Node-Token):
+   openssl rand -hex 32
+   ```
+2. **Prepare `services/db` (PostgreSQL on Hub):**
+   - Ensure `services/db/.env` has `SYSTEM_UPDATER_DB_USER` and `SYSTEM_UPDATER_DB_PASS` (matching `database.db_user` and `database.db_pass` in `config.yml`).
+   - Ensure `services/db/compose.yml` exposes `127.0.0.1:5432:5432` so the host daemon can reach `postgresql`.
+3. **Configure Authentik OIDC Provider (Optional — for NAL Account SSO):**
+   - In Authentik (`https://auth.jaewook.dev`), create an **OAuth2/OpenID Provider** and Application named `system-updater`:
+     - **Client Type:** `Confidential`
+     - **Redirect URI:** `https://updater.jaewook.dev/api/auth/oidc/callback` (or `http://localhost:10246/api/auth/oidc/callback` for local access)
+   - Copy the **Client ID** and **Client Secret** into `auth.oidc_client_id` and `auth.oidc_client_secret` in `config.yml`.
+   - *Note:* Even before Authentik is configured, you can sign in immediately using `./system-updater auth login-link` and register a local hardware/TouchID **Passkey**.
+4. **Configure SMTP App Password (Optional — for Email Alerts):**
+   - If using Gmail SMTP (`smtp.gmail.com:587`), generate a 16-character **Google App Password** under Google Account $\rightarrow$ Security $\rightarrow$ 2-Step Verification $\rightarrow$ App Passwords, and set `notifications.email.enabled: true`.
+5. **LAN Firewall / Static IP Check (For Multi-Node Agents):**
+   - Ensure the remote compute node has a static LAN IP (e.g., `192.168.1.x`) and allows incoming TCP connections on port `10247` from the Hub machine on the same subnet.
+
+### 2. Create `config.yml`
+
+Copy the example configuration and fill in the values generated above:
 
 ```bash
 cd daemons/system-updater
