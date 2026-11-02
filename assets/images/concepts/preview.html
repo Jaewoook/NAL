@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NAL Authentik Sign-in UI Design Concepts</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #151d2f;
+      --border: #23314d;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      padding: 40px 24px;
+      line-height: 1.6;
+    }
+    .header {
+      max-width: 1280px;
+      margin: 0 auto 40px auto;
+      text-align: center;
+    }
+    .badge {
+      display: inline-block;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      background: rgba(56, 189, 248, 0.12);
+      color: #38bdf8;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+    h1 {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+    p.subtitle {
+      font-size: 16px;
+      color: var(--text-muted);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .gallery {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 60px;
+    }
+    .concept-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .concept-card:hover {
+      border-color: #3b82f6;
+    }
+    .image-container {
+      position: relative;
+      background: #000;
+      line-height: 0;
+    }
+    .image-container img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .details {
+      padding: 30px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      border-top: 1px solid var(--border);
+    }
+    @media (max-width: 768px) {
+      .details {
+        grid-template-columns: 1fr;
+      }
+    }
+    .concept-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .tag {
+      font-size: 12px;
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .tag-cyan { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+    .tag-amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .tag-slate { background: rgba(20, 184, 166, 0.15); color: #2dd4bf; border: 1px solid rgba(20, 184, 166, 0.3); }
+    .description {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .specs {
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 12px;
+      padding: 16px 20px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .specs h4 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .specs ul {
+      list-style-type: none;
+      font-size: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .specs li strong {
+      color: #cbd5e1;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="badge">Network Attached Laboratory</div>
+    <h1>Authentik Sign-in UI Concepts</h1>
+    <p class="subtitle">Review the three distinct visual styles created for auth.jaewook.dev</p>
+  </div>
+
+  <div class="gallery">
+    <!-- Concept 1 -->
+    <div class="concept-card" id="concept-1">
+      <div class="image-container">
+        <img src="auth_ui_1_glassmorphism.png" alt="Concept 1: Twilight Glassmorphism">
+      </div>
+      <div class="details">
+        <div>
+          <div class="concept-title">
+            <span>Concept 1: Twilight Glassmorphism</span>
+            <span class="tag tag-cyan">Modern Lab</span>
+          </div>
+          <p class="description">
+            Frosted glass card aesthetic with high-saturation backdrop blur, radiant electric cyan & violet glows, translucent pill inputs, and a modern SaaS cloud portal feel.
+          </p>
+        </div>
+        <div class="specs">
+          <h4>Style Highlights</h4>
+          <ul>
+            <li><strong>Card:</strong> <code>backdrop-filter: blur(24px)</code>, translucent dark navy (72%)</li>
+            <li><strong>Accents:</strong> Electric Cyan (<code>#38bdf8</code>) & Neon Violet (<code>#818cf8</code>)</li>
+            <li><strong>Button:</strong> Vibrant gradient with soft ambient glow</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Concept 2 -->
+    <div class="concept-card" id="concept-2">
+      <div class="image-container">
+        <img src="auth_ui_2_obsidian_amber.png" alt="Concept 2: Deep Obsidian & Amber Glow">
+      </div>
+      <div class="details">
+        <div>
+          <div class="concept-title">
+            <span>Concept 2: Deep Obsidian & Amber Glow</span>
+            <span class="tag tag-amber">Industrial</span>
+          </div>
+          <p class="description">
+            Hardware engineering lab & terminal warmth. Pitch-black matte obsidian surfaces with high-contrast radiant amber lighting and dark room friendly ergonomics.
+          </p>
+        </div>
+        <div class="specs">
+          <h4>Style Highlights</h4>
+          <ul>
+            <li><strong>Card:</strong> Matte solid obsidian (<code>#0c0e12</code>), sharp micro-borders</li>
+            <li><strong>Accents:</strong> Radiant Warm Amber (<code>#f59e0b</code> / <code>#fbbf24</code>)</li>
+            <li><strong>Button:</strong> High-contrast amber fill with deep charcoal typography</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Concept 3 -->
+    <div class="concept-card" id="concept-3">
+      <div class="image-container">
+        <img src="auth_ui_3_nordic_slate.png" alt="Concept 3: Minimalist Nordic Slate">
+      </div>
+      <div class="details">
+        <div>
+          <div class="concept-title">
+            <span>Concept 3: Minimalist Nordic Slate</span>
+            <span class="tag tag-slate">Minimalist</span>
+          </div>
+          <p class="description">
+            Scandinavian precision and quiet corporate elegance. Muted slate-gray backdrop with crisp micro-borders and subtle iceberg teal highlights.
+          </p>
+        </div>
+        <div class="specs">
+          <h4>Style Highlights</h4>
+          <ul>
+            <li><strong>Card:</strong> Flat balanced slate (<code>#1e293b</code>) with clean 1px border</li>
+            <li><strong>Accents:</strong> Iceberg Teal (<code>#14b8a6</code>) & Slate Blue (<code>#64748b</code>)</li>
+            <li><strong>Button:</strong> Deep spruce teal with crisp white text</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
