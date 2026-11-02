@@ -250,4 +250,25 @@ func TestSpoolStore_NodeRegistryAddListRemove(t *testing.T) {
 	}
 }
 
+func TestProvisionDatabase_UsesContainerPostgresUserEnv(t *testing.T) {
+	var calls []string
+	err := ProvisionDatabase(context.Background(), "postgresql", "system_updater", "system_updater", "s3cr3t", func(name string, args ...string) ([]byte, error) {
+		cmd := name + " " + strings.Join(args, " ")
+		calls = append(calls, cmd)
+		if strings.Contains(cmd, "SELECT 1 FROM pg_database") {
+			return []byte("0\n"), nil
+		}
+		return []byte("OK"), nil
+	})
+	if err != nil {
+		t.Fatalf("ProvisionDatabase failed: %v", err)
+	}
+	if len(calls) < 4 {
+		t.Fatalf("expected at least 4 docker exec calls (role, check db, create db, schema), got %d", len(calls))
+	}
+	if !strings.Contains(calls[0], "${POSTGRES_USER:-postgres}") {
+		t.Fatalf("expected ProvisionDatabase to use container POSTGRES_USER env var, got: %s", calls[0])
+	}
+}
+
 

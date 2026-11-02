@@ -124,9 +124,11 @@ func runCLI(args []string, out io.Writer) int {
 		}
 		if err := db.ProvisionDatabase(context.Background(), cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil); err != nil {
 			fmt.Fprintf(out, "Database provisioning failed: %v\n", err)
+			fmt.Fprintf(out, "Hint: Ensure the %q container (services/db) is running on this Hub host (`cd ../../services/db && docker compose up -d`).\n", cfg.Database.ContainerName)
+			fmt.Fprintf(out, "Note: Remote Agent nodes do not use PostgreSQL (`db init` is only for the Hub), and the Hub can also run with its local spool if PostgreSQL is offline.\n")
 			return 1
 		}
-		fmt.Fprintf(out, "Database %q and role %q provisioned in container %q.\n", cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.ContainerName)
+		fmt.Fprintf(out, "Database %q, role %q, and tables provisioned in container %q.\n", cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.ContainerName)
 		return 0
 
 	case "scan":
@@ -189,7 +191,7 @@ func runCLI(args []string, out io.Writer) int {
 		fs := flag.NewFlagSet("agent", flag.ContinueOnError)
 		nameFlag := fs.String("name", "", "Node name (defaults to system hostname)")
 		hostFlag := fs.String("host", "", "Bind host (default 0.0.0.0)")
-		portFlag := fs.Int("port", 10247, "Agent bind port (default 10247)")
+		portFlag := fs.Int("port", 0, "Agent bind port (overrides config.yml web.port; default 10247)")
 		tokenFlag := fs.String("token", "", "Shared X-NAL-Node-Token secret")
 		_ = fs.Parse(rest)
 		if *nameFlag != "" {
@@ -200,6 +202,10 @@ func runCLI(args []string, out io.Writer) int {
 		}
 		if *portFlag > 0 {
 			cfg.Web.Port = *portFlag
+		} else if cfg.Web.Port == 0 || cfg.Web.Port == 10246 {
+			if os.Getenv("UPDATER_PORT") == "" && os.Getenv("PORT") == "" {
+				cfg.Web.Port = 10247
+			}
 		}
 		if *tokenFlag != "" {
 			cfg.AgentToken = *tokenFlag

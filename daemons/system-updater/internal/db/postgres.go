@@ -206,17 +206,41 @@ func ProvisionDatabase(ctx context.Context, containerName, dbName, dbUser, dbPas
 	if runner == nil {
 		runner = defaultRunner
 	}
-	roleSQL := fmt.Sprintf("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = %s) THEN CREATE USER %s WITH PASSWORD %s; END IF; END $$;",
-		quoteLiteral(dbUser), dbUser, quoteLiteral(dbPass))
-	if out, err := runner("docker", "exec", "-i", containerName, "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres", "-c", roleSQL); err != nil {
-		return fmt.Errorf("failed to create user %s: %w (%s)", dbUser, err, string(out))
+	if containerName == "" {
+		containerName = "postgresql"
 	}
-	checkDB, _ := runner("docker", "exec", "-i", containerName, "psql", "-tAc", fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname=%s", quoteLiteral(dbName)), "-U", "postgres", "-d", "postgres")
+	if dbName == "" {
+		dbName = "system_updater"
+	}
+	if dbUser == "" {
+		dbUser = "system_updater"
+	}
+
+	roleSQL := fmt.Sprintf("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = %s) THEN CREATE USER %s WITH PASSWORD %s; ELSE ALTER USER %s WITH PASSWORD %s; END IF; END $$;",
+		quoteLiteral(dbUser), dbUser, quoteLiteral(dbPass), dbUser, quoteLiteral(dbPass))
+	if out, err := runner("docker", "exec", "-i", containerName,
+		"sh", "-c", `psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -c "$1"`, "--", roleSQL); err != nil {
+		return fmt.Errorf("failed to create/update role %s in container %q: %w (%s)", dbUser, containerName, err, strings.TrimSpace(string(out)))
+	}
+
+	checkSQL := fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname=%s", quoteLiteral(dbName))
+	checkDB, _ := runner("docker", "exec", "-i", containerName,
+		"sh", "-c", `psql -tAc "$1" -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}"`, "--", checkSQL)
 	if strings.TrimSpace(string(checkDB)) != "1" {
 		createDB := fmt.Sprintf("CREATE DATABASE %s OWNER %s;", dbName, dbUser)
-		if out, err := runner("docker", "exec", "-i", containerName, "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres", "-c", createDB); err != nil {
-			return fmt.Errorf("failed to create database %s: %w (%s)", dbName, err, string(out))
+		if out, err := runner("docker", "exec", "-i", containerName,
+			"sh", "-c", `psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -c "$1"`, "--", createDB); err != nil {
+			return fmt.Errorf("failed to create database %s: %w (%s)", dbName, err, strings.TrimSpace(string(out)))
 		}
+	}
+
+	grantSQL := fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE %s TO %s;", dbName, dbUser)
+	_, _ = runner("docker", "exec", "-i", containerName,
+		"sh", "-c", `psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -c "$1"`, "--", grantSQL)
+
+	pg := NewPostgresBackend(containerName, dbName, dbUser, runner)
+	if err := pg.ensureSchema(); err != nil {
+		return fmt.Errorf("failed to initialize schema in database %s: %w", dbName, err)
 	}
 	return nil
 }
