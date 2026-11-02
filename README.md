@@ -150,7 +150,7 @@ Unlike Docker services running inside the container virtualization layer, daemon
 | Daemon | Path | Description | Management |
 | :--- | :--- | :--- | :--- |
 | **Server Monitor** | [`daemons/server-monitor`](./daemons/server-monitor) | Real-time CPU spike & drop anomaly detection, host health telemetry, dead-man's-switch aliveness heartbeat, and multi-channel alerting (Telegram, Discord, Slack, Email, Webhook). | macOS `launchd` / CLI |
-| **System Updater** | [`daemons/system-updater`](./daemons/system-updater) | Unified Docker & Homebrew outdated image/package checker, CVE vulnerability & LTS/EoL scanner, SMTP email alerter, and SSO/Passkey web dashboard with one-click updates, task logs, and 60s Dead-Man's Rollback. | macOS `launchd` / CLI |
+| **Security Hub** | [`daemons/security-hub`](./daemons/security-hub) | Unified Docker & Homebrew outdated image/package checker, CVE vulnerability & LTS/EoL scanner, SMTP email alerter, and SSO/Passkey web dashboard with one-click updates, task logs, and 60s Dead-Man's Rollback. | macOS `launchd` / CLI |
 | **Ollama** | [`daemons/ollama`](./daemons/ollama) | Native host-level LLM inference server utilizing Apple Silicon M2 Metal GPU acceleration. | macOS `launchd` / CLI |
 
 **Quick Commands:**
