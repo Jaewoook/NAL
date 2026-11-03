@@ -57,7 +57,7 @@ Key configuration variables:
 | `GENERIC_AUTHORIZATION_ENDPOINT` | Authentik OIDC Authorization Endpoint | `https://auth.jaewook.dev/application/o/authorize/` |
 | `GENERIC_TOKEN_ENDPOINT` | Authentik OIDC Token Endpoint | `https://auth.jaewook.dev/application/o/token/` |
 | `GENERIC_USERINFO_ENDPOINT` | Authentik OIDC UserInfo Endpoint | `https://auth.jaewook.dev/application/o/userinfo/` |
-| `PROXY_BASE_URL` | Public base URL of LiteLLM Gateway | `https://litellm.jaewook.dev` |
+| `PROXY_BASE_URL` | Public base URL of LiteLLM Gateway | `https://aigateway.jaewook.dev` |
 
 ---
 
