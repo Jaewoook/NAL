@@ -9,6 +9,9 @@ services:
       - open-webui:/app/backend/data
     env_file:
       - .env
+    environment:
+      OPENAI_API_BASE_URL: ${OPENAI_API_BASE_URL:-http://litellm-gateway:4000/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-openwebui-service}
     extra_hosts:
       - host.docker.internal:host-gateway
 
