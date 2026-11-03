@@ -46,7 +46,7 @@ cp .env.example .env
 Key configuration variables:
 | Variable | Description | Default |
 | --- | --- | --- |
-| `ATLAS_HOST` | Host IP address of the Atlas inference server | `182.168.0.100` |
+| `ATLAS_HOST` | Host IP address of the Atlas inference server | `192.168.0.100` |
 | `LITELLM_MASTER_KEY` | Admin master key for key management and LiteLLM dashboard | `sk-master-change-me` |
 | `LITELLM_SALT_KEY` | Key salt for database token hashing | `salt-change-me` |
 | `LITELLM_DB_USER` | PostgreSQL user | `litellm` |

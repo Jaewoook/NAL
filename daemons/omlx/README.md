@@ -5,8 +5,8 @@ This directory contains the host configuration files for running **oMLX** bare-m
 ## Architecture & Security Model
 
 - **Atlas**: Dedicated ML inference node running `omlx` bare-metal on port `8000`.
-- **Axis (`182.168.0.2`)**: Primary control plane node (Mac Mini) running the LLM Gateway and orchestrators.
-- **Network Ingress Policy**: Port `8000` on Atlas is strictly restricted to Axis (`182.168.0.2`) via macOS Packet Filter (`pfctl`). All other inbound traffic to port 8000 is blocked at the packet filter level.
+- **Axis (`192.168.0.2`)**: Primary control plane node (Mac Mini) running the LLM Gateway and orchestrators.
+- **Network Ingress Policy**: Port `8000` on Atlas is strictly restricted to Axis (`192.168.0.2`) via macOS Packet Filter (`pfctl`). All other inbound traffic to port 8000 is blocked at the packet filter level.
 - **Service Management**: Managed as a system-level macOS `launchd` daemon with automatic boot start and process supervision (`KeepAlive: true`).
 
 ---
@@ -78,12 +78,12 @@ The plist file `ai.omlx.server.plist` configures `omlx serve --host 0.0.0.0 --po
 
 ## 2. Ingress Firewall (`pfctl`) Setup
 
-The firewall configuration `pf-omlx.conf` enforces that port `8000` only accepts incoming TCP packets from Axis (`182.168.0.2`):
+The firewall configuration `pf-omlx.conf` enforces that port `8000` only accepts incoming TCP packets from Axis (`192.168.0.2`):
 
 ```pf
-# Atlas oMLX Ingress Filter: Only permit Axis (182.168.0.2)
+# Atlas oMLX Ingress Filter: Only permit Axis (192.168.0.2)
 block in proto tcp from any to any port 8000
-pass in quick proto tcp from 182.168.0.2 to any port 8000
+pass in quick proto tcp from 192.168.0.2 to any port 8000
 ```
 
 ### Enable Rules Immediately
@@ -136,7 +136,7 @@ To ensure the rule persists across macOS reboots:
 
 ## 3. Verification
 
-1. **Verify from Axis (`182.168.0.2`)**:
+1. **Verify from Axis (`192.168.0.2`)**:
    From Axis, verify connectivity to Atlas oMLX server:
    ```bash
    curl -I http://<atlas-ip>:8000/v1/models
@@ -144,7 +144,7 @@ To ensure the rule persists across macOS reboots:
    Should return `HTTP/1.1 200 OK`.
 
 2. **Verify Ingress Rejection from Other Hosts**:
-   From any host other than `182.168.0.2`, attempt to connect:
+   From any host other than `192.168.0.2`, attempt to connect:
    ```bash
    curl --connect-timeout 3 http://<atlas-ip>:8000/v1/models
    ```
