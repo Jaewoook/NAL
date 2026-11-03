@@ -1,6 +1,6 @@
 # LiteLLM Gateway Service
 
-The LiteLLM Gateway (`litellm-gateway`) provides a unified, centralized inference proxy and protocol translator for the NAL infrastructure. It bridges downstream applications (such as Open WebUI in `services/llm` and local developer tooling) with bare-metal ML inference engines (such as oMLX running on Atlas).
+The LiteLLM Gateway (`litellm-gateway`) provides a unified, centralized inference proxy and protocol translator for the NAL infrastructure. It bridges downstream applications (such as Open WebUI in `services/llm` and local developer tooling) with bare-metal ML inference engines (such as oMLX running on Atlas; see [`daemons/omlx`](../../daemons/omlx/README.md)).
 
 ## Highlights
 
