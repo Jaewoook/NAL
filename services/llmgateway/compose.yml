@@ -1,0 +1,31 @@
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm-gateway
+    restart: unless-stopped
+    expose:
+      - 4000
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${LITELLM_DB_USER}:${LITELLM_DB_PASS}@postgresql:5432/${LITELLM_DB_NAME}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}
+      STORE_MODEL_IN_DB: "True"
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    networks:
+      default:
+        ipv4_address: 172.22.0.14
+      db_network:
+
+networks:
+  default:
+    external: true
+    name: nginx_network
+  db_network:
+    external: true
+    name: db_network

@@ -1,0 +1,26 @@
+model_list:
+  - model_name: "default"
+    litellm_params:
+      model: "openai/local-omlx"
+      api_base: "http://${ATLAS_HOST:-182.168.0.100}:8000/v1"
+      api_key: "omlx-local"
+  - model_name: "claude-3-5-sonnet-20241022"
+    litellm_params:
+      model: "openai/local-omlx"
+      api_base: "http://${ATLAS_HOST:-182.168.0.100}:8000/v1"
+      api_key: "omlx-local"
+  - model_name: "claude-3-5-sonnet"
+    litellm_params:
+      model: "openai/local-omlx"
+      api_base: "http://${ATLAS_HOST:-182.168.0.100}:8000/v1"
+      api_key: "omlx-local"
+
+general_settings:
+  master_key: "os.environ/LITELLM_MASTER_KEY"
+  database_url: "os.environ/DATABASE_URL"
+
+router_settings:
+  enable_pre_call_checks: true
+
+litellm_settings:
+  telemetry: false
