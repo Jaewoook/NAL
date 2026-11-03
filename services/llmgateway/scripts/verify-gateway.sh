@@ -138,7 +138,7 @@ test_unauthorized() {
     -H "Authorization: Bearer ${invalid_key}" \
     -d "$payload" || true)
 
-  if [ "$http_code" -eq 401 ]; then
+  if [ "$http_code" = "401" ]; then
     echo "[PASS] test_unauthorized: Received expected HTTP 401 Unauthorized."
   else
     echo "[FAIL] test_unauthorized: Expected HTTP 401, but got ${http_code}." >&2
@@ -190,7 +190,7 @@ EOF
   http_code=$(echo "$response" | tail -n1)
   body=$(echo "$response" | sed '$d')
 
-  if [ "$http_code" -eq 200 ]; then
+  if [ "$http_code" = "200" ]; then
     echo "[PASS] test_openai_completion: Received HTTP 200 OK."
     if [ "$VERBOSE" = true ]; then
       echo "Response body: ${body}"
@@ -248,7 +248,7 @@ EOF
   http_code=$(echo "$response" | tail -n1)
   body=$(echo "$response" | sed '$d')
 
-  if [ "$http_code" -eq 200 ]; then
+  if [ "$http_code" = "200" ]; then
     echo "[PASS] test_anthropic_messages: Received HTTP 200 OK."
     if [ "$VERBOSE" = true ]; then
       echo "Response body: ${body}"
@@ -318,6 +318,59 @@ EOF
     echo "  - OpenAI function-calling tool schema: validated"
     echo "  - Anthropic input_schema tool schema: validated"
     return 0
+  fi
+
+  echo "[RUN] Testing OpenAI function calling with model '${MODEL}'..."
+  local openai_response
+  local openai_code
+  local openai_body
+
+  openai_response=$(curl -s -w "\n%{http_code}" \
+    --connect-timeout 5 --max-time 30 \
+    -X POST "${GATEWAY_URL}/v1/chat/completions" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${API_KEY}" \
+    -d "$openai_tool_payload" || true)
+
+  openai_code=$(echo "$openai_response" | tail -n1)
+  openai_body=$(echo "$openai_response" | sed '$d')
+
+  if [ "$openai_code" = "200" ]; then
+    echo "[PASS] test_tool_definitions (OpenAI): Received HTTP 200 OK."
+    if [ "$VERBOSE" = true ]; then
+      echo "Response body: ${openai_body}"
+    fi
+  else
+    echo "[FAIL] test_tool_definitions (OpenAI): Expected HTTP 200, got ${openai_code}." >&2
+    echo "Response body: ${openai_body}" >&2
+    return 1
+  fi
+
+  echo "[RUN] Testing Anthropic tool definitions with model '${MODEL}'..."
+  local anthropic_response
+  local anthropic_code
+  local anthropic_body
+
+  anthropic_response=$(curl -s -w "\n%{http_code}" \
+    --connect-timeout 5 --max-time 30 \
+    -X POST "${GATEWAY_URL}/v1/messages" \
+    -H "Content-Type: application/json" \
+    -H "x-api-key: ${API_KEY}" \
+    -H "anthropic-version: 2023-06-01" \
+    -d "$anthropic_tool_payload" || true)
+
+  anthropic_code=$(echo "$anthropic_response" | tail -n1)
+  anthropic_body=$(echo "$anthropic_response" | sed '$d')
+
+  if [ "$anthropic_code" = "200" ]; then
+    echo "[PASS] test_tool_definitions (Anthropic): Received HTTP 200 OK."
+    if [ "$VERBOSE" = true ]; then
+      echo "Response body: ${anthropic_body}"
+    fi
+  else
+    echo "[FAIL] test_tool_definitions (Anthropic): Expected HTTP 200, got ${anthropic_code}." >&2
+    echo "Response body: ${anthropic_body}" >&2
+    return 1
   fi
 }
 

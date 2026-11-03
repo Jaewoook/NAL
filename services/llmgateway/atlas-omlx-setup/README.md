@@ -20,18 +20,25 @@ This directory contains the host configuration files for running **oMLX** bare-m
    ```
    If installed at a different path (e.g. `/usr/local/bin/omlx` or inside a virtualenv), update `ai.omlx.server.plist` accordingly.
 
-2. **Create Log Directory**:
-   Create `/var/log/omlx` for daemon stdout and stderr logging:
+2. **Create Log Directory & Permissions**:
+   Create `/var/log/omlx` for daemon stdout and stderr logging, and grant write ownership to the non-root execution user:
    ```bash
    sudo mkdir -p /var/log/omlx
+   sudo chown -R jaewookahn:staff /var/log/omlx
    sudo chmod 755 /var/log/omlx
    ```
+
+3. **Model Storage & Cache Directory**:
+   By default, models downloaded by Hugging Face / oMLX reside in the user's home directory (`~/.cache/huggingface`). Ensure the execution user has sufficient disk space or optionally set `HF_HOME` inside `EnvironmentVariables` in `ai.omlx.server.plist` to point to dedicated storage (e.g., an external Thunderbolt NVMe array).
 
 ---
 
 ## 1. launchd Service Daemon Setup
 
 The plist file `ai.omlx.server.plist` configures `omlx serve --host 0.0.0.0 --port 8000` as a system daemon.
+
+> [!IMPORTANT]
+> **Non-Root Execution**: For security best practices, the daemon runs under a standard non-root user (`UserName: jaewookahn` with `WorkingDirectory: /Users/jaewookahn`). If your macOS account name differs, customize the `<key>UserName</key>` and `<key>WorkingDirectory</key>` values in `ai.omlx.server.plist` before installing.
 
 ### Installation
 
@@ -114,6 +121,15 @@ To ensure the rule persists across macOS reboots:
    ```bash
    sudo pfctl -vnf /etc/pf.conf
    sudo pfctl -ef /etc/pf.conf
+   ```
+
+4. **Install Boot Daemon for Persistent pfctl**:
+   On macOS, `pf` packet filtering is disabled by default upon reboot. To ensure the firewall rules are loaded and enabled automatically at every system startup, install `ai.omlx.pfctl.plist` (which runs as root via `launchd`):
+   ```bash
+   sudo cp ai.omlx.pfctl.plist /Library/LaunchDaemons/ai.omlx.pfctl.plist
+   sudo chown root:wheel /Library/LaunchDaemons/ai.omlx.pfctl.plist
+   sudo chmod 644 /Library/LaunchDaemons/ai.omlx.pfctl.plist
+   sudo launchctl bootstrap system /Library/LaunchDaemons/ai.omlx.pfctl.plist
    ```
 
 ---
