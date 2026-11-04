@@ -6,7 +6,7 @@
     <string>ai.omlx.server</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/opt/homebrew/bin/omlx</string>
+        <string>__OMLX_BIN__</string>
         <string>serve</string>
         <string>--host</string>
         <string>0.0.0.0</string>
@@ -17,18 +17,16 @@
     <true/>
     <key>KeepAlive</key>
     <true/>
-    <key>UserName</key>
-    <string>jaewookahn</string>
     <key>WorkingDirectory</key>
-    <string>/Users/jaewookahn</string>
+    <string>__HOME__</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
     <key>StandardOutPath</key>
-    <string>/var/log/omlx/omlx.log</string>
+    <string>__HOME__/Library/Logs/omlx/omlx.log</string>
     <key>StandardErrorPath</key>
-    <string>/var/log/omlx/omlx.err.log</string>
+    <string>__HOME__/Library/Logs/omlx/omlx.err.log</string>
 </dict>
 </plist>
