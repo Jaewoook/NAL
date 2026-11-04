@@ -6,7 +6,7 @@ The AI Gateway (`aigateway`, powered by LiteLLM Proxy) provides a unified, centr
 
 - **Dual Protocol Support**: Native OpenAI (`/v1/chat/completions`) and Anthropic (`/v1/messages`) compatibility with tool/function calling support.
 - **Dynamic Routing**: Routes model requests through environment-driven base URLs (`os.environ/ATLAS_API_BASE`) with wildcard fallback (`*`).
-- **SSO & RBAC**: Authentik Generic OIDC SSO integration for the AI Gateway Admin UI.
+- **SSO & RBAC**: Strict Authentik Generic OIDC SSO enforcement for the AI Gateway Admin UI with automatic redirection and all password/environment logins disabled.
 - **Database Persistence**: Stores keys, team permissions, model metadata, and usage tracking in PostgreSQL (`services/db`).
 - **Local Isolation**: Port `4000` is bound locally to `127.0.0.1` and exposed to the internal Docker network `nginx_network` at `172.22.0.14`.
 

@@ -23,6 +23,9 @@ model_list:
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"
   database_url: "os.environ/DATABASE_URL"
+  disable_env_credential_login: true
+  disable_password_login_when_sso_enabled: true
+  auto_redirect_ui_login_to_sso: true
 
 router_settings:
   enable_pre_call_checks: true
