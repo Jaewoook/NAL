@@ -1,17 +1,16 @@
 /* ==========================================================================
    NAL (Network Attached Laboratory) — Unified Custom Theme
-   Concept: Deep Obsidian & Amber Glow
+   Dual-Theme System:
+     - Light Mode: Clean Warm White / Slate with Radiant Amber Accents
+     - Dark Mode:  Deep Obsidian & Amber Glow
+     - Sign-In / Flow Pages: Branded Obsidian Card & Wallpaper Backdrop
    Target: Authentik User-Facing Flows, Sign-In, and Admin/User Dashboards
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   1. Global CSS Custom Properties (Cascades across all Components & Shadow Roots)
+   1. Shared Brand CSS Variables (Cascades across all Components & Shadow Roots)
    -------------------------------------------------------------------------- */
-:root,
-html,
-html[data-theme="dark"],
-html[data-theme="light"],
-body {
+:root {
     /* Authentik Brand Accent */
     --ak-accent: #f59e0b !important;
 
@@ -22,26 +21,12 @@ body {
     --pf-global--primary-color--dark-100: #f59e0b !important;
     --pf-global--primary-color--light-100: #fbbf24 !important;
 
-    /* PatternFly Global Active & Link Colors */
+    /* PatternFly Global Active Colors */
     --pf-global--active-color--100: #f59e0b !important;
     --pf-global--active-color--200: #d97706 !important;
     --pf-global--active-color--300: #b45309 !important;
-    --pf-global--link--Color: #fbbf24 !important;
-    --pf-global--link--Color--hover: #fde68a !important;
-    --pf-global--link--Color--light: #fbbf24 !important;
-    --pf-global--link--Color--light--hover: #fde68a !important;
-    --pf-global--link--Color--dark: #fbbf24 !important;
-    --pf-global--link--Color--dark--hover: #fde68a !important;
-    --pf-v4-global--palette--blue-300: #fbbf24 !important;
 
-    /* Global Typography Base Colors */
-    --pf-global--Color--100: #e2e8f0 !important;
-    --pf-global--Color--200: #94a3b8 !important;
-    --pf-global--Color--dark-100: #e2e8f0 !important;
-    --pf-global--Color--light-100: #f8fafc !important;
-    --pf-c-title--Color: #f8fafc !important;
-
-    /* Primary Button CSS Variables */
+    /* Primary Button CSS Variables (High-contrast dark text on radiant amber) */
     --pf-c-button--m-primary--BackgroundColor: #f59e0b !important;
     --pf-c-button--m-primary--hover--BackgroundColor: #fbbf24 !important;
     --pf-c-button--m-primary--active--BackgroundColor: #d97706 !important;
@@ -51,7 +36,7 @@ body {
     --pf-c-button--m-primary--active--Color: #0a0d14 !important;
     --pf-c-button--m-primary--focus--Color: #05070a !important;
 
-    /* Dropdown Toggle & Split Button Variables */
+    /* Primary Dropdown Toggle & Split Button Variables */
     --pf-c-dropdown__toggle--m-primary--BackgroundColor: #f59e0b !important;
     --pf-c-dropdown__toggle--m-primary--hover--BackgroundColor: #fbbf24 !important;
     --pf-c-dropdown__toggle--m-primary--active--BackgroundColor: #d97706 !important;
@@ -64,23 +49,11 @@ body {
     --pf-c-dropdown__toggle--m-split-button--m-primary--child--active--BackgroundColor: #d97706 !important;
     --pf-c-dropdown__toggle--m-split-button--m-primary--child--m-expanded--BackgroundColor: #d97706 !important;
 
-    /* Navigation & Tabs Variables */
-    --pf-c-nav__link--m-current--Color: #fbbf24 !important;
-    --pf-c-nav__subnav__link--m-current--Color: #fbbf24 !important;
+    /* Shared Switch & Tab Accent */
+    --pf-c-switch__input--checked__toggle--BackgroundColor: #f59e0b !important;
     --pf-c-nav__link--active--after--BorderColor: #f59e0b !important;
     --pf-c-nav__subnav__link--hover--after--BorderColor: #f59e0b !important;
     --pf-c-tabs__link--active--after--BorderColor: #f59e0b !important;
-    --pf-c-tabs__link--m-current--Color: #fbbf24 !important;
-    --pf-c-switch__input--checked__toggle--BackgroundColor: #f59e0b !important;
-
-    /* PatternFly Card Variables */
-    --pf-c-card--BackgroundColor: #0e121a !important;
-    --pf-c-card--BoxShadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5) !important;
-    --pf-c-card--BorderColor: #1c2333 !important;
-    --pf-c-card--m-raised--BackgroundColor: #0e121a !important;
-    --pf-c-card--m-raised--BoxShadow: 0 6px 24px -4px rgba(0, 0, 0, 0.7) !important;
-    --pf-c-card--m-non-selectable-raised--BackgroundColor: #0e121a !important;
-    --pf-c-card--m-non-selectable-raised--BoxShadow: 0 6px 24px -4px rgba(0, 0, 0, 0.7) !important;
 
     /* Flow Sign-in Card Reset */
     --pf-c-background-image--Filter: none !important;
@@ -90,8 +63,111 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   2. Dropdown Toggles, Split Buttons (.pf-c-dropdown__toggle-button), and Menus
+   2. Light Theme CSS Variables
    -------------------------------------------------------------------------- */
+:root,
+html,
+html[data-theme="light"] {
+    --pf-global--link--Color: #d97706 !important;
+    --pf-global--link--Color--hover: #b45309 !important;
+    --pf-global--link--Color--light: #d97706 !important;
+    --pf-global--link--Color--light--hover: #b45309 !important;
+    --pf-global--link--Color--dark: #b45309 !important;
+    --pf-global--link--Color--dark--hover: #92400e !important;
+    --pf-v4-global--palette--blue-300: #d97706 !important;
+
+    --pf-global--Color--100: #0f172a !important;
+    --pf-global--Color--200: #475569 !important;
+    --pf-global--Color--dark-100: #0f172a !important;
+    --pf-global--Color--light-100: #ffffff !important;
+    --pf-c-title--Color: #0f172a !important;
+
+    --pf-c-nav__link--m-current--Color: #d97706 !important;
+    --pf-c-nav__subnav__link--m-current--Color: #d97706 !important;
+    --pf-c-tabs__link--m-current--Color: #d97706 !important;
+
+    --pf-c-card--BackgroundColor: #ffffff !important;
+    --pf-c-card--BorderColor: #e2e8f0 !important;
+    --pf-c-card--BoxShadow: 0 2px 10px -2px rgba(0, 0, 0, 0.06) !important;
+    --pf-c-card--m-raised--BackgroundColor: #ffffff !important;
+    --pf-c-card--m-raised--BoxShadow: 0 4px 16px -2px rgba(0, 0, 0, 0.08) !important;
+    --pf-c-card--m-non-selectable-raised--BackgroundColor: #ffffff !important;
+    --pf-c-card--m-non-selectable-raised--BoxShadow: 0 4px 16px -2px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* --------------------------------------------------------------------------
+   3. Dark Theme CSS Variables
+   -------------------------------------------------------------------------- */
+html.pf-theme-dark,
+html[data-theme="dark"],
+.pf-theme-dark {
+    --pf-global--link--Color: #fbbf24 !important;
+    --pf-global--link--Color--hover: #fde68a !important;
+    --pf-global--link--Color--light: #fbbf24 !important;
+    --pf-global--link--Color--light--hover: #fde68a !important;
+    --pf-global--link--Color--dark: #fbbf24 !important;
+    --pf-global--link--Color--dark--hover: #fde68a !important;
+    --pf-v4-global--palette--blue-300: #fbbf24 !important;
+
+    --pf-global--Color--100: #e2e8f0 !important;
+    --pf-global--Color--200: #94a3b8 !important;
+    --pf-global--Color--dark-100: #e2e8f0 !important;
+    --pf-global--Color--light-100: #f8fafc !important;
+    --pf-c-title--Color: #f8fafc !important;
+
+    --pf-c-nav__link--m-current--Color: #fbbf24 !important;
+    --pf-c-nav__subnav__link--m-current--Color: #fbbf24 !important;
+    --pf-c-tabs__link--m-current--Color: #fbbf24 !important;
+
+    --pf-c-card--BackgroundColor: #0e121a !important;
+    --pf-c-card--BorderColor: #1c2333 !important;
+    --pf-c-card--BoxShadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5) !important;
+    --pf-c-card--m-raised--BackgroundColor: #0e121a !important;
+    --pf-c-card--m-raised--BoxShadow: 0 6px 24px -4px rgba(0, 0, 0, 0.7) !important;
+    --pf-c-card--m-non-selectable-raised--BackgroundColor: #0e121a !important;
+    --pf-c-card--m-non-selectable-raised--BoxShadow: 0 6px 24px -4px rgba(0, 0, 0, 0.7) !important;
+}
+
+/* --------------------------------------------------------------------------
+   4. Primary Action Buttons & Primary Split Buttons (Universal in Both Modes)
+   -------------------------------------------------------------------------- */
+/* Primary Buttons (Radiant Warm Amber) */
+.pf-c-button.pf-m-primary {
+    background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%) !important;
+    background-color: #f59e0b !important;
+    color: #0a0d14 !important;
+    font-weight: 600 !important;
+    font-size: 0.925rem !important;
+    letter-spacing: 0.01em !important;
+    border: 1px solid #d97706 !important;
+    border-radius: 8px !important;
+    padding: 0.55rem 1.15rem !important;
+    box-shadow: 0 2px 10px rgba(245, 158, 11, 0.25) !important;
+    cursor: pointer !important;
+    transition: all 0.15s ease-in-out !important;
+}
+
+.pf-c-button.pf-m-primary:hover {
+    background: linear-gradient(180deg, #fcd34d 0%, #fbbf24 100%) !important;
+    color: #05070a !important;
+    border-color: #f59e0b !important;
+    box-shadow: 0 4px 18px rgba(245, 158, 11, 0.45) !important;
+    transform: translateY(-1px) !important;
+}
+
+.pf-c-button.pf-m-primary:active {
+    background: #d97706 !important;
+    transform: translateY(0) !important;
+    box-shadow: 0 1px 6px rgba(245, 158, 11, 0.3) !important;
+}
+
+/* Primary Button is full-width ONLY inside Sign-In flow card */
+.pf-c-login__main .pf-c-button.pf-m-primary {
+    width: 100% !important;
+    margin-top: 0.5rem !important;
+    padding: 0.7rem 1.25rem !important;
+}
+
 /* Primary Split Buttons and Action Dropdowns */
 .pf-c-dropdown__toggle.pf-m-primary,
 .pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary,
@@ -132,7 +208,7 @@ body {
     border-color: #b45309 !important;
 }
 
-/* Ensure Icons and Carets Inside Primary Dropdown Buttons Are Dark for High Contrast */
+/* Dark Icons & Carets inside Primary Dropdowns for High Contrast */
 .pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-button i,
 .pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-button svg,
 .pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-button .fas,
@@ -144,197 +220,17 @@ body {
     fill: #0a0d14 !important;
 }
 
-/* Divider Between Split Button Action and Caret */
 .pf-c-dropdown__toggle.pf-m-primary.pf-m-split-button.pf-m-action > *:not(:first-child) {
     border-left: 1px solid rgba(10, 13, 20, 0.25) !important;
 }
 
-/* Standard Secondary & Non-Primary Dropdown Toggles (Filters, Selects) */
-.pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
-.pf-c-dropdown__toggle.pf-m-secondary,
-.pf-c-dropdown__toggle.pf-m-secondary .pf-c-dropdown__toggle-button {
-    background-color: #141822 !important;
-    color: #cbd5e1 !important;
-    border: 1px solid #232b3c !important;
-    border-radius: 8px !important;
-}
-
-.pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain):hover,
-.pf-c-dropdown__toggle.pf-m-secondary:hover,
-.pf-c-dropdown__toggle.pf-m-secondary .pf-c-dropdown__toggle-button:hover {
-    background-color: #1c2230 !important;
-    border-color: #f59e0b !important;
-    color: #ffffff !important;
-}
-
-/* Plain Dropdown Toggles (Navbar user profile, table row kebab menus) */
+/* Plain Dropdown Toggles (Navbar profile, table kebab) */
 .pf-c-dropdown__toggle.pf-m-plain {
     background: transparent !important;
     border: none !important;
     min-height: unset !important;
     height: auto !important;
     padding: 0.35rem 0.5rem !important;
-    color: #94a3b8 !important;
-}
-
-.pf-c-dropdown__toggle.pf-m-plain:hover,
-.pf-c-dropdown__toggle.pf-m-plain:focus {
-    color: #fbbf24 !important;
-}
-
-/* Dropdown Menu Container & Items */
-.pf-c-dropdown__menu {
-    background-color: #141822 !important;
-    border: 1px solid #232b3c !important;
-    border-radius: 8px !important;
-    box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.85) !important;
-    padding: 0.35rem 0 !important;
-    z-index: 1000 !important;
-}
-
-.pf-c-dropdown__menu-item {
-    color: #cbd5e1 !important;
-    font-size: 0.9rem !important;
-    padding: 0.5rem 1rem !important;
-    transition: background-color 0.15s ease, color 0.15s ease !important;
-}
-
-.pf-c-dropdown__menu-item:hover,
-.pf-c-dropdown__menu-item:focus {
-    background-color: rgba(245, 158, 11, 0.15) !important;
-    color: #fbbf24 !important;
-}
-
-.pf-c-dropdown__separator {
-    background-color: #1a202c !important;
-    height: 1px !important;
-    margin: 0.35rem 0 !important;
-}
-
-/* --------------------------------------------------------------------------
-   3. Buttons Across the Authentik Dashboard & Modals
-   -------------------------------------------------------------------------- */
-/* Primary Buttons (Radiant Warm Amber) */
-.pf-c-button.pf-m-primary {
-    background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%) !important;
-    background-color: #f59e0b !important;
-    color: #0a0d14 !important;
-    font-weight: 600 !important;
-    font-size: 0.925rem !important;
-    letter-spacing: 0.01em !important;
-    border: 1px solid #d97706 !important;
-    border-radius: 8px !important;
-    padding: 0.55rem 1.15rem !important;
-    box-shadow: 0 2px 10px rgba(245, 158, 11, 0.25) !important;
-    cursor: pointer !important;
-    transition: all 0.15s ease-in-out !important;
-}
-
-.pf-c-button.pf-m-primary:hover {
-    background: linear-gradient(180deg, #fcd34d 0%, #fbbf24 100%) !important;
-    color: #05070a !important;
-    border-color: #f59e0b !important;
-    box-shadow: 0 4px 18px rgba(245, 158, 11, 0.45) !important;
-    transform: translateY(-1px) !important;
-}
-
-.pf-c-button.pf-m-primary:active {
-    background: #d97706 !important;
-    transform: translateY(0) !important;
-    box-shadow: 0 1px 6px rgba(245, 158, 11, 0.3) !important;
-}
-
-/* Primary Button is full-width ONLY inside Sign-In flow card */
-.pf-c-login__main .pf-c-button.pf-m-primary {
-    width: 100% !important;
-    margin-top: 0.5rem !important;
-    padding: 0.7rem 1.25rem !important;
-}
-
-/* Secondary Buttons */
-.pf-c-button.pf-m-secondary {
-    background-color: #141822 !important;
-    color: #cbd5e1 !important;
-    border: 1px solid #232b3c !important;
-    border-radius: 8px !important;
-    transition: all 0.15s ease !important;
-}
-
-.pf-c-button.pf-m-secondary:hover {
-    background-color: #1c2230 !important;
-    border-color: #f59e0b !important;
-    color: #ffffff !important;
-}
-
-/* Plain / Icon Buttons (Kebab Menu ⋮, Close Modal, Toolbar Icons) */
-.pf-c-button.pf-m-plain {
-    color: #94a3b8 !important;
-    border-radius: 6px !important;
-}
-
-.pf-c-button.pf-m-plain:hover,
-.pf-c-button.pf-m-plain:focus {
-    color: #fbbf24 !important;
-    background-color: rgba(245, 158, 11, 0.12) !important;
-}
-
-/* Control Buttons (Search Bar Magnifying Glass) */
-.pf-c-button.pf-m-control {
-    background-color: #141822 !important;
-    color: #94a3b8 !important;
-    border: 1px solid #232b3c !important;
-}
-
-.pf-c-button.pf-m-control:hover {
-    color: #fbbf24 !important;
-    border-color: #f59e0b !important;
-}
-
-/* Danger Buttons */
-.pf-c-button.pf-m-danger {
-    background-color: #dc2626 !important;
-    color: #ffffff !important;
-    border: 1px solid #b91c1c !important;
-    border-radius: 8px !important;
-}
-
-.pf-c-button.pf-m-danger:hover {
-    background-color: #ef4444 !important;
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35) !important;
-}
-
-/* Link Buttons */
-.pf-c-button.pf-m-link,
-a.pf-c-button.pf-m-link {
-    color: #fbbf24 !important;
-    font-weight: 500 !important;
-    text-decoration: none !important;
-    font-size: 0.875rem !important;
-    transition: color 0.15s ease !important;
-}
-
-.pf-c-button.pf-m-link:hover,
-a.pf-c-button.pf-m-link:hover {
-    color: #fde68a !important;
-    text-decoration: underline !important;
-}
-
-/* --------------------------------------------------------------------------
-   4. Dashboard Shell (Header Navbar, Sidebar, Nav Links, and Sidebar Version)
-   -------------------------------------------------------------------------- */
-/* Page Main Background */
-.pf-c-page,
-.pf-c-page__main,
-.pf-c-page__main-section {
-    background-color: #0b0e14 !important;
-    color: #e2e8f0 !important;
-}
-
-/* Header Navbar */
-.pf-c-page__header,
-ak-page-navbar {
-    background-color: #080a0f !important;
-    border-bottom: 1px solid #1a202c !important;
 }
 
 .pf-c-page__header .pf-c-dropdown__toggle {
@@ -342,61 +238,42 @@ ak-page-navbar {
     height: auto !important;
 }
 
-/* Global Search / Command Palette in Header */
-.command-palette-trigger {
-    background-color: #141822 !important;
-    border: 1px solid #232b3c !important;
-    color: #94a3b8 !important;
-    border-radius: 6px !important;
-    padding: 0.35rem 0.75rem !important;
+/* Toolbar Form Group Margin Reset */
+.pf-c-toolbar .pf-c-form__group {
+    margin-bottom: 0 !important;
 }
 
-.command-palette-trigger:hover {
-    border-color: #f59e0b !important;
-    color: #fbbf24 !important;
+.pf-c-toolbar .pf-c-form-control,
+.pf-c-toolbar .pf-c-select__toggle,
+.pf-c-toolbar .pf-c-dropdown__toggle {
+    min-height: 2.25rem !important;
+    padding-top: 0.35rem !important;
+    padding-bottom: 0.35rem !important;
 }
 
-/* Sidebar Navigation */
-.pf-c-page__sidebar,
-ak-sidebar {
-    background-color: #080a0f !important;
-    border-right: 1px solid #1a202c !important;
+/* Card Grid Layouts (Equal Height & Pinned Footers) */
+.pf-l-grid > .pf-l-grid__item.pf-c-card,
+.pf-l-grid__item.pf-c-card,
+.pf-l-grid__item.pf-m-3-col.pf-c-card {
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    box-sizing: border-box !important;
 }
 
-.pf-c-nav__section-title {
-    color: #64748b !important;
-    font-size: 0.75rem !important;
-    font-weight: 600 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.05em !important;
-    padding: 0.75rem 1rem 0.35rem 1rem !important;
+.pf-l-grid > .pf-l-grid__item.pf-c-card .pf-c-card__body,
+.pf-l-grid__item.pf-c-card .pf-c-card__body {
+    flex: 1 1 auto !important;
 }
 
-.pf-c-nav__link {
-    color: #94a3b8 !important;
-    transition: all 0.15s ease !important;
+.pf-l-grid > .pf-l-grid__item.pf-c-card .pf-c-card__footer,
+.pf-l-grid__item.pf-c-card .pf-c-card__footer {
+    flex: 0 0 auto !important;
+    margin-top: auto !important;
+    padding-top: 0.85rem !important;
 }
 
-.pf-c-nav__link:hover {
-    color: #fbbf24 !important;
-    background-color: rgba(245, 158, 11, 0.08) !important;
-}
-
-.pf-c-nav__link.pf-m-current,
-.pf-c-nav__item.pf-m-current > .pf-c-nav__link {
-    color: #fbbf24 !important;
-    background-color: rgba(245, 158, 11, 0.12) !important;
-    font-weight: 600 !important;
-}
-
-.pf-c-nav__link.pf-m-current::after,
-.pf-c-nav__item.pf-m-current > .pf-c-nav__link::after {
-    border-left: 3px solid #f59e0b !important;
-}
-
-/* --------------------------------------------------------------------------
-   4a. Sidebar Version ("authentik information") Dedicated Styling
-   -------------------------------------------------------------------------- */
+/* Sidebar Version ("authentik information") Structural Setup */
 ak-sidebar-version,
 footer[aria-label="authentik information"],
 [aria-label="authentik information"],
@@ -407,8 +284,6 @@ footer[aria-label="authentik information"],
     height: auto !important;
     margin: 0 !important;
     padding: 0.65rem 0.85rem !important;
-    border-top: 1px solid #1a202c !important;
-    background-color: #080a0f !important;
     box-sizing: border-box !important;
 }
 
@@ -441,16 +316,6 @@ footer[aria-label="authentik information"] .pf-c-button,
     transition: background-color 0.15s ease, border-color 0.15s ease !important;
 }
 
-ak-sidebar-version button:hover,
-ak-sidebar-version .pf-c-button:hover,
-footer[aria-label="authentik information"] button:hover,
-footer[aria-label="authentik information"] .pf-c-button:hover,
-[aria-label="authentik information"] button:hover {
-    background-color: rgba(245, 158, 11, 0.08) !important;
-    border-color: rgba(245, 158, 11, 0.2) !important;
-}
-
-/* Override title styles strictly inside the sidebar version component */
 ak-sidebar-version .pf-c-title,
 ak-sidebar-version p,
 footer[aria-label="authentik information"] .pf-c-title,
@@ -464,7 +329,6 @@ footer[aria-label="authentik information"] p,
     letter-spacing: normal !important;
 }
 
-/* Product Name Label ("authentik") */
 ak-sidebar-version [part~="product-name"],
 ak-sidebar-version #sidebar-version-product:first-of-type,
 footer[aria-label="authentik information"] [part~="product-name"],
@@ -472,12 +336,10 @@ footer[aria-label="authentik information"] p:first-child,
 [aria-label="authentik information"] p:first-child {
     font-size: 0.8rem !important;
     font-weight: 600 !important;
-    color: #cbd5e1 !important;
     letter-spacing: 0.025em !important;
     text-transform: capitalize !important;
 }
 
-/* Version Number Label (e.g. "2026.5.3") */
 ak-sidebar-version [part~="product-version"],
 ak-sidebar-version #sidebar-version-product:last-of-type,
 footer[aria-label="authentik information"] [part~="product-version"],
@@ -485,72 +347,770 @@ footer[aria-label="authentik information"] p:last-child,
 [aria-label="authentik information"] p:last-child {
     font-size: 0.7rem !important;
     font-weight: 500 !important;
-    color: #64748b !important;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
 }
 
-ak-sidebar-version button:hover [part~="product-name"],
-footer[aria-label="authentik information"] button:hover [part~="product-name"],
-ak-sidebar-version button:hover p:first-child,
-footer[aria-label="authentik information"] button:hover p:first-child {
-    color: #fbbf24 !important;
+/* --------------------------------------------------------------------------
+   5. LIGHT MODE DASHBOARD STYLING
+   Applies when document does NOT have .pf-theme-dark (or has data-theme="light")
+   -------------------------------------------------------------------------- */
+/* Page Main Background */
+html:not(.pf-theme-dark) .pf-c-page,
+html[data-theme="light"] .pf-c-page,
+html:not(.pf-theme-dark) .pf-c-page__main,
+html[data-theme="light"] .pf-c-page__main,
+html:not(.pf-theme-dark) .pf-c-page__main-section,
+html[data-theme="light"] .pf-c-page__main-section {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
 }
 
-ak-sidebar-version button:hover [part~="product-version"],
-footer[aria-label="authentik information"] button:hover [part~="product-version"],
-ak-sidebar-version button:hover p:last-child,
-footer[aria-label="authentik information"] button:hover p:last-child {
-    color: #fde68a !important;
+/* Header Navbar */
+html:not(.pf-theme-dark) .pf-c-page__header,
+html[data-theme="light"] .pf-c-page__header,
+html:not(.pf-theme-dark) ak-page-navbar,
+html[data-theme="light"] ak-page-navbar {
+    background-color: #ffffff !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+}
+
+html:not(.pf-theme-dark) .command-palette-trigger,
+html[data-theme="light"] .command-palette-trigger {
+    background-color: #f1f5f9 !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #475569 !important;
+    border-radius: 6px !important;
+    padding: 0.35rem 0.75rem !important;
+}
+
+html:not(.pf-theme-dark) .command-palette-trigger:hover,
+html[data-theme="light"] .command-palette-trigger:hover {
+    border-color: #f59e0b !important;
+    color: #d97706 !important;
+}
+
+/* Sidebar Navigation */
+html:not(.pf-theme-dark) .pf-c-page__sidebar,
+html[data-theme="light"] .pf-c-page__sidebar,
+html:not(.pf-theme-dark) ak-sidebar,
+html[data-theme="light"] ak-sidebar {
+    background-color: #ffffff !important;
+    border-right: 1px solid #e2e8f0 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-nav__section-title,
+html[data-theme="light"] .pf-c-nav__section-title {
+    color: #64748b !important;
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    padding: 0.75rem 1rem 0.35rem 1rem !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-nav__link,
+html[data-theme="light"] .pf-c-nav__link {
+    color: #475569 !important;
+    transition: all 0.15s ease !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-nav__link:hover,
+html[data-theme="light"] .pf-c-nav__link:hover {
+    color: #d97706 !important;
+    background-color: rgba(245, 158, 11, 0.08) !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-nav__link.pf-m-current,
+html[data-theme="light"] .pf-c-nav__link.pf-m-current,
+html:not(.pf-theme-dark) .pf-c-nav__item.pf-m-current > .pf-c-nav__link,
+html[data-theme="light"] .pf-c-nav__item.pf-m-current > .pf-c-nav__link {
+    color: #d97706 !important;
+    background-color: rgba(245, 158, 11, 0.12) !important;
+    font-weight: 600 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-nav__link.pf-m-current::after,
+html[data-theme="light"] .pf-c-nav__link.pf-m-current::after,
+html:not(.pf-theme-dark) .pf-c-nav__item.pf-m-current > .pf-c-nav__link::after,
+html[data-theme="light"] .pf-c-nav__item.pf-m-current > .pf-c-nav__link::after {
+    border-left: 3px solid #f59e0b !important;
+}
+
+/* Sidebar Version ("authentik information") in Light Mode */
+html:not(.pf-theme-dark) ak-sidebar-version,
+html[data-theme="light"] ak-sidebar-version,
+html:not(.pf-theme-dark) footer[aria-label="authentik information"],
+html[data-theme="light"] footer[aria-label="authentik information"],
+html:not(.pf-theme-dark) .pf-c-page__sidebar footer,
+html[data-theme="light"] .pf-c-page__sidebar footer {
+    border-top: 1px solid #e2e8f0 !important;
+    background-color: #ffffff !important;
+}
+
+html:not(.pf-theme-dark) ak-sidebar-version button:hover,
+html[data-theme="light"] ak-sidebar-version button:hover,
+html:not(.pf-theme-dark) footer[aria-label="authentik information"] button:hover,
+html[data-theme="light"] footer[aria-label="authentik information"] button:hover {
+    background-color: rgba(245, 158, 11, 0.08) !important;
+    border-color: rgba(245, 158, 11, 0.25) !important;
+}
+
+html:not(.pf-theme-dark) ak-sidebar-version [part~="product-name"],
+html[data-theme="light"] ak-sidebar-version [part~="product-name"],
+html:not(.pf-theme-dark) footer[aria-label="authentik information"] p:first-child,
+html[data-theme="light"] footer[aria-label="authentik information"] p:first-child {
+    color: #334155 !important;
+}
+
+html:not(.pf-theme-dark) ak-sidebar-version [part~="product-version"],
+html[data-theme="light"] ak-sidebar-version [part~="product-version"],
+html:not(.pf-theme-dark) footer[aria-label="authentik information"] p:last-child,
+html[data-theme="light"] footer[aria-label="authentik information"] p:last-child {
+    color: #64748b !important;
+}
+
+html:not(.pf-theme-dark) ak-sidebar-version button:hover [part~="product-name"],
+html[data-theme="light"] ak-sidebar-version button:hover [part~="product-name"],
+html:not(.pf-theme-dark) footer[aria-label="authentik information"] button:hover p:first-child,
+html[data-theme="light"] footer[aria-label="authentik information"] button:hover p:first-child {
+    color: #d97706 !important;
+}
+
+html:not(.pf-theme-dark) ak-sidebar-version button:hover [part~="product-version"],
+html[data-theme="light"] ak-sidebar-version button:hover [part~="product-version"],
+html:not(.pf-theme-dark) footer[aria-label="authentik information"] button:hover p:last-child,
+html[data-theme="light"] footer[aria-label="authentik information"] button:hover p:last-child {
+    color: #b45309 !important;
+}
+
+/* Page Titles & Breadcrumbs in Light Mode */
+html:not(.pf-theme-dark) .pf-c-page__main .pf-c-title,
+html[data-theme="light"] .pf-c-page__main .pf-c-title,
+html:not(.pf-theme-dark) .pf-c-page__main-section .pf-c-title,
+html[data-theme="light"] .pf-c-page__main-section .pf-c-title,
+html:not(.pf-theme-dark) .pf-c-modal-box .pf-c-title,
+html[data-theme="light"] .pf-c-modal-box .pf-c-title {
+    color: #0f172a !important;
+    text-align: left !important;
+    letter-spacing: -0.015em !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-breadcrumb__item,
+html[data-theme="light"] .pf-c-breadcrumb__item {
+    color: #64748b !important;
+    font-size: 0.85rem !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-breadcrumb__link,
+html[data-theme="light"] .pf-c-breadcrumb__link {
+    color: #475569 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-breadcrumb__link:hover,
+html[data-theme="light"] .pf-c-breadcrumb__link:hover {
+    color: #d97706 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-breadcrumb__item.pf-m-current,
+html[data-theme="light"] .pf-c-breadcrumb__item.pf-m-current {
+    color: #0f172a !important;
+}
+
+/* Standard Cards in Light Mode */
+html:not(.pf-theme-dark) .pf-c-card:not(.pf-c-login__main),
+html[data-theme="light"] .pf-c-card:not(.pf-c-login__main) {
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-top: 1px solid rgba(245, 158, 11, 0.45) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 2px 10px -2px rgba(0, 0, 0, 0.06) !important;
+    color: #1e293b !important;
+    box-sizing: border-box !important;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-card:not(.pf-c-login__main):hover,
+html[data-theme="light"] .pf-c-card:not(.pf-c-login__main):hover {
+    border-color: rgba(245, 158, 11, 0.55) !important;
+    box-shadow: 0 4px 16px -2px rgba(245, 158, 11, 0.14) !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-card:not(.pf-c-login__main) .pf-c-card__title,
+html[data-theme="light"] .pf-c-card:not(.pf-c-login__main) .pf-c-card__title,
+html:not(.pf-theme-dark) .pf-c-card:not(.pf-c-login__main) .pf-c-card__header,
+html[data-theme="light"] .pf-c-card:not(.pf-c-login__main) .pf-c-card__header {
+    color: #0f172a !important;
+    font-weight: 600 !important;
+    text-align: left !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-card:not(.pf-c-login__main) .pf-c-card__body,
+html[data-theme="light"] .pf-c-card:not(.pf-c-login__main) .pf-c-card__body {
+    color: #475569 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-card.pf-m-non-selectable-raised,
+html[data-theme="light"] .pf-c-card.pf-m-non-selectable-raised {
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-top: 1px solid rgba(245, 158, 11, 0.45) !important;
+    box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.08) !important;
+    cursor: default !important;
+}
+
+/* Enterprise-Only Cards in Light Mode */
+html:not(.pf-theme-dark) .pf-c-card.ak-m-enterprise-only,
+html[data-theme="light"] .pf-c-card.ak-m-enterprise-only,
+html:not(.pf-theme-dark) .pf-l-grid__item.pf-c-card.ak-m-enterprise-only,
+html[data-theme="light"] .pf-l-grid__item.pf-c-card.ak-m-enterprise-only,
+html:not(.pf-theme-dark) .ak-m-enterprise-only,
+html[data-theme="light"] .ak-m-enterprise-only {
+    background: linear-gradient(180deg, #fffdfa 0%, #ffffff 100%) !important;
+    background-color: #ffffff !important;
+    border: 1px solid #fde68a !important;
+    border-top: 2px solid #f59e0b !important;
+    border-radius: 12px !important;
+    box-shadow: 0 4px 16px -2px rgba(245, 158, 11, 0.14), 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+    color: #1e293b !important;
+    position: relative !important;
+    overflow: hidden !important;
+    cursor: default !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-card.ak-m-enterprise-only::before,
+html[data-theme="light"] .pf-c-card.ak-m-enterprise-only::before,
+html:not(.pf-theme-dark) .ak-m-enterprise-only::before,
+html[data-theme="light"] .ak-m-enterprise-only::before {
+    content: "" !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: 48px !important;
+    background: radial-gradient(ellipse 80% 100% at 50% 0%, rgba(245, 158, 11, 0.08) 0%, transparent 100%) !important;
+    pointer-events: none !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-card.ak-m-enterprise-only:hover,
+html[data-theme="light"] .pf-c-card.ak-m-enterprise-only:hover,
+html:not(.pf-theme-dark) .ak-m-enterprise-only:hover,
+html[data-theme="light"] .ak-m-enterprise-only:hover {
+    border-color: #f59e0b !important;
+    box-shadow: 0 8px 24px -2px rgba(245, 158, 11, 0.22), 0 2px 6px rgba(0, 0, 0, 0.06) !important;
+}
+
+html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-card__title,
+html[data-theme="light"] .ak-m-enterprise-only .pf-c-card__title,
+html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-card__header,
+html[data-theme="light"] .ak-m-enterprise-only .pf-c-card__header {
+    color: #0f172a !important;
+    font-weight: 600 !important;
+}
+
+html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-card__body,
+html[data-theme="light"] .ak-m-enterprise-only .pf-c-card__body {
+    color: #475569 !important;
+    font-size: 0.875rem !important;
+    line-height: 1.55 !important;
+}
+
+html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-card__footer,
+html[data-theme="light"] .ak-m-enterprise-only .pf-c-card__footer {
+    border-top: 1px solid #f1f5f9 !important;
+    padding-top: 0.85rem !important;
+    margin-top: auto !important;
+}
+
+html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-label,
+html[data-theme="light"] .ak-m-enterprise-only .pf-c-label,
+html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-badge,
+html[data-theme="light"] .ak-m-enterprise-only .pf-c-badge,
+html:not(.pf-theme-dark) .ak-m-enterprise-only [class*="enterprise-badge"],
+html[data-theme="light"] .ak-m-enterprise-only [class*="enterprise-badge"],
+html:not(.pf-theme-dark) .ak-m-enterprise-only [class*="badge"],
+html[data-theme="light"] .ak-m-enterprise-only [class*="badge"] {
+    background-color: #fef3c7 !important;
+    color: #b45309 !important;
+    border: 1px solid #fcd34d !important;
+    font-weight: 600 !important;
+    font-size: 0.725rem !important;
+    letter-spacing: 0.03em !important;
+    text-transform: uppercase !important;
+    border-radius: 6px !important;
+    padding: 0.2rem 0.55rem !important;
+}
+
+html:not(.pf-theme-dark) .ak-m-enterprise-only i,
+html[data-theme="light"] .ak-m-enterprise-only i,
+html:not(.pf-theme-dark) .ak-m-enterprise-only svg,
+html[data-theme="light"] .ak-m-enterprise-only svg,
+html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-card__header-icon,
+html[data-theme="light"] .ak-m-enterprise-only .pf-c-card__header-icon {
+    color: #d97706 !important;
+    fill: #d97706 !important;
+}
+
+html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-button.pf-m-link,
+html[data-theme="light"] .ak-m-enterprise-only .pf-c-button.pf-m-link,
+html:not(.pf-theme-dark) .ak-m-enterprise-only a.pf-c-button.pf-m-link,
+html[data-theme="light"] .ak-m-enterprise-only a.pf-c-button.pf-m-link,
+html:not(.pf-theme-dark) .ak-m-enterprise-only a:not(.pf-c-button),
+html[data-theme="light"] .ak-m-enterprise-only a:not(.pf-c-button) {
+    color: #d97706 !important;
+    font-weight: 600 !important;
+    font-size: 0.875rem !important;
+    text-decoration: none !important;
+}
+
+html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-button.pf-m-link:hover,
+html[data-theme="light"] .ak-m-enterprise-only .pf-c-button.pf-m-link:hover,
+html:not(.pf-theme-dark) .ak-m-enterprise-only a.pf-c-button.pf-m-link:hover,
+html[data-theme="light"] .ak-m-enterprise-only a.pf-c-button.pf-m-link:hover,
+html:not(.pf-theme-dark) .ak-m-enterprise-only a:not(.pf-c-button):hover,
+html[data-theme="light"] .ak-m-enterprise-only a:not(.pf-c-button):hover {
+    color: #b45309 !important;
+    text-decoration: underline !important;
+}
+
+/* Data Tables in Light Mode */
+html:not(.pf-theme-dark) .pf-c-table,
+html[data-theme="light"] .pf-c-table {
+    background-color: #ffffff !important;
+    color: #1e293b !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-table thead th,
+html[data-theme="light"] .pf-c-table thead th {
+    background-color: #f8fafc !important;
+    color: #475569 !important;
+    border-bottom: 2px solid #e2e8f0 !important;
+    font-weight: 600 !important;
+    font-size: 0.825rem !important;
+    letter-spacing: 0.02em !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-table thead th button,
+html[data-theme="light"] .pf-c-table thead th button,
+html:not(.pf-theme-dark) .pf-c-table__button,
+html[data-theme="light"] .pf-c-table__button {
+    color: #475569 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-table thead th button:hover,
+html[data-theme="light"] .pf-c-table thead th button:hover,
+html:not(.pf-theme-dark) .pf-c-table__button:hover,
+html[data-theme="light"] .pf-c-table__button:hover {
+    color: #d97706 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-table thead th.pf-m-selected button,
+html[data-theme="light"] .pf-c-table thead th.pf-m-selected button,
+html:not(.pf-theme-dark) .pf-c-table thead th.pf-m-selected .pf-c-table__button,
+html[data-theme="light"] .pf-c-table thead th.pf-m-selected .pf-c-table__button {
+    color: #d97706 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-table tbody tr,
+html[data-theme="light"] .pf-c-table tbody tr {
+    background-color: #ffffff !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+    color: #1e293b !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-table tbody tr:hover,
+html[data-theme="light"] .pf-c-table tbody tr:hover {
+    background-color: rgba(245, 158, 11, 0.05) !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-table tbody tr.pf-m-selected,
+html[data-theme="light"] .pf-c-table tbody tr.pf-m-selected {
+    background-color: rgba(245, 158, 11, 0.1) !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-table tbody td a:not(.pf-c-button),
+html[data-theme="light"] .pf-c-table tbody td a:not(.pf-c-button) {
+    color: #d97706 !important;
+    text-decoration: none !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-table tbody td a:not(.pf-c-button):hover,
+html[data-theme="light"] .pf-c-table tbody td a:not(.pf-c-button):hover {
+    color: #b45309 !important;
+    text-decoration: underline !important;
+}
+
+/* Form Controls in Light Mode (Scoped strictly outside login card) */
+html:not(.pf-theme-dark) .pf-c-form-control:not(.pf-c-login__main *),
+html[data-theme="light"] .pf-c-form-control:not(.pf-c-login__main *) {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 8px !important;
+    height: auto !important;
+    min-height: 2.75rem !important;
+    padding: 0.6rem 0.85rem !important;
+    font-size: 0.95rem !important;
+    line-height: 1.5 !important;
+    box-sizing: border-box !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-form-control:not(.pf-c-login__main *):placeholder,
+html[data-theme="light"] .pf-c-form-control:not(.pf-c-login__main *):placeholder {
+    color: #94a3b8 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-form-control:not(.pf-c-login__main *):focus,
+html[data-theme="light"] .pf-c-form-control:not(.pf-c-login__main *):focus {
+    background-color: #ffffff !important;
+    border-color: #f59e0b !important;
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2) !important;
+}
+
+html:not(.pf-theme-dark) select.pf-c-form-control:not(.pf-c-login__main *),
+html[data-theme="light"] select.pf-c-form-control:not(.pf-c-login__main *),
+html:not(.pf-theme-dark) select:not(.pf-c-login__main *),
+html[data-theme="light"] select:not(.pf-c-login__main *) {
+    height: auto !important;
+    min-height: 2.75rem !important;
+    line-height: normal !important;
+    padding-top: 0.55rem !important;
+    padding-bottom: 0.55rem !important;
+    padding-left: 0.85rem !important;
+    padding-right: 2.25rem !important;
+    box-sizing: border-box !important;
+    vertical-align: middle !important;
+}
+
+html:not(.pf-theme-dark) select.pf-c-form-control:not(.pf-c-login__main *) option,
+html[data-theme="light"] select.pf-c-form-control:not(.pf-c-login__main *) option,
+html:not(.pf-theme-dark) select:not(.pf-c-login__main *) option,
+html[data-theme="light"] select:not(.pf-c-login__main *) option {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-form__label-text,
+html[data-theme="light"] .pf-c-form__label-text,
+html:not(.pf-theme-dark) label.pf-c-form__label,
+html[data-theme="light"] label.pf-c-form__label {
+    color: #334155 !important;
+    font-size: 0.825rem !important;
+    font-weight: 500 !important;
+}
+
+/* Secondary Buttons & Toggles in Light Mode */
+html:not(.pf-theme-dark) .pf-c-button.pf-m-secondary,
+html[data-theme="light"] .pf-c-button.pf-m-secondary {
+    background-color: #ffffff !important;
+    color: #334155 !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 8px !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-button.pf-m-secondary:hover,
+html[data-theme="light"] .pf-c-button.pf-m-secondary:hover {
+    background-color: #f8fafc !important;
+    border-color: #f59e0b !important;
+    color: #0f172a !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-button.pf-m-plain,
+html[data-theme="light"] .pf-c-button.pf-m-plain,
+html:not(.pf-theme-dark) .pf-c-dropdown__toggle.pf-m-plain,
+html[data-theme="light"] .pf-c-dropdown__toggle.pf-m-plain {
+    color: #475569 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-button.pf-m-plain:hover,
+html[data-theme="light"] .pf-c-button.pf-m-plain:hover,
+html:not(.pf-theme-dark) .pf-c-dropdown__toggle.pf-m-plain:hover,
+html[data-theme="light"] .pf-c-dropdown__toggle.pf-m-plain:hover {
+    color: #d97706 !important;
+    background-color: rgba(245, 158, 11, 0.08) !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
+html[data-theme="light"] .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
+html:not(.pf-theme-dark) .pf-c-dropdown__toggle.pf-m-secondary,
+html[data-theme="light"] .pf-c-dropdown__toggle.pf-m-secondary {
+    background-color: #ffffff !important;
+    color: #334155 !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 8px !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain):hover,
+html[data-theme="light"] .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain):hover,
+html:not(.pf-theme-dark) .pf-c-dropdown__toggle.pf-m-secondary:hover,
+html[data-theme="light"] .pf-c-dropdown__toggle.pf-m-secondary:hover {
+    background-color: #f8fafc !important;
+    border-color: #f59e0b !important;
+    color: #0f172a !important;
+}
+
+/* Dropdown Menus in Light Mode */
+html:not(.pf-theme-dark) .pf-c-dropdown__menu,
+html[data-theme="light"] .pf-c-dropdown__menu,
+html:not(.pf-theme-dark) .pf-c-options-menu__menu,
+html[data-theme="light"] .pf-c-options-menu__menu {
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12) !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-dropdown__menu-item,
+html[data-theme="light"] .pf-c-dropdown__menu-item,
+html:not(.pf-theme-dark) .pf-c-options-menu__menu-item,
+html[data-theme="light"] .pf-c-options-menu__menu-item {
+    color: #334155 !important;
+    font-size: 0.9rem !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-dropdown__menu-item:hover,
+html[data-theme="light"] .pf-c-dropdown__menu-item:hover,
+html:not(.pf-theme-dark) .pf-c-options-menu__menu-item:hover,
+html[data-theme="light"] .pf-c-options-menu__menu-item:hover {
+    background-color: rgba(245, 158, 11, 0.1) !important;
+    color: #d97706 !important;
+}
+
+/* Modals & Dialogs in Light Mode */
+html:not(.pf-theme-dark) .pf-c-backdrop,
+html[data-theme="light"] .pf-c-backdrop {
+    background-color: rgba(15, 23, 42, 0.45) !important;
+    backdrop-filter: blur(4px) !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-modal-box,
+html[data-theme="light"] .pf-c-modal-box {
+    background-color: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-top: 2px solid #f59e0b !important;
+    border-radius: 16px !important;
+    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15) !important;
+    color: #1e293b !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-modal-box__title-text,
+html[data-theme="light"] .pf-c-modal-box__title-text {
+    color: #0f172a !important;
+    font-weight: 600 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-modal-box__footer,
+html[data-theme="light"] .pf-c-modal-box__footer {
+    background-color: #f8fafc !important;
+    border-top: 1px solid #e2e8f0 !important;
+}
+
+/* Tabs in Light Mode */
+html:not(.pf-theme-dark) .pf-c-tabs__link,
+html[data-theme="light"] .pf-c-tabs__link {
+    color: #64748b !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-tabs__link:hover,
+html[data-theme="light"] .pf-c-tabs__link:hover {
+    color: #d97706 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-tabs__item.pf-m-current .pf-c-tabs__link,
+html[data-theme="light"] .pf-c-tabs__item.pf-m-current .pf-c-tabs__link {
+    color: #d97706 !important;
+    font-weight: 600 !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-tabs__item.pf-m-current .pf-c-tabs__link::after,
+html[data-theme="light"] .pf-c-tabs__item.pf-m-current .pf-c-tabs__link::after {
+    border-bottom-color: #f59e0b !important;
+}
+
+/* Chips in Light Mode */
+html:not(.pf-theme-dark) .pf-c-chip,
+html[data-theme="light"] .pf-c-chip {
+    background-color: #f1f5f9 !important;
+    color: #334155 !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 4px !important;
+}
+
+html:not(.pf-theme-dark) .pf-c-chip__text,
+html[data-theme="light"] .pf-c-chip__text {
+    color: #334155 !important;
 }
 
 /* --------------------------------------------------------------------------
-   5. Dashboard Cards, Data Tables & Modals
+   6. DARK MODE DASHBOARD STYLING
+   Applies when document HAS .pf-theme-dark (or has data-theme="dark")
    -------------------------------------------------------------------------- */
-/* Page Main Header Typography & Breadcrumbs */
-.pf-c-page__main .pf-c-title,
-.pf-c-page__main-section .pf-c-title,
-.pf-c-modal-box .pf-c-title,
-.pf-c-card .pf-c-title {
+/* Page Main Background */
+html.pf-theme-dark .pf-c-page,
+html[data-theme="dark"] .pf-c-page,
+html.pf-theme-dark .pf-c-page__main,
+html[data-theme="dark"] .pf-c-page__main,
+html.pf-theme-dark .pf-c-page__main-section,
+html[data-theme="dark"] .pf-c-page__main-section {
+    background-color: #0b0e14 !important;
+    color: #e2e8f0 !important;
+}
+
+/* Header Navbar */
+html.pf-theme-dark .pf-c-page__header,
+html[data-theme="dark"] .pf-c-page__header,
+html.pf-theme-dark ak-page-navbar,
+html[data-theme="dark"] ak-page-navbar {
+    background-color: #080a0f !important;
+    border-bottom: 1px solid #1a202c !important;
+}
+
+html.pf-theme-dark .command-palette-trigger,
+html[data-theme="dark"] .command-palette-trigger {
+    background-color: #141822 !important;
+    border: 1px solid #232b3c !important;
+    color: #94a3b8 !important;
+    border-radius: 6px !important;
+    padding: 0.35rem 0.75rem !important;
+}
+
+html.pf-theme-dark .command-palette-trigger:hover,
+html[data-theme="dark"] .command-palette-trigger:hover {
+    border-color: #f59e0b !important;
+    color: #fbbf24 !important;
+}
+
+/* Sidebar Navigation */
+html.pf-theme-dark .pf-c-page__sidebar,
+html[data-theme="dark"] .pf-c-page__sidebar,
+html.pf-theme-dark ak-sidebar,
+html[data-theme="dark"] ak-sidebar {
+    background-color: #080a0f !important;
+    border-right: 1px solid #1a202c !important;
+}
+
+html.pf-theme-dark .pf-c-nav__section-title,
+html[data-theme="dark"] .pf-c-nav__section-title {
+    color: #64748b !important;
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    padding: 0.75rem 1rem 0.35rem 1rem !important;
+}
+
+html.pf-theme-dark .pf-c-nav__link,
+html[data-theme="dark"] .pf-c-nav__link {
+    color: #94a3b8 !important;
+    transition: all 0.15s ease !important;
+}
+
+html.pf-theme-dark .pf-c-nav__link:hover,
+html[data-theme="dark"] .pf-c-nav__link:hover {
+    color: #fbbf24 !important;
+    background-color: rgba(245, 158, 11, 0.08) !important;
+}
+
+html.pf-theme-dark .pf-c-nav__link.pf-m-current,
+html[data-theme="dark"] .pf-c-nav__link.pf-m-current,
+html.pf-theme-dark .pf-c-nav__item.pf-m-current > .pf-c-nav__link,
+html[data-theme="dark"] .pf-c-nav__item.pf-m-current > .pf-c-nav__link {
+    color: #fbbf24 !important;
+    background-color: rgba(245, 158, 11, 0.12) !important;
+    font-weight: 600 !important;
+}
+
+html.pf-theme-dark .pf-c-nav__link.pf-m-current::after,
+html[data-theme="dark"] .pf-c-nav__link.pf-m-current::after,
+html.pf-theme-dark .pf-c-nav__item.pf-m-current > .pf-c-nav__link::after,
+html[data-theme="dark"] .pf-c-nav__item.pf-m-current > .pf-c-nav__link::after {
+    border-left: 3px solid #f59e0b !important;
+}
+
+/* Sidebar Version ("authentik information") in Dark Mode */
+html.pf-theme-dark ak-sidebar-version,
+html[data-theme="dark"] ak-sidebar-version,
+html.pf-theme-dark footer[aria-label="authentik information"],
+html[data-theme="dark"] footer[aria-label="authentik information"],
+html.pf-theme-dark .pf-c-page__sidebar footer,
+html[data-theme="dark"] .pf-c-page__sidebar footer {
+    border-top: 1px solid #1a202c !important;
+    background-color: #080a0f !important;
+}
+
+html.pf-theme-dark ak-sidebar-version button:hover,
+html[data-theme="dark"] ak-sidebar-version button:hover,
+html.pf-theme-dark footer[aria-label="authentik information"] button:hover,
+html[data-theme="dark"] footer[aria-label="authentik information"] button:hover {
+    background-color: rgba(245, 158, 11, 0.08) !important;
+    border-color: rgba(245, 158, 11, 0.2) !important;
+}
+
+html.pf-theme-dark ak-sidebar-version [part~="product-name"],
+html[data-theme="dark"] ak-sidebar-version [part~="product-name"],
+html.pf-theme-dark footer[aria-label="authentik information"] p:first-child,
+html[data-theme="dark"] footer[aria-label="authentik information"] p:first-child {
+    color: #cbd5e1 !important;
+}
+
+html.pf-theme-dark ak-sidebar-version [part~="product-version"],
+html[data-theme="dark"] ak-sidebar-version [part~="product-version"],
+html.pf-theme-dark footer[aria-label="authentik information"] p:last-child,
+html[data-theme="dark"] footer[aria-label="authentik information"] p:last-child {
+    color: #64748b !important;
+}
+
+html.pf-theme-dark ak-sidebar-version button:hover [part~="product-name"],
+html[data-theme="dark"] ak-sidebar-version button:hover [part~="product-name"],
+html.pf-theme-dark footer[aria-label="authentik information"] button:hover p:first-child,
+html[data-theme="dark"] footer[aria-label="authentik information"] button:hover p:first-child {
+    color: #fbbf24 !important;
+}
+
+html.pf-theme-dark ak-sidebar-version button:hover [part~="product-version"],
+html[data-theme="dark"] ak-sidebar-version button:hover [part~="product-version"],
+html.pf-theme-dark footer[aria-label="authentik information"] button:hover p:last-child,
+html[data-theme="dark"] footer[aria-label="authentik information"] button:hover p:last-child {
+    color: #fde68a !important;
+}
+
+/* Page Titles & Breadcrumbs in Dark Mode */
+html.pf-theme-dark .pf-c-page__main .pf-c-title,
+html[data-theme="dark"] .pf-c-page__main .pf-c-title,
+html.pf-theme-dark .pf-c-page__main-section .pf-c-title,
+html[data-theme="dark"] .pf-c-page__main-section .pf-c-title,
+html.pf-theme-dark .pf-c-modal-box .pf-c-title,
+html[data-theme="dark"] .pf-c-modal-box .pf-c-title {
     color: #f8fafc !important;
     text-align: left !important;
     letter-spacing: -0.015em !important;
 }
 
-.pf-c-breadcrumb__item {
+html.pf-theme-dark .pf-c-breadcrumb__item,
+html[data-theme="dark"] .pf-c-breadcrumb__item {
     color: #64748b !important;
-    font-size: 0.85rem !important;
 }
 
-.pf-c-breadcrumb__link {
+html.pf-theme-dark .pf-c-breadcrumb__link,
+html[data-theme="dark"] .pf-c-breadcrumb__link {
     color: #94a3b8 !important;
 }
 
-.pf-c-breadcrumb__link:hover {
+html.pf-theme-dark .pf-c-breadcrumb__link:hover,
+html[data-theme="dark"] .pf-c-breadcrumb__link:hover {
     color: #fbbf24 !important;
 }
 
-.pf-c-breadcrumb__item.pf-m-current {
+html.pf-theme-dark .pf-c-breadcrumb__item.pf-m-current,
+html[data-theme="dark"] .pf-c-breadcrumb__item.pf-m-current {
     color: #cbd5e1 !important;
 }
 
-/* Toolbar Reset (Prevents excessive vertical spacing in tables and lists) */
-.pf-c-toolbar .pf-c-form__group {
-    margin-bottom: 0 !important;
-}
-
-.pf-c-toolbar .pf-c-form-control,
-.pf-c-toolbar .pf-c-select__toggle,
-.pf-c-toolbar .pf-c-dropdown__toggle {
-    min-height: 2.25rem !important;
-    padding-top: 0.35rem !important;
-    padding-bottom: 0.35rem !important;
-}
-
-/* --------------------------------------------------------------------------
-   5a. Cards, Grid Layouts & Enterprise-Only Feature Cards
-   -------------------------------------------------------------------------- */
-/* Standard Cards (Dashboard Widgets, Application Library) */
-.pf-c-card {
+/* Standard Cards in Dark Mode */
+html.pf-theme-dark .pf-c-card:not(.pf-c-login__main),
+html[data-theme="dark"] .pf-c-card:not(.pf-c-login__main) {
     background-color: #0e121a !important;
     border: 1px solid #1c2333 !important;
     border-top: 1px solid rgba(245, 158, 11, 0.35) !important;
@@ -561,46 +1121,27 @@ footer[aria-label="authentik information"] button:hover p:last-child {
     transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 
-.pf-c-card:hover {
+html.pf-theme-dark .pf-c-card:not(.pf-c-login__main):hover,
+html[data-theme="dark"] .pf-c-card:not(.pf-c-login__main):hover {
     border-color: rgba(245, 158, 11, 0.45) !important;
 }
 
-.pf-c-card__title,
-.pf-c-card__header {
+html.pf-theme-dark .pf-c-card:not(.pf-c-login__main) .pf-c-card__title,
+html[data-theme="dark"] .pf-c-card:not(.pf-c-login__main) .pf-c-card__title,
+html.pf-theme-dark .pf-c-card:not(.pf-c-login__main) .pf-c-card__header,
+html[data-theme="dark"] .pf-c-card:not(.pf-c-login__main) .pf-c-card__header {
     color: #f8fafc !important;
     font-weight: 600 !important;
     text-align: left !important;
 }
 
-.pf-c-card__body {
+html.pf-theme-dark .pf-c-card:not(.pf-c-login__main) .pf-c-card__body,
+html[data-theme="dark"] .pf-c-card:not(.pf-c-login__main) .pf-c-card__body {
     color: #cbd5e1 !important;
 }
 
-/* Card Grid Layouts (Equal Height & Pinned Footers) */
-.pf-l-grid > .pf-l-grid__item.pf-c-card,
-.pf-l-grid__item.pf-c-card,
-.pf-l-grid__item.pf-m-3-col.pf-c-card {
-    height: 100% !important;
-    display: flex !important;
-    flex-direction: column !important;
-    box-sizing: border-box !important;
-}
-
-.pf-l-grid > .pf-l-grid__item.pf-c-card .pf-c-card__body,
-.pf-l-grid__item.pf-c-card .pf-c-card__body {
-    flex: 1 1 auto !important;
-}
-
-.pf-l-grid > .pf-l-grid__item.pf-c-card .pf-c-card__footer,
-.pf-l-grid__item.pf-c-card .pf-c-card__footer {
-    flex: 0 0 auto !important;
-    border-top: 1px solid #1a202c !important;
-    margin-top: auto !important;
-    padding-top: 0.85rem !important;
-}
-
-/* Non-Selectable Raised Card Modifier */
-.pf-c-card.pf-m-non-selectable-raised {
+html.pf-theme-dark .pf-c-card.pf-m-non-selectable-raised,
+html[data-theme="dark"] .pf-c-card.pf-m-non-selectable-raised {
     background-color: #0e121a !important;
     border: 1px solid #1c2333 !important;
     border-top: 1px solid rgba(245, 158, 11, 0.35) !important;
@@ -608,19 +1149,19 @@ footer[aria-label="authentik information"] button:hover p:last-child {
     cursor: default !important;
 }
 
-/* Enterprise-Only Cards (Dedicated Obsidian & Amber Glow Styling) */
-.pf-c-card.ak-m-enterprise-only,
-.pf-l-grid__item.pf-c-card.ak-m-enterprise-only,
-.pf-l-grid__item.pf-m-3-col.pf-c-card.pf-m-non-selectable-raised.ak-m-enterprise-only,
-.ak-m-enterprise-only {
+/* Enterprise-Only Cards in Dark Mode */
+html.pf-theme-dark .pf-c-card.ak-m-enterprise-only,
+html[data-theme="dark"] .pf-c-card.ak-m-enterprise-only,
+html.pf-theme-dark .pf-l-grid__item.pf-c-card.ak-m-enterprise-only,
+html[data-theme="dark"] .pf-l-grid__item.pf-c-card.ak-m-enterprise-only,
+html.pf-theme-dark .ak-m-enterprise-only,
+html[data-theme="dark"] .ak-m-enterprise-only {
     background: linear-gradient(180deg, #121622 0%, #0e121a 100%) !important;
     background-color: #0e121a !important;
     border: 1px solid #232b3c !important;
     border-top: 2px solid #f59e0b !important;
     border-radius: 12px !important;
-    box-shadow:
-        0 6px 24px -4px rgba(0, 0, 0, 0.75),
-        0 0 20px -4px rgba(245, 158, 11, 0.15) !important;
+    box-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.75), 0 0 20px -4px rgba(245, 158, 11, 0.15) !important;
     position: relative !important;
     overflow: hidden !important;
     color: #e2e8f0 !important;
@@ -628,10 +1169,10 @@ footer[aria-label="authentik information"] button:hover p:last-child {
     transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
 }
 
-/* Ambient Radial Top Glow for Enterprise Cards */
-.pf-c-card.ak-m-enterprise-only::before,
-.pf-l-grid__item.pf-m-3-col.pf-c-card.pf-m-non-selectable-raised.ak-m-enterprise-only::before,
-.ak-m-enterprise-only::before {
+html.pf-theme-dark .pf-c-card.ak-m-enterprise-only::before,
+html[data-theme="dark"] .pf-c-card.ak-m-enterprise-only::before,
+html.pf-theme-dark .ak-m-enterprise-only::before,
+html[data-theme="dark"] .ak-m-enterprise-only::before {
     content: "" !important;
     position: absolute !important;
     top: 0 !important;
@@ -642,42 +1183,43 @@ footer[aria-label="authentik information"] button:hover p:last-child {
     pointer-events: none !important;
 }
 
-/* Enterprise Card Hover State */
-.pf-c-card.ak-m-enterprise-only:hover,
-.pf-l-grid__item.pf-m-3-col.pf-c-card.pf-m-non-selectable-raised.ak-m-enterprise-only:hover,
-.ak-m-enterprise-only:hover {
+html.pf-theme-dark .pf-c-card.ak-m-enterprise-only:hover,
+html[data-theme="dark"] .pf-c-card.ak-m-enterprise-only:hover,
+html.pf-theme-dark .ak-m-enterprise-only:hover,
+html[data-theme="dark"] .ak-m-enterprise-only:hover {
     border-color: rgba(245, 158, 11, 0.5) !important;
     border-top-color: #fbbf24 !important;
-    box-shadow:
-        0 8px 32px -4px rgba(0, 0, 0, 0.85),
-        0 0 25px -2px rgba(245, 158, 11, 0.25) !important;
+    box-shadow: 0 8px 32px -4px rgba(0, 0, 0, 0.85), 0 0 25px -2px rgba(245, 158, 11, 0.25) !important;
 }
 
-/* Enterprise Card Typography */
-.ak-m-enterprise-only .pf-c-card__title,
-.ak-m-enterprise-only .pf-c-card__header {
+html.pf-theme-dark .ak-m-enterprise-only .pf-c-card__title,
+html[data-theme="dark"] .ak-m-enterprise-only .pf-c-card__title,
+html.pf-theme-dark .ak-m-enterprise-only .pf-c-card__header,
+html[data-theme="dark"] .ak-m-enterprise-only .pf-c-card__header {
     color: #f8fafc !important;
     font-weight: 600 !important;
-    letter-spacing: -0.01em !important;
 }
 
-.ak-m-enterprise-only .pf-c-card__body {
+html.pf-theme-dark .ak-m-enterprise-only .pf-c-card__body,
+html[data-theme="dark"] .ak-m-enterprise-only .pf-c-card__body {
     color: #94a3b8 !important;
     font-size: 0.875rem !important;
     line-height: 1.55 !important;
 }
 
-.ak-m-enterprise-only .pf-c-card__footer {
+html.pf-theme-dark .ak-m-enterprise-only .pf-c-card__footer,
+html[data-theme="dark"] .ak-m-enterprise-only .pf-c-card__footer {
     border-top: 1px solid #1a202c !important;
     padding-top: 0.85rem !important;
     margin-top: auto !important;
 }
 
-/* Enterprise Badges, Pills & Labels */
-.ak-m-enterprise-only .pf-c-label,
-.ak-m-enterprise-only .pf-c-badge,
-.ak-m-enterprise-only [class*="enterprise-badge"],
-.ak-m-enterprise-only [class*="badge"] {
+html.pf-theme-dark .ak-m-enterprise-only .pf-c-label,
+html[data-theme="dark"] .ak-m-enterprise-only .pf-c-label,
+html.pf-theme-dark .ak-m-enterprise-only .pf-c-badge,
+html[data-theme="dark"] .ak-m-enterprise-only .pf-c-badge,
+html.pf-theme-dark .ak-m-enterprise-only [class*="enterprise-badge"],
+html[data-theme="dark"] .ak-m-enterprise-only [class*="enterprise-badge"] {
     background-color: rgba(245, 158, 11, 0.15) !important;
     color: #fbbf24 !important;
     border: 1px solid rgba(245, 158, 11, 0.35) !important;
@@ -689,42 +1231,47 @@ footer[aria-label="authentik information"] button:hover p:last-child {
     padding: 0.2rem 0.55rem !important;
 }
 
-/* Enterprise Card Icons (Lock, Crown, Feature Icons) */
-.ak-m-enterprise-only i,
-.ak-m-enterprise-only svg,
-.ak-m-enterprise-only .pf-c-card__header-icon {
+html.pf-theme-dark .ak-m-enterprise-only i,
+html[data-theme="dark"] .ak-m-enterprise-only i,
+html.pf-theme-dark .ak-m-enterprise-only svg,
+html[data-theme="dark"] .ak-m-enterprise-only svg,
+html.pf-theme-dark .ak-m-enterprise-only .pf-c-card__header-icon,
+html[data-theme="dark"] .ak-m-enterprise-only .pf-c-card__header-icon {
     color: #fbbf24 !important;
     fill: #fbbf24 !important;
 }
 
-/* Enterprise Card Action Links & Buttons */
-.ak-m-enterprise-only .pf-c-button.pf-m-link,
-.ak-m-enterprise-only a.pf-c-button.pf-m-link,
-.ak-m-enterprise-only a:not(.pf-c-button) {
+html.pf-theme-dark .ak-m-enterprise-only .pf-c-button.pf-m-link,
+html[data-theme="dark"] .ak-m-enterprise-only .pf-c-button.pf-m-link,
+html.pf-theme-dark .ak-m-enterprise-only a.pf-c-button.pf-m-link,
+html[data-theme="dark"] .ak-m-enterprise-only a.pf-c-button.pf-m-link,
+html.pf-theme-dark .ak-m-enterprise-only a:not(.pf-c-button),
+html[data-theme="dark"] .ak-m-enterprise-only a:not(.pf-c-button) {
     color: #fbbf24 !important;
     font-weight: 600 !important;
     font-size: 0.875rem !important;
     text-decoration: none !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    gap: 0.35rem !important;
-    transition: color 0.15s ease !important;
 }
 
-.ak-m-enterprise-only .pf-c-button.pf-m-link:hover,
-.ak-m-enterprise-only a.pf-c-button.pf-m-link:hover,
-.ak-m-enterprise-only a:not(.pf-c-button):hover {
+html.pf-theme-dark .ak-m-enterprise-only .pf-c-button.pf-m-link:hover,
+html[data-theme="dark"] .ak-m-enterprise-only .pf-c-button.pf-m-link:hover,
+html.pf-theme-dark .ak-m-enterprise-only a.pf-c-button.pf-m-link:hover,
+html[data-theme="dark"] .ak-m-enterprise-only a.pf-c-button.pf-m-link:hover,
+html.pf-theme-dark .ak-m-enterprise-only a:not(.pf-c-button):hover,
+html[data-theme="dark"] .ak-m-enterprise-only a:not(.pf-c-button):hover {
     color: #fde68a !important;
     text-decoration: underline !important;
 }
 
-/* Data Tables */
-.pf-c-table {
+/* Data Tables in Dark Mode */
+html.pf-theme-dark .pf-c-table,
+html[data-theme="dark"] .pf-c-table {
     background-color: transparent !important;
     color: #e2e8f0 !important;
 }
 
-.pf-c-table thead th {
+html.pf-theme-dark .pf-c-table thead th,
+html[data-theme="dark"] .pf-c-table thead th {
     background-color: #0a0d14 !important;
     color: #94a3b8 !important;
     border-bottom: 2px solid #232b3c !important;
@@ -733,135 +1280,59 @@ footer[aria-label="authentik information"] button:hover p:last-child {
     letter-spacing: 0.02em !important;
 }
 
-.pf-c-table thead th button,
-.pf-c-table__button {
+html.pf-theme-dark .pf-c-table thead th button,
+html[data-theme="dark"] .pf-c-table thead th button,
+html.pf-theme-dark .pf-c-table__button,
+html[data-theme="dark"] .pf-c-table__button {
     color: #94a3b8 !important;
 }
 
-.pf-c-table thead th button:hover,
-.pf-c-table__button:hover {
+html.pf-theme-dark .pf-c-table thead th button:hover,
+html[data-theme="dark"] .pf-c-table thead th button:hover,
+html.pf-theme-dark .pf-c-table__button:hover,
+html[data-theme="dark"] .pf-c-table__button:hover {
     color: #fbbf24 !important;
 }
 
-.pf-c-table thead th.pf-m-selected button,
-.pf-c-table thead th.pf-m-selected .pf-c-table__button {
+html.pf-theme-dark .pf-c-table thead th.pf-m-selected button,
+html[data-theme="dark"] .pf-c-table thead th.pf-m-selected button,
+html.pf-theme-dark .pf-c-table thead th.pf-m-selected .pf-c-table__button,
+html[data-theme="dark"] .pf-c-table thead th.pf-m-selected .pf-c-table__button {
     color: #fbbf24 !important;
 }
 
-.pf-c-table tbody tr {
+html.pf-theme-dark .pf-c-table tbody tr,
+html[data-theme="dark"] .pf-c-table tbody tr {
     background-color: transparent !important;
     border-bottom: 1px solid #1a202c !important;
     color: #cbd5e1 !important;
 }
 
-.pf-c-table tbody tr:hover {
+html.pf-theme-dark .pf-c-table tbody tr:hover,
+html[data-theme="dark"] .pf-c-table tbody tr:hover {
     background-color: rgba(245, 158, 11, 0.04) !important;
 }
 
-.pf-c-table tbody tr.pf-m-selected {
+html.pf-theme-dark .pf-c-table tbody tr.pf-m-selected,
+html[data-theme="dark"] .pf-c-table tbody tr.pf-m-selected {
     background-color: rgba(245, 158, 11, 0.08) !important;
 }
 
-.pf-c-table tbody td a:not(.pf-c-button) {
+html.pf-theme-dark .pf-c-table tbody td a:not(.pf-c-button),
+html[data-theme="dark"] .pf-c-table tbody td a:not(.pf-c-button) {
     color: #fbbf24 !important;
     text-decoration: none !important;
 }
 
-.pf-c-table tbody td a:not(.pf-c-button):hover {
+html.pf-theme-dark .pf-c-table tbody td a:not(.pf-c-button):hover,
+html[data-theme="dark"] .pf-c-table tbody td a:not(.pf-c-button):hover {
     color: #fde68a !important;
     text-decoration: underline !important;
 }
 
-/* Modals & Dialogs */
-.pf-c-backdrop {
-    background-color: rgba(0, 0, 0, 0.75) !important;
-    backdrop-filter: blur(4px) !important;
-}
-
-.pf-c-modal-box {
-    background-color: #0e121a !important;
-    border: 1px solid #232b3c !important;
-    border-top: 2px solid #f59e0b !important;
-    border-radius: 16px !important;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85) !important;
-    color: #e2e8f0 !important;
-}
-
-.pf-c-modal-box__title-text {
-    color: #f8fafc !important;
-    font-weight: 600 !important;
-    text-align: left !important;
-}
-
-.pf-c-modal-box__footer {
-    background-color: #0a0d14 !important;
-    border-top: 1px solid #1a202c !important;
-}
-
-/* Tabs */
-.pf-c-tabs__link {
-    color: #94a3b8 !important;
-}
-
-.pf-c-tabs__link:hover {
-    color: #fde68a !important;
-}
-
-.pf-c-tabs__item.pf-m-current .pf-c-tabs__link {
-    color: #fbbf24 !important;
-    font-weight: 600 !important;
-}
-
-.pf-c-tabs__item.pf-m-current .pf-c-tabs__link::after {
-    border-bottom-color: #f59e0b !important;
-}
-
-/* Switches & Checkboxes */
-.pf-c-switch__input:checked ~ .pf-c-switch__toggle {
-    background-color: #f59e0b !important;
-}
-
-.pf-c-check__input:checked {
-    accent-color: #f59e0b !important;
-}
-
-/* Pagination & Options Menu */
-.pf-c-pagination,
-.pf-c-options-menu__toggle {
-    background-color: transparent !important;
-    color: #94a3b8 !important;
-}
-
-.pf-c-options-menu__menu {
-    background-color: #141822 !important;
-    border: 1px solid #232b3c !important;
-    border-radius: 8px !important;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7) !important;
-}
-
-.pf-c-options-menu__menu-item:hover {
-    background-color: rgba(245, 158, 11, 0.15) !important;
-    color: #fbbf24 !important;
-}
-
-/* --------------------------------------------------------------------------
-   6. Form Inputs & Select Controls (Prevents Text Clipping)
-   -------------------------------------------------------------------------- */
-.pf-c-form__group {
-    margin-bottom: 1.25rem !important;
-}
-
-.pf-c-form__label-text,
-label.pf-c-form__label {
-    color: #cbd5e1 !important;
-    font-size: 0.825rem !important;
-    font-weight: 500 !important;
-    letter-spacing: 0.01em !important;
-    margin-bottom: 0.35rem !important;
-    display: inline-block !important;
-}
-
-.pf-c-form-control {
+/* Form Controls in Dark Mode (Scoped strictly outside login card) */
+html.pf-theme-dark .pf-c-form-control:not(.pf-c-login__main *),
+html[data-theme="dark"] .pf-c-form-control:not(.pf-c-login__main *) {
     background-color: #141822 !important;
     color: #f8fafc !important;
     border: 1px solid #232b3c !important;
@@ -875,26 +1346,23 @@ label.pf-c-form__label {
     transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease !important;
 }
 
-textarea.pf-c-form-control {
-    min-height: 5.5rem !important;
-    height: auto !important;
-}
-
-.pf-c-form-control::placeholder {
+html.pf-theme-dark .pf-c-form-control:not(.pf-c-login__main *):placeholder,
+html[data-theme="dark"] .pf-c-form-control:not(.pf-c-login__main *):placeholder {
     color: #475569 !important;
 }
 
-.pf-c-form-control:focus,
-.pf-c-form-control:focus-within {
+html.pf-theme-dark .pf-c-form-control:not(.pf-c-login__main *):focus,
+html[data-theme="dark"] .pf-c-form-control:not(.pf-c-login__main *):focus {
     background-color: #181d2a !important;
     border-color: #f59e0b !important;
     outline: none !important;
     box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22) !important;
 }
 
-/* Select Component Enhancements to prevent bottom text clipping */
-select.pf-c-form-control,
-select {
+html.pf-theme-dark select.pf-c-form-control:not(.pf-c-login__main *),
+html[data-theme="dark"] select.pf-c-form-control:not(.pf-c-login__main *),
+html.pf-theme-dark select:not(.pf-c-login__main *),
+html[data-theme="dark"] select:not(.pf-c-login__main *) {
     height: auto !important;
     min-height: 2.75rem !important;
     line-height: normal !important;
@@ -904,35 +1372,170 @@ select {
     padding-right: 2.25rem !important;
     box-sizing: border-box !important;
     vertical-align: middle !important;
-    background-position: right 0.75rem center !important;
 }
 
-select.pf-c-form-control option,
-select option {
+html.pf-theme-dark select.pf-c-form-control:not(.pf-c-login__main *) option,
+html[data-theme="dark"] select.pf-c-form-control:not(.pf-c-login__main *) option,
+html.pf-theme-dark select:not(.pf-c-login__main *) option,
+html[data-theme="dark"] select:not(.pf-c-login__main *) option {
     background-color: #141822 !important;
     color: #f8fafc !important;
-    padding: 0.5rem !important;
 }
 
-/* PatternFly Select / Dropdown Toggles */
-.pf-c-select,
-.pf-c-select__toggle {
-    height: auto !important;
-    min-height: 2.75rem !important;
-    line-height: normal !important;
-    box-sizing: border-box !important;
-    display: flex !important;
-    align-items: center !important;
+html.pf-theme-dark .pf-c-form__label-text,
+html[data-theme="dark"] .pf-c-form__label-text,
+html.pf-theme-dark label.pf-c-form__label,
+html[data-theme="dark"] label.pf-c-form__label {
+    color: #cbd5e1 !important;
+    font-size: 0.825rem !important;
+    font-weight: 500 !important;
 }
 
-.pf-c-select__toggle-text,
-.pf-c-dropdown__toggle-text {
-    line-height: normal !important;
-    padding-bottom: 1px !important;
+/* Secondary Buttons & Toggles in Dark Mode */
+html.pf-theme-dark .pf-c-button.pf-m-secondary,
+html[data-theme="dark"] .pf-c-button.pf-m-secondary {
+    background-color: #141822 !important;
+    color: #cbd5e1 !important;
+    border: 1px solid #232b3c !important;
+    border-radius: 8px !important;
+}
+
+html.pf-theme-dark .pf-c-button.pf-m-secondary:hover,
+html[data-theme="dark"] .pf-c-button.pf-m-secondary:hover {
+    background-color: #1c2230 !important;
+    border-color: #f59e0b !important;
+    color: #ffffff !important;
+}
+
+html.pf-theme-dark .pf-c-button.pf-m-plain,
+html[data-theme="dark"] .pf-c-button.pf-m-plain,
+html.pf-theme-dark .pf-c-dropdown__toggle.pf-m-plain,
+html[data-theme="dark"] .pf-c-dropdown__toggle.pf-m-plain {
+    color: #94a3b8 !important;
+}
+
+html.pf-theme-dark .pf-c-button.pf-m-plain:hover,
+html[data-theme="dark"] .pf-c-button.pf-m-plain:hover,
+html.pf-theme-dark .pf-c-dropdown__toggle.pf-m-plain:hover,
+html[data-theme="dark"] .pf-c-dropdown__toggle.pf-m-plain:hover {
+    color: #fbbf24 !important;
+    background-color: rgba(245, 158, 11, 0.12) !important;
+}
+
+html.pf-theme-dark .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
+html[data-theme="dark"] .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
+html.pf-theme-dark .pf-c-dropdown__toggle.pf-m-secondary,
+html[data-theme="dark"] .pf-c-dropdown__toggle.pf-m-secondary {
+    background-color: #141822 !important;
+    color: #cbd5e1 !important;
+    border: 1px solid #232b3c !important;
+    border-radius: 8px !important;
+}
+
+html.pf-theme-dark .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain):hover,
+html[data-theme="dark"] .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain):hover,
+html.pf-theme-dark .pf-c-dropdown__toggle.pf-m-secondary:hover,
+html[data-theme="dark"] .pf-c-dropdown__toggle.pf-m-secondary:hover {
+    background-color: #1c2230 !important;
+    border-color: #f59e0b !important;
+    color: #ffffff !important;
+}
+
+/* Dropdown Menus in Dark Mode */
+html.pf-theme-dark .pf-c-dropdown__menu,
+html[data-theme="dark"] .pf-c-dropdown__menu,
+html.pf-theme-dark .pf-c-options-menu__menu,
+html[data-theme="dark"] .pf-c-options-menu__menu {
+    background-color: #141822 !important;
+    border: 1px solid #232b3c !important;
+    border-radius: 8px !important;
+    box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.85) !important;
+}
+
+html.pf-theme-dark .pf-c-dropdown__menu-item,
+html[data-theme="dark"] .pf-c-dropdown__menu-item,
+html.pf-theme-dark .pf-c-options-menu__menu-item,
+html[data-theme="dark"] .pf-c-options-menu__menu-item {
+    color: #cbd5e1 !important;
+    font-size: 0.9rem !important;
+}
+
+html.pf-theme-dark .pf-c-dropdown__menu-item:hover,
+html[data-theme="dark"] .pf-c-dropdown__menu-item:hover,
+html.pf-theme-dark .pf-c-options-menu__menu-item:hover,
+html[data-theme="dark"] .pf-c-options-menu__menu-item:hover {
+    background-color: rgba(245, 158, 11, 0.15) !important;
+    color: #fbbf24 !important;
+}
+
+/* Modals & Dialogs in Dark Mode */
+html.pf-theme-dark .pf-c-backdrop,
+html[data-theme="dark"] .pf-c-backdrop {
+    background-color: rgba(0, 0, 0, 0.75) !important;
+    backdrop-filter: blur(4px) !important;
+}
+
+html.pf-theme-dark .pf-c-modal-box,
+html[data-theme="dark"] .pf-c-modal-box {
+    background-color: #0e121a !important;
+    border: 1px solid #232b3c !important;
+    border-top: 2px solid #f59e0b !important;
+    border-radius: 16px !important;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85) !important;
+    color: #e2e8f0 !important;
+}
+
+html.pf-theme-dark .pf-c-modal-box__title-text,
+html[data-theme="dark"] .pf-c-modal-box__title-text {
+    color: #f8fafc !important;
+    font-weight: 600 !important;
+}
+
+html.pf-theme-dark .pf-c-modal-box__footer,
+html[data-theme="dark"] .pf-c-modal-box__footer {
+    background-color: #0a0d14 !important;
+    border-top: 1px solid #1a202c !important;
+}
+
+/* Tabs in Dark Mode */
+html.pf-theme-dark .pf-c-tabs__link,
+html[data-theme="dark"] .pf-c-tabs__link {
+    color: #94a3b8 !important;
+}
+
+html.pf-theme-dark .pf-c-tabs__link:hover,
+html[data-theme="dark"] .pf-c-tabs__link:hover {
+    color: #fde68a !important;
+}
+
+html.pf-theme-dark .pf-c-tabs__item.pf-m-current .pf-c-tabs__link,
+html[data-theme="dark"] .pf-c-tabs__item.pf-m-current .pf-c-tabs__link {
+    color: #fbbf24 !important;
+    font-weight: 600 !important;
+}
+
+html.pf-theme-dark .pf-c-tabs__item.pf-m-current .pf-c-tabs__link::after,
+html[data-theme="dark"] .pf-c-tabs__item.pf-m-current .pf-c-tabs__link::after {
+    border-bottom-color: #f59e0b !important;
+}
+
+/* Chips in Dark Mode */
+html.pf-theme-dark .pf-c-chip,
+html[data-theme="dark"] .pf-c-chip {
+    background-color: #141822 !important;
+    color: #cbd5e1 !important;
+    border: 1px solid #232b3c !important;
+    border-radius: 4px !important;
+}
+
+html.pf-theme-dark .pf-c-chip__text,
+html[data-theme="dark"] .pf-c-chip__text {
+    color: #cbd5e1 !important;
 }
 
 /* --------------------------------------------------------------------------
-   7. Sign-In Flows & Flow Executor Wallpaper Backdrop
+   7. USER-FACING SIGN-IN FLOW & AUTHENTICATION CARD (CONCEPT 2: OBSIDIAN & AMBER GLOW)
+   Always maintains the signature dark wallpaper backdrop and obsidian card
    -------------------------------------------------------------------------- */
 .pf-c-background-image {
     --pf-c-background-image--BackgroundImage: var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
@@ -943,8 +1546,7 @@ select option {
     --pf-c-background-image--Filter: none !important;
 }
 
-body.pf-c-background-image,
-body {
+body.pf-c-background-image {
     background-color: transparent !important;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
     color: #e2e8f0 !important;
@@ -970,8 +1572,10 @@ body {
     filter: none !important;
 }
 
-/* Authentication Main Card */
-.pf-c-login__main {
+/* Authentication Main Card (Obsidian Surface & Amber Border Glow) */
+.pf-c-login__main,
+.pf-c-login .pf-c-card,
+ak-flow-executor .pf-c-card {
     background-color: #0d1017 !important;
     background: #0d1017 !important;
     border-radius: 16px !important;
@@ -1005,7 +1609,7 @@ body {
     filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.7));
 }
 
-/* Sign-In Flow Title & Typography (Strictly Scoped to Login Card) */
+/* Sign-In Flow Typography (Scoped strictly to login card) */
 .pf-c-login__main .pf-c-title,
 .pf-c-login__main-header h1,
 .pf-c-login__main-body h1,
@@ -1025,7 +1629,29 @@ body {
     font-size: 0.875rem !important;
 }
 
-/* Alerts and Validation Callouts */
+/* Sign-In Form Controls */
+.pf-c-login__main .pf-c-form-control {
+    background-color: #141822 !important;
+    color: #f8fafc !important;
+    border: 1px solid #232b3c !important;
+    border-radius: 8px !important;
+    min-height: 2.75rem !important;
+    padding: 0.6rem 0.85rem !important;
+}
+
+.pf-c-login__main .pf-c-form-control:focus {
+    background-color: #181d2a !important;
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22) !important;
+}
+
+.pf-c-login__main .pf-c-form__label-text {
+    color: #cbd5e1 !important;
+    font-size: 0.825rem !important;
+    font-weight: 500 !important;
+}
+
+/* Flow Alerts & Validation Callouts */
 .pf-c-alert {
     border-radius: 8px !important;
     margin-bottom: 1rem !important;
@@ -1054,7 +1680,7 @@ body {
     color: #86efac !important;
 }
 
-/* Hide Flow Footers & "Powered by authentik" (Strictly Scoped to Login/Flows) */
+/* Hide Flow Footers & "Powered by authentik" */
 ak-flow-executor ak-brand-links,
 .pf-c-login ak-brand-links,
 .pf-c-login [name="flow-links"],
@@ -1067,7 +1693,7 @@ ak-flow-executor ak-brand-links,
     padding: 0 !important;
 }
 
-/* Subtle Header / Language Selector Elements */
+/* Sign-In Language Selector */
 ak-locale-select,
 .pf-c-login__header {
     color: #64748b !important;
@@ -1104,68 +1730,79 @@ ak-locale-select select option {
 }
 
 /* --------------------------------------------------------------------------
-   8. Status Labels, Badges, Chips & Sleek Obsidian Scrollbars
+   8. STATUS LABELS, BADGES & SLEEK SCROLLBARS
    -------------------------------------------------------------------------- */
-/* Badges & Labels */
 .pf-c-badge.pf-m-unread {
     background-color: #f59e0b !important;
     color: #0a0d14 !important;
     font-weight: 700 !important;
 }
 
-.pf-c-badge.pf-m-read {
-    background-color: #141822 !important;
-    color: #94a3b8 !important;
-    border: 1px solid #232b3c !important;
-}
-
 .pf-c-label.pf-m-blue,
 .pf-c-label.pf-m-orange,
 .pf-c-label.pf-m-gold {
     background-color: rgba(245, 158, 11, 0.15) !important;
-    color: #fbbf24 !important;
+    color: #d97706 !important;
     border: 1px solid rgba(245, 158, 11, 0.3) !important;
+}
+
+html.pf-theme-dark .pf-c-label.pf-m-blue,
+html.pf-theme-dark .pf-c-label.pf-m-orange,
+html.pf-theme-dark .pf-c-label.pf-m-gold {
+    color: #fbbf24 !important;
 }
 
 .pf-c-label.pf-m-green {
     background-color: rgba(16, 185, 129, 0.15) !important;
-    color: #34d399 !important;
+    color: #059669 !important;
     border: 1px solid rgba(16, 185, 129, 0.3) !important;
+}
+
+html.pf-theme-dark .pf-c-label.pf-m-green {
+    color: #34d399 !important;
 }
 
 .pf-c-label.pf-m-red {
     background-color: rgba(239, 68, 68, 0.15) !important;
-    color: #f87171 !important;
+    color: #dc2626 !important;
     border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
-/* Chips & Tags */
-.pf-c-chip {
-    background-color: #141822 !important;
-    color: #cbd5e1 !important;
-    border: 1px solid #232b3c !important;
-    border-radius: 4px !important;
+html.pf-theme-dark .pf-c-label.pf-m-red {
+    color: #f87171 !important;
 }
 
-.pf-c-chip__text {
-    color: #cbd5e1 !important;
-}
-
-/* Sleek Dark Obsidian Scrollbars */
+/* Sleek Scrollbars */
 *::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
 
-*::-webkit-scrollbar-track {
+html:not(.pf-theme-dark) *::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+
+html:not(.pf-theme-dark) *::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+html:not(.pf-theme-dark) *::-webkit-scrollbar-thumb:hover {
+    background: #f59e0b;
+}
+
+html.pf-theme-dark *::-webkit-scrollbar-track,
+html[data-theme="dark"] *::-webkit-scrollbar-track {
     background: #080a0f;
 }
 
-*::-webkit-scrollbar-thumb {
+html.pf-theme-dark *::-webkit-scrollbar-thumb,
+html[data-theme="dark"] *::-webkit-scrollbar-thumb {
     background: #1c2333;
     border-radius: 4px;
 }
 
-*::-webkit-scrollbar-thumb:hover {
+html.pf-theme-dark *::-webkit-scrollbar-thumb:hover,
+html[data-theme="dark"] *::-webkit-scrollbar-thumb:hover {
     background: #f59e0b;
 }
