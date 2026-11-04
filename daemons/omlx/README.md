@@ -5,7 +5,7 @@ This directory contains the host configuration files for running **oMLX** bare-m
 ## Architecture & Security Model
 
 - **Atlas**: Dedicated ML inference node running `omlx` bare-metal on port `8000`.
-- **Axis (`192.168.0.2`)**: Primary control plane node (Mac Mini) running the LLM Gateway and orchestrators.
+- **Axis (`192.168.0.2`)**: Primary control plane node (Mac Mini) running the AI Gateway and orchestrators.
 - **Network Ingress Policy**: Port `8000` on Atlas is strictly restricted to Axis (`192.168.0.2`) via macOS Packet Filter (`pfctl`). All other inbound traffic to port 8000 is blocked at the packet filter level.
 - **Service Management**: Managed as a system-level macOS `launchd` daemon with automatic boot start and process supervision (`KeepAlive: true`).
 

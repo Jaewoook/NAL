@@ -38,7 +38,7 @@ run_sql() {
     fi
 }
 
-echo "Provisioning LiteLLM PostgreSQL user '${LITELLM_DB_USER}' and database '${LITELLM_DB_NAME}'..."
+echo "Provisioning AI Gateway (LiteLLM) PostgreSQL user '${LITELLM_DB_USER}' and database '${LITELLM_DB_NAME}'..."
 
 # 4. Create user and database idempotently
 run_sql "$POSTGRES_DB" <<-EOSQL
@@ -59,4 +59,4 @@ run_sql "$LITELLM_DB_NAME" <<-EOSQL
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "${LITELLM_DB_USER}";
 EOSQL
 
-echo "LiteLLM PostgreSQL database '${LITELLM_DB_NAME}' provisioned successfully."
+echo "AI Gateway PostgreSQL database '${LITELLM_DB_NAME}' provisioned successfully."

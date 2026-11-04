@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Bootstrap API Keys for LiteLLM Gateway
+# Bootstrap API Keys for AI Gateway
 # Generates sk-openwebui-service using LITELLM_MASTER_KEY via POST /key/generate.
 
 GATEWAY_URL="${GATEWAY_URL:-http://127.0.0.1:4000}"
@@ -15,12 +15,12 @@ show_help() {
   cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Bootstrap API keys in LiteLLM Gateway for downstream services (e.g. Open WebUI).
+Bootstrap API keys in AI Gateway for downstream services (e.g. Open WebUI).
 
 Options:
   --dry-run              Validate payload and parameters offline without network calls
-  -u, --gateway-url URL  LiteLLM Gateway base URL (default: http://127.0.0.1:4000)
-  -k, --master-key KEY   LiteLLM Master Key (default: sk-master-change-me)
+  -u, --gateway-url URL  AI Gateway base URL (default: http://127.0.0.1:4000)
+  -k, --master-key KEY   AI Gateway Master Key (default: sk-master-change-me)
   --key KEY              Key token to generate (default: sk-openwebui-service)
   --key-alias ALIAS      Key alias/name (default: openwebui-service)
   -v, --verbose          Show detailed payload and response logs

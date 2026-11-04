@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# End-to-End Verification Tooling for LiteLLM Gateway
+# End-to-End Verification Tooling for AI Gateway
 # Validates OpenAI /v1/chat/completions, Anthropic /v1/messages, and HTTP 401 Unauthorized handling.
 
 GATEWAY_URL="${GATEWAY_URL:-http://127.0.0.1:4000}"
@@ -14,11 +14,11 @@ show_help() {
   cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Validate LiteLLM Gateway agent protocols and authentication.
+Validate AI Gateway agent protocols and authentication.
 
 Options:
   --dry-run              Validate request payloads, headers, and schemas offline
-  -u, --gateway-url URL  LiteLLM Gateway base URL (default: http://127.0.0.1:4000)
+  -u, --gateway-url URL  AI Gateway base URL (default: http://127.0.0.1:4000)
   -k, --api-key KEY      API key / Bearer token (default: sk-master-change-me)
   -m, --model MODEL      Model name (default: claude-3-5-sonnet)
   -v, --verbose          Show detailed payload and response logs
@@ -375,7 +375,7 @@ EOF
 }
 
 main() {
-  echo "=== LiteLLM Gateway Verification ==="
+  echo "=== AI Gateway Verification ==="
   echo "Gateway URL: ${GATEWAY_URL}"
   echo "Model:       ${MODEL}"
   echo "Mode:        $( [ "$DRY_RUN" = true ] && echo "DRY-RUN (Offline)" || echo "LIVE" )"

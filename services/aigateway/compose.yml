@@ -1,7 +1,7 @@
 services:
-  litellm:
+  aigateway:
     image: ghcr.io/berriai/litellm:main-latest
-    container_name: litellm-gateway
+    container_name: aigateway
     restart: unless-stopped
     expose:
       - 4000
