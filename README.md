@@ -72,6 +72,7 @@ Start, stop, or restart one or more services with:
 | Proxy            | <ul><li>https://nginx.jaewook.dev</li><ul>   | Nginx web management console | Stable |
 | Virt             | <ul><li>https://docker.jaewook.dev</li></ul> | Docker stack management console | Stable |
 | LLM              | <ul><li>https://llm.jaewook.dev</li><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM web service ([`services/llm`](./services/llm)) | Experimental |
+| Web Search       | N/A | Self-hosted SearXNG meta-search engine for Open WebUI ([`services/websearch`](./services/websearch)) | Stable |
 | Remote Desktop   | <ul><li>https://remote.jaewook.dev</li></ul> | Apache Guacamole clientless remote desktop gateway for Atlas ([`services/remote`](./services/remote)) | Experimental |
 | Auth             | <ul><li>https://auth.jaewook.dev</li></ul> | Authenticate/Authorize + LDAP | Stable |
 | DB               | N/A | Shared PostgreSQL database server | Work in progress |
@@ -98,7 +99,7 @@ live/configured — not implemented yet.
 `nginx_network` is created with a fixed subnet (`172.22.0.0/16`) and gateway
 (`172.22.0.1`), with dynamically-assigned addresses restricted to the
 `172.22.1.0/24` range. Services that pin a static IP (e.g. nginx-proxy,
-portainer, authentik, ollama) use `172.22.0.0/24`, so they never collide with an
+portainer, authentik, ollama, aigateway, websearch) use `172.22.0.0/24`, so they never collide with an
 auto-assigned one.
 
 ## Volumes and data
