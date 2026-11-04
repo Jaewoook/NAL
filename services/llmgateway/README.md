@@ -17,14 +17,19 @@ The LiteLLM Gateway (`litellm-gateway`) provides a unified, centralized inferenc
 LiteLLM requires PostgreSQL database credentials (`LITELLM_DB_USER`, `LITELLM_DB_PASS`, `LITELLM_DB_NAME`).
 
 ### Fresh PostgreSQL Deployment
-If initializing `services/db` from scratch, PostgreSQL will automatically execute `services/db/init/40-litellm.sh` upon first container startup.
+If initializing `services/db` from scratch, PostgreSQL will automatically execute `services/db/init/50-litellm.sh` upon first container startup.
 
 ### Existing PostgreSQL Data Volume
-If the PostgreSQL container is already running with an existing data volume, `/docker-entrypoint-initdb.d/` scripts will **not** be executed automatically. You must run the provisioning script manually:
+If the PostgreSQL container is already running with an existing data volume, execute the provisioning script directly from the host (it automatically loads `services/db/.env` and connects to the running container):
 
 ```bash
-# Execute initialization script against running PostgreSQL container
-docker exec -i postgres psql -U postgres < services/db/init/40-litellm.sh
+# Execute initialization script directly from the host
+./services/db/init/50-litellm.sh
+```
+
+Alternatively, run it inside the container:
+```bash
+docker exec -i postgresql /docker-entrypoint-initdb.d/50-litellm.sh
 ```
 
 Alternatively, run the SQL commands directly via `psql`:
