@@ -1,0 +1,49 @@
+use_default_settings: true
+
+general:
+  instance_name: "NAL Search"
+  donation_url: false
+  contact_url: false
+
+server:
+  secret_key: "ultrasecretkey_nal_websearch"
+  limiter: false
+  image_proxy: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: ""
+  formats:
+    - html
+    - json
+
+engines:
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+  - name: brave
+    engine: brave
+    shortcut: br
+    disabled: false
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false
+  - name: mojeek
+    engine: mojeek
+    shortcut: mj
+    disabled: false
+  - name: wikidata
+    engine: wikidata
+    shortcut: wd
+    disabled: false
+  - name: google
+    engine: google
+    shortcut: go
+    disabled: true
+  - name: bing
+    engine: bing
+    shortcut: bi
+    disabled: true
