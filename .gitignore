@@ -17,3 +17,6 @@ services/cloudflare-tunnel/data
 # Documentation / agent plans
 docs/
 .superpowers/
+
+# Worktrees
+.worktrees/
