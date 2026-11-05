@@ -1,0 +1,23 @@
+services:
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    expose:
+      - 8080
+    volumes:
+      - ./settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080/
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-ultrasecretkey_nal_websearch}
+    networks:
+      default:
+        ipv4_address: 172.22.0.15
+        aliases:
+          - searxng
+          - websearch
+
+networks:
+  default:
+    external: true
+    name: nginx_network
