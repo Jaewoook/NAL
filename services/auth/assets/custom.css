@@ -740,9 +740,11 @@ html[data-theme="light"] .pf-c-table tbody td a:not(.pf-c-button):hover {
     text-decoration: underline !important;
 }
 
-/* Form Controls in Light Mode (Scoped strictly outside login card) */
-html:not(.pf-theme-dark) .pf-c-form-control:not(.pf-c-login__main *),
-html[data-theme="light"] .pf-c-form-control:not(.pf-c-login__main *) {
+/* Form Controls in Light Mode (Dashboard & Modals) */
+html:not(.pf-theme-dark) .pf-c-page .pf-c-form-control,
+html[data-theme="light"] .pf-c-page .pf-c-form-control,
+html:not(.pf-theme-dark) .pf-c-modal-box .pf-c-form-control,
+html[data-theme="light"] .pf-c-modal-box .pf-c-form-control {
     background-color: #ffffff !important;
     color: #0f172a !important;
     border: 1px solid #cbd5e1 !important;
@@ -756,23 +758,27 @@ html[data-theme="light"] .pf-c-form-control:not(.pf-c-login__main *) {
     transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-form-control:not(.pf-c-login__main *):placeholder,
-html[data-theme="light"] .pf-c-form-control:not(.pf-c-login__main *):placeholder {
+html:not(.pf-theme-dark) .pf-c-page .pf-c-form-control:placeholder,
+html[data-theme="light"] .pf-c-page .pf-c-form-control:placeholder,
+html:not(.pf-theme-dark) .pf-c-modal-box .pf-c-form-control:placeholder,
+html[data-theme="light"] .pf-c-modal-box .pf-c-form-control:placeholder {
     color: #94a3b8 !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-form-control:not(.pf-c-login__main *):focus,
-html[data-theme="light"] .pf-c-form-control:not(.pf-c-login__main *):focus {
+html:not(.pf-theme-dark) .pf-c-page .pf-c-form-control:focus,
+html[data-theme="light"] .pf-c-page .pf-c-form-control:focus,
+html:not(.pf-theme-dark) .pf-c-modal-box .pf-c-form-control:focus,
+html[data-theme="light"] .pf-c-modal-box .pf-c-form-control:focus {
     background-color: #ffffff !important;
     border-color: #f59e0b !important;
     outline: none !important;
     box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2) !important;
 }
 
-html:not(.pf-theme-dark) select.pf-c-form-control:not(.pf-c-login__main *),
-html[data-theme="light"] select.pf-c-form-control:not(.pf-c-login__main *),
-html:not(.pf-theme-dark) select:not(.pf-c-login__main *),
-html[data-theme="light"] select:not(.pf-c-login__main *) {
+html:not(.pf-theme-dark) .pf-c-page select,
+html[data-theme="light"] .pf-c-page select,
+html:not(.pf-theme-dark) .pf-c-modal-box select,
+html[data-theme="light"] .pf-c-modal-box select {
     height: auto !important;
     min-height: 2.75rem !important;
     line-height: normal !important;
@@ -784,18 +790,20 @@ html[data-theme="light"] select:not(.pf-c-login__main *) {
     vertical-align: middle !important;
 }
 
-html:not(.pf-theme-dark) select.pf-c-form-control:not(.pf-c-login__main *) option,
-html[data-theme="light"] select.pf-c-form-control:not(.pf-c-login__main *) option,
-html:not(.pf-theme-dark) select:not(.pf-c-login__main *) option,
-html[data-theme="light"] select:not(.pf-c-login__main *) option {
+html:not(.pf-theme-dark) .pf-c-page select option,
+html[data-theme="light"] .pf-c-page select option,
+html:not(.pf-theme-dark) .pf-c-modal-box select option,
+html[data-theme="light"] .pf-c-modal-box select option {
     background-color: #ffffff !important;
     color: #0f172a !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-form__label-text,
-html[data-theme="light"] .pf-c-form__label-text,
-html:not(.pf-theme-dark) label.pf-c-form__label,
-html[data-theme="light"] label.pf-c-form__label {
+html:not(.pf-theme-dark) .pf-c-page .pf-c-form__label-text,
+html[data-theme="light"] .pf-c-page .pf-c-form__label-text,
+html:not(.pf-theme-dark) .pf-c-page label.pf-c-form__label,
+html[data-theme="light"] .pf-c-page label.pf-c-form__label,
+html:not(.pf-theme-dark) .pf-c-modal-box .pf-c-form__label-text,
+html[data-theme="light"] .pf-c-modal-box .pf-c-form__label-text {
     color: #334155 !important;
     font-size: 0.825rem !important;
     font-weight: 500 !important;
@@ -1330,9 +1338,11 @@ html[data-theme="dark"] .pf-c-table tbody td a:not(.pf-c-button):hover {
     text-decoration: underline !important;
 }
 
-/* Form Controls in Dark Mode (Scoped strictly outside login card) */
-html.pf-theme-dark .pf-c-form-control:not(.pf-c-login__main *),
-html[data-theme="dark"] .pf-c-form-control:not(.pf-c-login__main *) {
+/* Form Controls in Dark Mode (Dashboard & Modals) */
+html.pf-theme-dark .pf-c-page .pf-c-form-control,
+html[data-theme="dark"] .pf-c-page .pf-c-form-control,
+html.pf-theme-dark .pf-c-modal-box .pf-c-form-control,
+html[data-theme="dark"] .pf-c-modal-box .pf-c-form-control {
     background-color: #141822 !important;
     color: #f8fafc !important;
     border: 1px solid #232b3c !important;
@@ -1346,23 +1356,27 @@ html[data-theme="dark"] .pf-c-form-control:not(.pf-c-login__main *) {
     transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease !important;
 }
 
-html.pf-theme-dark .pf-c-form-control:not(.pf-c-login__main *):placeholder,
-html[data-theme="dark"] .pf-c-form-control:not(.pf-c-login__main *):placeholder {
+html.pf-theme-dark .pf-c-page .pf-c-form-control:placeholder,
+html[data-theme="dark"] .pf-c-page .pf-c-form-control:placeholder,
+html.pf-theme-dark .pf-c-modal-box .pf-c-form-control:placeholder,
+html[data-theme="dark"] .pf-c-modal-box .pf-c-form-control:placeholder {
     color: #475569 !important;
 }
 
-html.pf-theme-dark .pf-c-form-control:not(.pf-c-login__main *):focus,
-html[data-theme="dark"] .pf-c-form-control:not(.pf-c-login__main *):focus {
+html.pf-theme-dark .pf-c-page .pf-c-form-control:focus,
+html[data-theme="dark"] .pf-c-page .pf-c-form-control:focus,
+html.pf-theme-dark .pf-c-modal-box .pf-c-form-control:focus,
+html[data-theme="dark"] .pf-c-modal-box .pf-c-form-control:focus {
     background-color: #181d2a !important;
     border-color: #f59e0b !important;
     outline: none !important;
     box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22) !important;
 }
 
-html.pf-theme-dark select.pf-c-form-control:not(.pf-c-login__main *),
-html[data-theme="dark"] select.pf-c-form-control:not(.pf-c-login__main *),
-html.pf-theme-dark select:not(.pf-c-login__main *),
-html[data-theme="dark"] select:not(.pf-c-login__main *) {
+html.pf-theme-dark .pf-c-page select,
+html[data-theme="dark"] .pf-c-page select,
+html.pf-theme-dark .pf-c-modal-box select,
+html[data-theme="dark"] .pf-c-modal-box select {
     height: auto !important;
     min-height: 2.75rem !important;
     line-height: normal !important;
@@ -1374,18 +1388,20 @@ html[data-theme="dark"] select:not(.pf-c-login__main *) {
     vertical-align: middle !important;
 }
 
-html.pf-theme-dark select.pf-c-form-control:not(.pf-c-login__main *) option,
-html[data-theme="dark"] select.pf-c-form-control:not(.pf-c-login__main *) option,
-html.pf-theme-dark select:not(.pf-c-login__main *) option,
-html[data-theme="dark"] select:not(.pf-c-login__main *) option {
+html.pf-theme-dark .pf-c-page select option,
+html[data-theme="dark"] .pf-c-page select option,
+html.pf-theme-dark .pf-c-modal-box select option,
+html[data-theme="dark"] .pf-c-modal-box select option {
     background-color: #141822 !important;
     color: #f8fafc !important;
 }
 
-html.pf-theme-dark .pf-c-form__label-text,
-html[data-theme="dark"] .pf-c-form__label-text,
-html.pf-theme-dark label.pf-c-form__label,
-html[data-theme="dark"] label.pf-c-form__label {
+html.pf-theme-dark .pf-c-page .pf-c-form__label-text,
+html[data-theme="dark"] .pf-c-page .pf-c-form__label-text,
+html.pf-theme-dark .pf-c-page label.pf-c-form__label,
+html[data-theme="dark"] .pf-c-page label.pf-c-form__label,
+html.pf-theme-dark .pf-c-modal-box .pf-c-form__label-text,
+html[data-theme="dark"] .pf-c-modal-box .pf-c-form__label-text {
     color: #cbd5e1 !important;
     font-size: 0.825rem !important;
     font-weight: 500 !important;
@@ -1629,26 +1645,204 @@ ak-flow-executor .pf-c-card {
     font-size: 0.875rem !important;
 }
 
-/* Sign-In Form Controls */
-.pf-c-login__main .pf-c-form-control {
+/* ==========================================================================
+   FLOW / SIGN-IN FORM CONTROLS & INPUTS (BULLETPROOF TEXT & BACKGROUND)
+   ========================================================================== */
+
+/* 1. CSS Custom Properties Cascade into Web Components & Shadow Roots */
+.pf-c-login,
+.pf-c-login__main,
+ak-flow-executor,
+ak-stage-identification,
+ak-stage-password,
+body.pf-c-background-image {
+    --pf-global--Color--100: #f8fafc !important;
+    --pf-global--Color--200: #cbd5e1 !important;
+    --pf-global--Color--dark-100: #f8fafc !important;
+    --pf-global--Color--light-100: #f8fafc !important;
+    --pf-c-title--Color: #f8fafc !important;
+    --pf-c-form-control--Color: #f8fafc !important;
+    --pf-c-form-control--BackgroundColor: #141822 !important;
+    --pf-c-form-control--BorderColor: #232b3c !important;
+    --pf-c-form-control--focus--BorderColor: #f59e0b !important;
+    --pf-c-form-control--placeholder--Color: #64748b !important;
+}
+
+/* 2. Direct Element & Class Styling for All Flow Inputs */
+.pf-c-login input,
+.pf-c-login textarea,
+.pf-c-login select,
+.pf-c-login .pf-c-form-control,
+.pf-c-login__main input,
+.pf-c-login__main textarea,
+.pf-c-login__main select,
+.pf-c-login__main .pf-c-form-control,
+ak-flow-executor input,
+ak-flow-executor textarea,
+ak-flow-executor select,
+ak-flow-executor .pf-c-form-control,
+ak-form-element input,
+ak-flow-input-password input {
     background-color: #141822 !important;
+    background: #141822 !important;
     color: #f8fafc !important;
+    -webkit-text-fill-color: #f8fafc !important;
+    caret-color: #f59e0b !important;
     border: 1px solid #232b3c !important;
     border-radius: 8px !important;
     min-height: 2.75rem !important;
     padding: 0.6rem 0.85rem !important;
+    font-size: 0.95rem !important;
+    line-height: 1.5 !important;
+    box-sizing: border-box !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease !important;
 }
 
-.pf-c-login__main .pf-c-form-control:focus {
+/* 3. Focus State */
+.pf-c-login input:focus,
+.pf-c-login textarea:focus,
+.pf-c-login select:focus,
+.pf-c-login .pf-c-form-control:focus,
+.pf-c-login__main input:focus,
+.pf-c-login__main textarea:focus,
+.pf-c-login__main select:focus,
+.pf-c-login__main .pf-c-form-control:focus,
+ak-flow-executor input:focus,
+ak-flow-executor textarea:focus,
+ak-flow-executor select:focus,
+ak-flow-executor .pf-c-form-control:focus,
+ak-form-element input:focus,
+ak-flow-input-password input:focus {
     background-color: #181d2a !important;
+    background: #181d2a !important;
     border-color: #f59e0b !important;
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    outline: none !important;
     box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22) !important;
 }
 
-.pf-c-login__main .pf-c-form__label-text {
+/* 4. Placeholders */
+.pf-c-login input::placeholder,
+.pf-c-login textarea::placeholder,
+.pf-c-login .pf-c-form-control::placeholder,
+.pf-c-login__main input::placeholder,
+.pf-c-login__main textarea::placeholder,
+.pf-c-login__main .pf-c-form-control::placeholder,
+ak-flow-executor input::placeholder,
+ak-flow-executor textarea::placeholder,
+ak-flow-executor .pf-c-form-control::placeholder,
+ak-form-element input::placeholder,
+ak-flow-input-password input::placeholder {
+    color: #64748b !important;
+    -webkit-text-fill-color: #64748b !important;
+    opacity: 1 !important;
+}
+
+/* 5. Browser Autofill Override (Fixes Chrome / Safari / Edge black text / white bg) */
+.pf-c-login input:-webkit-autofill,
+.pf-c-login input:-webkit-autofill:hover,
+.pf-c-login input:-webkit-autofill:focus,
+.pf-c-login__main input:-webkit-autofill,
+.pf-c-login__main input:-webkit-autofill:hover,
+.pf-c-login__main input:-webkit-autofill:focus,
+ak-flow-executor input:-webkit-autofill,
+ak-flow-executor input:-webkit-autofill:hover,
+ak-flow-executor input:-webkit-autofill:focus,
+ak-form-element input:-webkit-autofill,
+ak-flow-input-password input:-webkit-autofill {
+    -webkit-text-fill-color: #f8fafc !important;
+    -webkit-box-shadow: 0 0 0px 1000px #141822 inset !important;
+    box-shadow: 0 0 0px 1000px #141822 inset !important;
+    caret-color: #f59e0b !important;
+    transition: background-color 5000s ease-in-out 0s !important;
+}
+
+/* 6. Password Input Group & Eye Toggle Button */
+.pf-c-login .pf-c-input-group,
+.pf-c-login__main .pf-c-input-group,
+ak-flow-executor .pf-c-input-group,
+ak-flow-input-password .pf-c-input-group {
+    display: flex !important;
+    width: 100% !important;
+    position: relative !important;
+}
+
+.pf-c-login .pf-c-input-group input,
+.pf-c-login__main .pf-c-input-group input,
+ak-flow-executor .pf-c-input-group input,
+ak-flow-input-password .pf-c-input-group input {
+    border-top-right-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    flex: 1 1 auto !important;
+}
+
+.pf-c-login .pf-c-input-group .pf-c-button,
+.pf-c-login__main .pf-c-input-group .pf-c-button,
+ak-flow-executor .pf-c-input-group .pf-c-button,
+ak-flow-input-password .pf-c-input-group .pf-c-button {
+    background-color: #141822 !important;
+    color: #94a3b8 !important;
+    border: 1px solid #232b3c !important;
+    border-left: none !important;
+    border-top-right-radius: 8px !important;
+    border-bottom-right-radius: 8px !important;
+    border-top-left-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+    min-height: 2.75rem !important;
+    padding: 0 0.85rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+}
+
+.pf-c-login .pf-c-input-group .pf-c-button:hover,
+.pf-c-login__main .pf-c-input-group .pf-c-button:hover,
+ak-flow-executor .pf-c-input-group .pf-c-button:hover,
+ak-flow-input-password .pf-c-input-group .pf-c-button:hover {
+    color: #fbbf24 !important;
+    background-color: #1c2230 !important;
+}
+
+/* 7. Form Labels & Helper Text in Flow Cards */
+.pf-c-login .pf-c-form__label-text,
+.pf-c-login label.pf-c-form__label,
+.pf-c-login__main .pf-c-form__label-text,
+.pf-c-login__main label.pf-c-form__label,
+ak-flow-executor .pf-c-form__label-text,
+ak-flow-executor label.pf-c-form__label,
+ak-form-element .pf-c-form__label-text,
+ak-form-element label.pf-c-form__label {
     color: #cbd5e1 !important;
     font-size: 0.825rem !important;
     font-weight: 500 !important;
+    letter-spacing: 0.01em !important;
+    margin-bottom: 0.35rem !important;
+    display: inline-block !important;
+}
+
+.pf-c-login .pf-c-form__helper-text,
+.pf-c-login__main .pf-c-form__helper-text,
+ak-flow-executor .pf-c-form__helper-text,
+ak-form-element .pf-c-form__helper-text {
+    color: #94a3b8 !important;
+    font-size: 0.8rem !important;
+    margin-top: 0.25rem !important;
+}
+
+/* 8. Checkboxes in Login Flows ("Remember Me", etc.) */
+.pf-c-login .pf-c-check__input,
+.pf-c-login__main .pf-c-check__input,
+ak-flow-executor .pf-c-check__input {
+    accent-color: #f59e0b !important;
+}
+
+.pf-c-login .pf-c-check__label,
+.pf-c-login__main .pf-c-check__label,
+ak-flow-executor .pf-c-check__label {
+    color: #cbd5e1 !important;
+    font-size: 0.875rem !important;
 }
 
 /* Flow Alerts & Validation Callouts */
