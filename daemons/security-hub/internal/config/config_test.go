@@ -15,7 +15,7 @@ func TestDefaultConfigAndEnvOverrides(t *testing.T) {
 	t.Setenv("SECURITY_HUB_PORT", "10311")
 	t.Setenv("AUTHENTIK_ISSUER", "https://auth.jaewook.dev/application/o/security-hub/")
 	t.Setenv("AUTHENTIK_CLIENT_ID", "security-hub")
-	t.Setenv("PG_DSN", "postgres://security_hub:secret@127.0.0.1:5432/security_hub_db?sslmode=disable")
+	t.Setenv("SECURITY_HUB_DB_NAME", "security_hub_custom")
 	t.Setenv("EMAIL_TO", "admin@jaewook.dev")
 
 	cfg := DefaultConfigWithEnv()
@@ -25,8 +25,8 @@ func TestDefaultConfigAndEnvOverrides(t *testing.T) {
 	if cfg.Auth.OIDCIssuer != "https://auth.jaewook.dev/application/o/security-hub/" {
 		t.Fatalf("unexpected issuer: %s", cfg.Auth.OIDCIssuer)
 	}
-	if cfg.Database.DSN == "" {
-		t.Fatal("expected non-empty DSN")
+	if cfg.Database.DBName != "security_hub_custom" {
+		t.Fatalf("expected DBName security_hub_custom, got %s", cfg.Database.DBName)
 	}
 	if cfg.Scanner.EoLWarningDays != 30 {
 		t.Fatalf("expected default EoLWarningDays=30, got %d", cfg.Scanner.EoLWarningDays)

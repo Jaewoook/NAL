@@ -23,11 +23,9 @@ type AuthConfig struct {
 	SessionSecret    string `yaml:"session_secret"`
 	SessionTTLHours  int    `yaml:"session_ttl_hours"`
 	RPID             string `yaml:"rp_id"`
-	RPOrigin         string `yaml:"rp_origin"`
 }
 
 type DatabaseConfig struct {
-	DSN           string `yaml:"dsn"`
 	ContainerName string `yaml:"container_name"`
 	DBName        string `yaml:"db_name"`
 	DBUser        string `yaml:"db_user"`
@@ -49,7 +47,6 @@ type UpdaterConfig struct {
 	DeadManTimeoutSeconds int               `yaml:"deadman_timeout_seconds"`
 	CriticalServices      []string          `yaml:"critical_services"`
 	StatefulVolumes       map[string]string `yaml:"stateful_volumes"`
-	ExternalProbeURL      string            `yaml:"external_probe_url"`
 }
 
 type EmailConfig struct {
@@ -67,12 +64,6 @@ type NotificationsConfig struct {
 	Email EmailConfig `yaml:"email"`
 }
 
-type LoggingConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	FilePath string `yaml:"file_path"`
-	Console  bool   `yaml:"console"`
-}
-
 type Config struct {
 	NodeName      string              `yaml:"node_name"`
 	AgentToken    string              `yaml:"agent_token"`
@@ -82,7 +73,6 @@ type Config struct {
 	Scanner       ScannerConfig       `yaml:"scanner"`
 	Updater       UpdaterConfig       `yaml:"updater"`
 	Notifications NotificationsConfig `yaml:"notifications"`
-	Logging       LoggingConfig       `yaml:"logging"`
 }
 
 func DefaultNodeName() string {
@@ -107,10 +97,8 @@ func DefaultConfig() *Config {
 			SessionSecret:   "default-dev-session-secret-change-in-prod",
 			SessionTTLHours: 24,
 			RPID:            "localhost",
-			RPOrigin:        "http://localhost:10311",
 		},
 		Database: DatabaseConfig{
-			DSN:           "postgres://security_hub:security_hub_pass@127.0.0.1:5432/security_hub_db?sslmode=disable",
 			ContainerName: "postgresql",
 			DBName:        "security_hub_db",
 			DBUser:        "security_hub",
@@ -141,7 +129,6 @@ func DefaultConfig() *Config {
 				"iot":         "nal_ha_config",
 				"nginx-proxy": "nginx_proxy_data",
 			},
-			ExternalProbeURL: "https://auth.jaewook.dev",
 		},
 		Notifications: NotificationsConfig{
 			Email: EmailConfig{
@@ -150,11 +137,6 @@ func DefaultConfig() *Config {
 				SMTPPort: 587,
 				UseTLS:   true,
 			},
-		},
-		Logging: LoggingConfig{
-			Enabled:  true,
-			FilePath: "security-hub.log",
-			Console:  true,
 		},
 	}
 }
@@ -209,9 +191,6 @@ func ApplyEnvOverrides(cfg *Config) {
 	}
 	if v := getEnv("SESSION_SECRET", "NEXTAUTH_SECRET"); v != "" {
 		cfg.Auth.SessionSecret = v
-	}
-	if v := getEnv("PG_DSN", "DATABASE_URL"); v != "" {
-		cfg.Database.DSN = v
 	}
 	if v := getEnv("SECURITY_HUB_DB_NAME", "PG_DB"); v != "" {
 		cfg.Database.DBName = v

@@ -26,7 +26,6 @@ func TestManager_StatelessCookieBreakGlassAndWebAuthnPasskey(t *testing.T) {
 		SessionSecret:   "super-secret-signing-key-32-bytes",
 		SessionTTLHours: 24,
 		RPID:            "localhost",
-		RPOrigin:        "http://localhost:10311",
 	}
 
 	mgr, err := NewManager(cfg, stateFile)

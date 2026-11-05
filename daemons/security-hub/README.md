@@ -93,10 +93,8 @@ auth:
   session_secret: "replace-with-openssl-rand-hex-32"
   session_ttl_hours: 24
   rp_id: "securityhub.jaewook.dev"
-  rp_origin: "https://securityhub.jaewook.dev"
 
 database:
-  dsn: "postgres://security_hub:security_hub_pass@127.0.0.1:5432/security_hub_db?sslmode=disable"
   container_name: "postgresql"
   db_name: "security_hub_db"
   db_user: "security_hub"
@@ -112,7 +110,6 @@ scanner:
 updater:
   batch_dir: "../../batch"
   deadman_timeout_seconds: 60
-  external_probe_url: "https://auth.jaewook.dev"
   critical_services:
     - "cloudflare-tunnel"
     - "nginx-proxy"
