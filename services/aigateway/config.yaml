@@ -1,22 +1,32 @@
 model_list:
+  - model_name: "Qwen3.8-27B-oQ6e-mtp"
+    litellm_params:
+      model: "openai/Qwen3.8-27B-oQ6e-mtp"
+      api_base: "os.environ/ATLAS_API_BASE"
+      api_key: "omlx-local"
   - model_name: "default"
     litellm_params:
-      model: "openai/local-omlx"
+      model: "openai/Qwen3.8-27B-oQ6e-mtp"
+      api_base: "os.environ/ATLAS_API_BASE"
+      api_key: "omlx-local"
+  - model_name: "qwen"
+    litellm_params:
+      model: "openai/Qwen3.8-27B-oQ6e-mtp"
       api_base: "os.environ/ATLAS_API_BASE"
       api_key: "omlx-local"
   - model_name: "claude-3-5-sonnet-20241022"
     litellm_params:
-      model: "openai/local-omlx"
+      model: "openai/Qwen3.8-27B-oQ6e-mtp"
       api_base: "os.environ/ATLAS_API_BASE"
       api_key: "omlx-local"
   - model_name: "claude-3-5-sonnet"
     litellm_params:
-      model: "openai/local-omlx"
+      model: "openai/Qwen3.8-27B-oQ6e-mtp"
       api_base: "os.environ/ATLAS_API_BASE"
       api_key: "omlx-local"
   - model_name: "*"
     litellm_params:
-      model: "openai/local-omlx"
+      model: "openai/Qwen3.8-27B-oQ6e-mtp"
       api_base: "os.environ/ATLAS_API_BASE"
       api_key: "omlx-local"
 
