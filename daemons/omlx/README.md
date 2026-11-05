@@ -148,7 +148,7 @@ To ensure the packet filter rules reload automatically upon host reboot:
 1. **Verify from Axis (`192.168.0.2`)**:
    From Axis, test connectivity to the Atlas oMLX inference endpoint:
    ```bash
-   curl -I http://<atlas-ip>:8000/v1/models
+   curl -I -H "Authorization: Bearer omlx-local" http://<atlas-ip>:8000/v1/models
    ```
    Should return `HTTP/1.1 200 OK`.
 

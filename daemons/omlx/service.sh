@@ -3,6 +3,7 @@ set -euo pipefail
 
 LABEL="ai.omlx.server"
 PORT="8000"
+API_KEY="${OMLX_API_KEY:-omlx-local}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_PLIST="$SCRIPT_DIR/${LABEL}.plist"
 USER_ID="$(id -u)"
@@ -206,12 +207,12 @@ cmd_status() {
     fi
 
     echo -n "Port:    "
-    if curl -s -m 2 http://127.0.0.1:8000/v1/models >/dev/null 2>&1; then
+    if curl -s -m 2 -H "Authorization: Bearer $API_KEY" http://127.0.0.1:8000/v1/models >/dev/null 2>&1; then
         echo "http://0.0.0.0:8000 is REACHABLE (oMLX API Online)"
 
         echo "Models:"
         local models
-        models=$(curl -s -m 2 http://127.0.0.1:8000/v1/models | grep -o '"id":"[^"]*"' | cut -d'"' -f4 || true)
+        models=$(curl -s -m 2 -H "Authorization: Bearer $API_KEY" http://127.0.0.1:8000/v1/models | grep -o '"id":"[^"]*"' | cut -d'"' -f4 || true)
         if [[ -n "$models" ]]; then
             while IFS= read -r m; do
                 echo "  - $m"
