@@ -17,8 +17,9 @@ import (
 
 // Collector handles gathering point-in-time system telemetry and resource utilization.
 type Collector struct {
-	topProcCount int
-	diskMount    string
+	topProcCount          int
+	diskMount             string
+	lazyTopProcThreshold  float64
 }
 
 // New creates a new Collector instance.
@@ -30,6 +31,22 @@ func New(topProcCount int, diskMount string) *Collector {
 		topProcCount: topProcCount,
 		diskMount:    diskMount,
 	}
+}
+
+// SetLazyTopProcessesThreshold configures a minimum CPU percent required before
+// Collect() will perform a full process table scan. If 0 (default), top processes
+// are collected eagerly whenever topProcCount > 0.
+func (c *Collector) SetLazyTopProcessesThreshold(threshold float64) {
+	c.lazyTopProcThreshold = threshold
+}
+
+// PopulateTopProcesses scans top processes on-demand and attaches them to m
+// if not already present.
+func (c *Collector) PopulateTopProcesses(m *models.SystemMetrics) {
+	if m == nil || c.topProcCount <= 0 || len(m.TopProcesses) > 0 {
+		return
+	}
+	m.TopProcesses = c.collectTopProcesses()
 }
 
 // Collect gathers current system metrics including CPU, memory, disk, load averages,
@@ -75,7 +92,8 @@ func (c *Collector) Collect() (*models.SystemMetrics, error) {
 	metrics.UptimeSeconds = uptime
 
 	// 6. Top Processes (by CPU utilization)
-	if c.topProcCount > 0 {
+	// If lazyTopProcThreshold > 0, skip process table scan unless CPU exceeds threshold.
+	if c.topProcCount > 0 && (c.lazyTopProcThreshold <= 0 || metrics.CPUPercent >= c.lazyTopProcThreshold) {
 		metrics.TopProcesses = c.collectTopProcesses()
 	}
 

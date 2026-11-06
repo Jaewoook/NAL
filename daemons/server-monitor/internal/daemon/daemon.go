@@ -91,6 +91,16 @@ func New(cfg *config.Config, opts ...Option) (*Daemon, error) {
 	}
 
 	coll := collector.New(cfg.CPU.TopProcessesCount, cfg.Health.Disk.MountPoint)
+	// Optimize continuous monitoring loop: avoid scanning full process table on every tick
+	// unless CPU utilization is elevated.
+	if cfg.CPU.Spike.ThresholdPercent > 0 {
+		elevatedThreshold := cfg.CPU.Spike.ThresholdPercent * 0.7
+		if cfg.CPU.PlungeDrop.FromMinPercent > 0 && cfg.CPU.PlungeDrop.FromMinPercent < elevatedThreshold {
+			elevatedThreshold = cfg.CPU.PlungeDrop.FromMinPercent
+		}
+		coll.SetLazyTopProcessesThreshold(elevatedThreshold)
+	}
+
 	det := detector.New(cfg)
 
 	cooldowns := map[string]time.Duration{
@@ -147,6 +157,17 @@ func (d *Daemon) Step(ctx context.Context) error {
 	// 2. Evaluate anomaly detection and process alert state machine
 	if metrics != nil && d.detector != nil && d.alertMgr != nil {
 		events := d.detector.Evaluate(metrics)
+		if len(events) > 0 && len(metrics.TopProcesses) == 0 {
+			if populator, ok := d.collector.(interface{ PopulateTopProcesses(*models.SystemMetrics) }); ok {
+				populator.PopulateTopProcesses(metrics)
+				for i := range events {
+					if len(events[i].TopProcesses) == 0 {
+						events[i].TopProcesses = metrics.TopProcesses
+					}
+				}
+			}
+		}
+
 		alerts := d.alertMgr.ProcessEvents(events, metrics)
 
 		for _, a := range alerts {

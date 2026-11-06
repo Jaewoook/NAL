@@ -184,3 +184,39 @@ func TestSystemdLifecycle(t *testing.T) {
 		t.Errorf("expected status output, got: %s", status)
 	}
 }
+
+func TestQueryLaunchd_HeadlessUserFallback(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("skipping non-root user test as root")
+	}
+
+	SetCommandRunner(func(name string, args ...string) ([]byte, error) {
+		if name == "launchctl" && len(args) >= 2 && args[0] == "print" {
+			target := args[1]
+			if strings.HasPrefix(target, "gui/") {
+				return nil, errors.New("Could not find service (domain not active in headless SSH)")
+			}
+			if strings.HasPrefix(target, "user/") {
+				output := "state = running\npid = 54321\n"
+				return []byte(output), nil
+			}
+		}
+		if name == "ps" {
+			return []byte("%CPU %MEM RSS ELAPSED\n 0.1 0.1 10240 00:05:00\n"), nil
+		}
+		return nil, errors.New("unexpected command")
+	})
+	defer SetCommandRunner(nil)
+
+	res, err := StatusService("launchd", "server-monitor", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(res, "Active (running)") {
+		t.Errorf("expected running state from user/<uid> fallback, got: %s", res)
+	}
+	if !strings.Contains(res, "PID:         54321") {
+		t.Errorf("expected PID 54321 from user/<uid> fallback, got: %s", res)
+	}
+}
+

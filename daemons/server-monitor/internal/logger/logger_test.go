@@ -280,3 +280,51 @@ func TestSetup_Disabled(t *testing.T) {
 		t.Errorf("expected file not to be created when logging disabled")
 	}
 }
+
+func TestRotatingFile_RotationFailureDoesNotPanic(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("skipping permission-based test as root")
+	}
+
+	dir := t.TempDir()
+	logDir := filepath.Join(dir, "logs")
+	if err := os.Mkdir(logDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	logPath := filepath.Join(logDir, "test.log")
+	rf, err := NewRotatingFile(logPath, 20, 2)
+	if err != nil {
+		t.Fatalf("failed to create RotatingFile: %v", err)
+	}
+	defer rf.Close()
+
+	// Initial write under threshold (10 bytes)
+	if _, err := rf.Write([]byte("1234567890")); err != nil {
+		t.Fatalf("initial write failed: %v", err)
+	}
+
+	// Make logPath read-only and logDir read-only so opening the new file fails
+	if err := os.Chmod(logPath, 0444); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(logPath, 0644)
+	if err := os.Chmod(logDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(logDir, 0755)
+
+	// Write exceeding 20 bytes - triggers rotation attempt which fails.
+	// Must not panic with a nil pointer dereference.
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Write() panicked on rotation failure: %v", r)
+		}
+	}()
+
+	_, writeErr := rf.Write([]byte("exceeds-max-bytes-trigger-rotation"))
+	if writeErr == nil || !strings.Contains(writeErr.Error(), "rotation failed") {
+		t.Errorf("expected write error mentioning 'rotation failed', got: %v", writeErr)
+	}
+}
+

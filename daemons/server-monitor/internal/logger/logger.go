@@ -66,7 +66,10 @@ func (rf *RotatingFile) Write(p []byte) (n int, err error) {
 	writeLen := int64(len(p))
 	if rf.currentSize+writeLen > rf.maxBytes {
 		if err := rf.rotate(); err != nil {
-			// If rotation fails, write to the existing file anyway to prevent losing logs
+			fmt.Fprintf(os.Stderr, "[logger] rotation error for %q: %v\n", rf.filePath, err)
+			if rf.file == nil {
+				return 0, fmt.Errorf("log rotation failed: %w", err)
+			}
 			_, _ = rf.file.Write([]byte(fmt.Sprintf("[logger] rotation error: %v\n", err)))
 		}
 	}

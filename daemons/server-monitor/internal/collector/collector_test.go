@@ -105,3 +105,33 @@ func TestSortAndLimitProcesses(t *testing.T) {
 		t.Errorf("expected all elements sorted, got %v", allSorted)
 	}
 }
+
+func TestCollector_LazyTopProcesses(t *testing.T) {
+	c := New(3, "/")
+	// Threshold higher than any idle system CPU usage
+	c.SetLazyTopProcessesThreshold(99.9)
+
+	m, err := c.Collect()
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+	if len(m.TopProcesses) != 0 {
+		t.Errorf("expected 0 top processes when CPU is below lazy threshold, got %d", len(m.TopProcesses))
+	}
+
+	// On-demand population
+	c.PopulateTopProcesses(m)
+	if len(m.TopProcesses) == 0 {
+		t.Errorf("expected PopulateTopProcesses to populate top processes, got 0")
+	}
+
+	// Reset threshold to 0 (eager)
+	c.SetLazyTopProcessesThreshold(0)
+	m2, err := c.Collect()
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+	if len(m2.TopProcesses) == 0 {
+		t.Errorf("expected top processes when lazy threshold is 0, got 0")
+	}
+}

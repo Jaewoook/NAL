@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,7 +14,9 @@ import (
 )
 
 var execCommand = func(name string, args ...string) ([]byte, error) {
-	cmd := exec.Command(name, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
 	return cmd.CombinedOutput()
 }
 
@@ -23,7 +26,9 @@ func SetCommandRunner(runner func(name string, args ...string) ([]byte, error)) 
 		execCommand = runner
 	} else {
 		execCommand = func(name string, args ...string) ([]byte, error) {
-			cmd := exec.Command(name, args...)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, name, args...)
 			return cmd.CombinedOutput()
 		}
 	}
@@ -138,6 +143,16 @@ func queryLaunchd(serviceName, customPath string) launchdInfo {
 		return info
 	}
 
+	// In headless SSH sessions on macOS, gui/<uid> is inactive. Fall back to user/<uid>.
+	if os.Geteuid() != 0 {
+		userTarget := "user/" + strconv.Itoa(os.Getuid()) + "/" + serviceName
+		if userOut, userErr := execCommand("launchctl", "print", userTarget); userErr == nil {
+			info.Loaded = true
+			parseLaunchdPrint(string(userOut), &info)
+			return info
+		}
+	}
+
 	// Fallback to launchctl list
 	listOut, listErr := execCommand("launchctl", "list", serviceName)
 	if listErr == nil {
@@ -172,8 +187,21 @@ func StartService(serviceType, serviceName, targetPath string) (string, error) {
 
 		if !info.Loaded {
 			if out, err := execCommand("launchctl", "bootstrap", domain, plistPath); err != nil {
-				if _, loadErr := execCommand("launchctl", "load", plistPath); loadErr != nil {
-					return "", fmt.Errorf("failed to load service into launchd: %s (%v)", strings.TrimSpace(string(out)), err)
+				// If gui/<uid> bootstrap failed on headless SSH, try user/<uid>
+				altDomain := "user/" + strconv.Itoa(os.Getuid())
+				if domain != altDomain && os.Geteuid() != 0 {
+					if altOut, altErr := execCommand("launchctl", "bootstrap", altDomain, plistPath); altErr == nil {
+						domain = altDomain
+						target = altDomain + "/" + serviceName
+						err = nil
+					} else {
+						out = altOut
+					}
+				}
+				if err != nil {
+					if _, loadErr := execCommand("launchctl", "load", plistPath); loadErr != nil {
+						return "", fmt.Errorf("failed to load service into launchd: %s (%v)", strings.TrimSpace(string(out)), err)
+					}
 				}
 			}
 		}
