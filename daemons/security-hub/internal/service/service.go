@@ -54,18 +54,57 @@ func InstallPlist(destPath, binaryPath, workingDir string) error {
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return err
 	}
+
+	// Clean up legacy system-updater service if present
+	home, _ := os.UserHomeDir()
+	legacyPlist := filepath.Join(home, "Library", "LaunchAgents", "me.jaewook.nal.system-updater.plist")
+	if _, err := os.Stat(legacyPlist); err == nil {
+		_ = exec.Command("launchctl", "unload", "-w", legacyPlist).Run()
+		_ = os.Remove(legacyPlist)
+	}
+
 	content := GenerateLaunchdPlist(binaryPath, workingDir)
 	return os.WriteFile(destPath, []byte(content), 0644)
 }
 
 func Start() error {
 	plist := DefaultPlistPath()
-	_ = exec.Command("launchctl", "load", "-w", plist).Run()
+	if _, err := os.Stat(plist); os.IsNotExist(err) {
+		return fmt.Errorf("launchd plist not found at %s; run 'security-hub service install' first", plist)
+	}
+
+	// Clean up legacy system-updater if still running
+	home, _ := os.UserHomeDir()
+	legacyPlist := filepath.Join(home, "Library", "LaunchAgents", "me.jaewook.nal.system-updater.plist")
+	if _, err := os.Stat(legacyPlist); err == nil {
+		_ = exec.Command("launchctl", "unload", "-w", legacyPlist).Run()
+		_ = os.Remove(legacyPlist)
+	}
+
+	_ = exec.Command("launchctl", "unload", "-w", plist).Run()
+	if err := exec.Command("launchctl", "load", "-w", plist).Run(); err != nil {
+		return fmt.Errorf("failed to load launchd service: %w", err)
+	}
 	return exec.Command("launchctl", "start", LaunchdLabel).Run()
 }
 
 func Stop() error {
-	return exec.Command("launchctl", "stop", LaunchdLabel).Run()
+	plist := DefaultPlistPath()
+	// Unload the launchd plist so KeepAlive does not immediately respawn the process
+	if _, err := os.Stat(plist); err == nil {
+		_ = exec.Command("launchctl", "unload", "-w", plist).Run()
+	}
+	_ = exec.Command("launchctl", "stop", LaunchdLabel).Run()
+
+	// Clean up legacy service if lingering
+	home, _ := os.UserHomeDir()
+	legacyPlist := filepath.Join(home, "Library", "LaunchAgents", "me.jaewook.nal.system-updater.plist")
+	if _, err := os.Stat(legacyPlist); err == nil {
+		_ = exec.Command("launchctl", "unload", "-w", legacyPlist).Run()
+		_ = os.Remove(legacyPlist)
+	}
+	_ = exec.Command("launchctl", "stop", "me.jaewook.nal.system-updater").Run()
+	return nil
 }
 
 func Restart() error {

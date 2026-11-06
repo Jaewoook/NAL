@@ -105,11 +105,17 @@ func runCLI(args []string, out io.Writer) int {
 			fmt.Fprintln(out, "Service started.")
 			return 0
 		case "stop":
-			_ = service.Stop()
+			if err := service.Stop(); err != nil {
+				fmt.Fprintf(out, "Failed to stop service: %v\n", err)
+				return 1
+			}
 			fmt.Fprintln(out, "Service stopped.")
 			return 0
 		case "restart":
-			_ = service.Restart()
+			if err := service.Restart(); err != nil {
+				fmt.Fprintf(out, "Failed to restart service: %v\n", err)
+				return 1
+			}
 			fmt.Fprintln(out, "Service restarted.")
 			return 0
 		default:
