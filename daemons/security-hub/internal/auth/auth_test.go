@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -244,7 +245,35 @@ func TestOIDC_StateCSRF_And_IDTokenVerification(t *testing.T) {
 		t.Fatal("expected audience mismatch to be rejected")
 	}
 
-	// 6. Token validation: valid token accepted
+	// 6. Token validation: missing exp rejected
+	missingExpClaims := `{"sub":"admin","aud":"my-client","iss":"https://auth.example.com"}`
+	missingExpJWT := "h." + base64.RawURLEncoding.EncodeToString([]byte(missingExpClaims)) + ".s"
+	if _, err := mgr.verifyAndExtractIDToken(missingExpJWT); err == nil {
+		t.Fatal("expected ID token missing exp to be rejected")
+	}
+
+	// 7. Token validation: missing aud rejected
+	missingAudClaims := fmt.Sprintf(`{"sub":"admin","iss":"https://auth.example.com","exp":%d}`, now+600)
+	missingAudJWT := "h." + base64.RawURLEncoding.EncodeToString([]byte(missingAudClaims)) + ".s"
+	if _, err := mgr.verifyAndExtractIDToken(missingAudJWT); err == nil {
+		t.Fatal("expected ID token missing aud to be rejected")
+	}
+
+	// 8. Token validation: attacker issuer subdomain rejected
+	spoofedIssClaims := fmt.Sprintf(`{"sub":"admin","aud":"my-client","iss":"https://auth.example.com.attacker.com","exp":%d}`, now+600)
+	spoofedIssJWT := "h." + base64.RawURLEncoding.EncodeToString([]byte(spoofedIssClaims)) + ".s"
+	if _, err := mgr.verifyAndExtractIDToken(spoofedIssJWT); err == nil {
+		t.Fatal("expected issuer subdomain spoofing to be rejected")
+	}
+
+	// 9. Token validation: missing iss rejected
+	missingIssClaims := fmt.Sprintf(`{"sub":"admin","aud":"my-client","exp":%d}`, now+600)
+	missingIssJWT := "h." + base64.RawURLEncoding.EncodeToString([]byte(missingIssClaims)) + ".s"
+	if _, err := mgr.verifyAndExtractIDToken(missingIssJWT); err == nil {
+		t.Fatal("expected ID token missing iss to be rejected")
+	}
+
+	// 10. Token validation: valid token accepted
 	validClaims := fmt.Sprintf(`{"sub":"admin-sub","preferred_username":"jaewook","aud":"my-client","iss":"https://auth.example.com","exp":%d}`, now+600)
 	validJWT := "h." + base64.RawURLEncoding.EncodeToString([]byte(validClaims)) + ".s"
 	sub, err := mgr.verifyAndExtractIDToken(validJWT)
@@ -253,6 +282,24 @@ func TestOIDC_StateCSRF_And_IDTokenVerification(t *testing.T) {
 	}
 	if sub != "jaewook" {
 		t.Fatalf("expected username jaewook, got %q", sub)
+	}
+}
+
+func TestManager_CookieSecurity_PublicURLCheck(t *testing.T) {
+	// Only PublicURL set to HTTPS
+	mgrHTTPS, _ := NewManager(config.AuthConfig{
+		PublicURL: "https://securityhub.example.com",
+	}, "")
+	if !mgrHTTPS.isSecureCookie() {
+		t.Fatal("expected isSecureCookie to be true when PublicURL starts with https://")
+	}
+
+	// PublicURL set to HTTP
+	mgrHTTP, _ := NewManager(config.AuthConfig{
+		PublicURL: "http://localhost:10311",
+	}, "")
+	if mgrHTTP.isSecureCookie() {
+		t.Fatal("expected isSecureCookie to be false when PublicURL starts with http://")
 	}
 }
 
@@ -308,5 +355,44 @@ func TestPasskey_SecurityChecks_RPIDHash_UPFlag(t *testing.T) {
 	mgr.FinishPasskeyLogin(w2, httptest.NewRequest(http.MethodPost, "/api/auth/passkey/login/finish", bytes.NewReader(body2)))
 	if w2.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 Bad Request on RP ID mismatch, got %d", w2.Code)
+	}
+
+	// 3. Subdomain origin spoofing rejected (securityhub.jaewook.dev.attacker.com contains RPID but host differs)
+	ch3, _ := mgr.newChallenge()
+	validAuthData := append(rpIDHash[:], 0x01, 0, 0, 0, 1)
+	clientDataJSON3, _ := json.Marshal(map[string]string{
+		"type":      "webauthn.get",
+		"challenge": ch3,
+		"origin":    "https://securityhub.jaewook.dev.attacker.com",
+	})
+	w3 := httptest.NewRecorder()
+	body3, _ := json.Marshal(map[string]string{
+		"credential_id":      "cred-1",
+		"authenticator_data": base64.RawURLEncoding.EncodeToString(validAuthData),
+		"client_data_json":   base64.RawURLEncoding.EncodeToString(clientDataJSON3),
+		"signature":          base64.RawURLEncoding.EncodeToString([]byte("dummy-sig")),
+	})
+	mgr.FinishPasskeyLogin(w3, httptest.NewRequest(http.MethodPost, "/api/auth/passkey/login/finish", bytes.NewReader(body3)))
+	if w3.Code != http.StatusBadRequest || !strings.Contains(w3.Body.String(), "origin mismatch") {
+		t.Fatalf("expected 400 Bad Request with 'origin mismatch' on subdomain origin spoofing, got %d: %s", w3.Code, w3.Body.String())
+	}
+
+	// 4. Empty origin rejected
+	ch4, _ := mgr.newChallenge()
+	clientDataJSON4, _ := json.Marshal(map[string]string{
+		"type":      "webauthn.get",
+		"challenge": ch4,
+		"origin":    "",
+	})
+	w4 := httptest.NewRecorder()
+	body4, _ := json.Marshal(map[string]string{
+		"credential_id":      "cred-1",
+		"authenticator_data": base64.RawURLEncoding.EncodeToString(validAuthData),
+		"client_data_json":   base64.RawURLEncoding.EncodeToString(clientDataJSON4),
+		"signature":          base64.RawURLEncoding.EncodeToString([]byte("dummy-sig")),
+	})
+	mgr.FinishPasskeyLogin(w4, httptest.NewRequest(http.MethodPost, "/api/auth/passkey/login/finish", bytes.NewReader(body4)))
+	if w4.Code != http.StatusBadRequest || !strings.Contains(w4.Body.String(), "origin") {
+		t.Fatalf("expected 400 Bad Request on empty origin, got %d: %s", w4.Code, w4.Body.String())
 	}
 }

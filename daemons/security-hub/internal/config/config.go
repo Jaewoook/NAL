@@ -25,6 +25,7 @@ type AuthConfig struct {
 	SessionSecret    string `yaml:"session_secret"`
 	SessionTTLHours  int    `yaml:"session_ttl_hours"`
 	RPID             string `yaml:"rp_id"`
+	PublicURL        string `yaml:"public_url"`
 }
 
 type DatabaseConfig struct {
@@ -99,6 +100,7 @@ func DefaultConfig() *Config {
 			SessionSecret:   "",
 			SessionTTLHours: 24,
 			RPID:            "localhost",
+			PublicURL:       "http://localhost:10311",
 		},
 		Database: DatabaseConfig{
 			ContainerName: "postgresql",
@@ -247,6 +249,9 @@ func ValidateAndApplyDefaults(cfg *Config) {
 	}
 	if cfg.Auth.SessionTTLHours <= 0 {
 		cfg.Auth.SessionTTLHours = 24
+	}
+	if cfg.Auth.PublicURL == "" && cfg.Web.PublicURL != "" {
+		cfg.Auth.PublicURL = cfg.Web.PublicURL
 	}
 	if cfg.Database.DataDir == "" {
 		cfg.Database.DataDir = "data"

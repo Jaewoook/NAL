@@ -117,6 +117,23 @@ func NewSpoolStore(dataDir string, pg Backend) (*SpoolStore, error) {
 			s.state.Nodes = make(map[string]models.NodeInfo)
 		}
 	}
+	// Reconcile orphaned running tasks upon daemon startup
+	dirty := false
+	now := time.Now().UTC()
+	for id, t := range s.state.Tasks {
+		if t.Status == "running" {
+			t.Status = "aborted"
+			t.ErrorMsg = "interrupted: daemon restarted"
+			t.FinishedAt = now
+			t.DurationMs = now.Sub(t.StartedAt).Milliseconds()
+			t.SyncedToDB = false
+			s.state.Tasks[id] = t
+			dirty = true
+		}
+	}
+	if dirty {
+		_ = s.saveStateLocked()
+	}
 	return s, nil
 }
 
@@ -249,9 +266,13 @@ func (s *SpoolStore) FinishTask(ctx context.Context, taskID string, status strin
 	if s.pg != nil {
 		if err := s.pg.UpsertTask(ctx, t); err == nil {
 			s.mu.Lock()
-			t.SyncedToDB = true
-			s.state.Tasks[taskID] = t
-			_ = s.saveStateLocked()
+			if current, exists := s.state.Tasks[taskID]; exists {
+				if current.Status == t.Status && current.FinishedAt.Equal(t.FinishedAt) {
+					current.SyncedToDB = true
+					s.state.Tasks[taskID] = current
+					_ = s.saveStateLocked()
+				}
+			}
 			s.mu.Unlock()
 		}
 	}
@@ -507,9 +528,13 @@ func (s *SpoolStore) FlushPending(ctx context.Context) error {
 				return err
 			}
 			s.mu.Lock()
-			t.SyncedToDB = true
-			s.state.Tasks[id] = t
-			_ = s.saveStateLocked()
+			if current, exists := s.state.Tasks[id]; exists {
+				if current.Status == t.Status && current.FinishedAt.Equal(t.FinishedAt) {
+					current.SyncedToDB = true
+					s.state.Tasks[id] = current
+					_ = s.saveStateLocked()
+				}
+			}
 			s.mu.Unlock()
 		}
 

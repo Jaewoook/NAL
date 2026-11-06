@@ -2,6 +2,7 @@ package updater
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -108,6 +109,28 @@ AUTHENTIK_TAG=2026.5.3
 	}
 	if !strings.Contains(string(pinnedOut), "\"cloudflare/cloudflared:2026.10.2\"") {
 		t.Fatalf("expected digest stripped and tag replaced cleanly, got:\n%s", string(pinnedOut))
+	}
+
+	// Test nested keys (environment/volumes) defined before image line
+	nestedCompose := filepath.Join(dir, "nested-compose.yml")
+	nestedOriginal := `services:
+  myapp:
+    container_name: myapp
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+    volumes:
+      - /data:/data
+    image: myrepo/myapp:1.0.0
+    restart: unless-stopped
+`
+	_ = os.WriteFile(nestedCompose, []byte(nestedOriginal), 0644)
+	nestedOut, _, err := UpdateFileTag(nestedCompose, "", "myapp", "1.1.0")
+	if err != nil {
+		t.Fatalf("UpdateFileTag(nested) failed: %v", err)
+	}
+	if !strings.Contains(string(nestedOut), "myrepo/myapp:1.1.0") {
+		t.Fatalf("expected myapp image updated to 1.1.0 even with nested keys preceding image line, got:\n%s", string(nestedOut))
 	}
 }
 
@@ -224,6 +247,38 @@ func TestManager_VerifyContainerHealthy_PollsUntilHealthyAndChecksUnhealthy(t *t
 	}
 	if attempts < 3 {
 		t.Fatalf("expected at least 3 poll attempts, got %d", attempts)
+	}
+}
+
+func TestManager_VerifyContainerHealthy_TransientInspectErrorAndCreatedStatus_RetriesUntilHealthy(t *testing.T) {
+	ctx := context.Background()
+	cfg := config.DefaultConfig()
+	cfg.Updater.DeadManTimeoutSeconds = 2
+
+	attempts := 0
+	runner := &recordingRunner{
+		handler: func(cmdLine string) ([]byte, error) {
+			if strings.Contains(cmdLine, "docker inspect") {
+				attempts++
+				if attempts == 1 {
+					return nil, errors.New("daemon connection reset")
+				}
+				if attempts == 2 {
+					return []byte(`{"Status":"created","Restarting":false}`), nil
+				}
+				return []byte(`{"Status":"running","Restarting":false,"HealthStatus":"healthy"}`), nil
+			}
+			return []byte("ok"), nil
+		},
+	}
+
+	mgr := NewManager(cfg, nil, runner, nil)
+	mgr.pollInterval = 10 * time.Millisecond
+	if err := mgr.verifyContainerHealthy(ctx, "postgresql", "db"); err != nil {
+		t.Fatalf("expected transient inspect error and 'created' status to retry until healthy, got: %v", err)
+	}
+	if attempts != 3 {
+		t.Fatalf("expected 3 poll attempts, got %d", attempts)
 	}
 }
 

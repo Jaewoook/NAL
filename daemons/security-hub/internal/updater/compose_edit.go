@@ -10,7 +10,7 @@ import (
 var (
 	trailingEnvTagRe = regexp.MustCompile(`^(.*):\$\{([A-Za-z0-9_]+)(:-|-)?([^}]*)\}$`)
 	imageLineRe      = regexp.MustCompile(`^(\s*image:\s*)(['"]?)([^'"\s#]+)(['"]?)(\s*(?:#.*)?)$`)
-	serviceHeaderRe  = regexp.MustCompile(`^\s+([A-Za-z0-9_.-]+):\s*(?:#.*)?$`)
+	serviceHeaderRe  = regexp.MustCompile(`^(\s+)([A-Za-z0-9_.-]+):\s*(?:#.*)?$`)
 	topLevelHeaderRe = regexp.MustCompile(`^([A-Za-z0-9_.-]+):\s*(?:#.*)?$`)
 )
 
@@ -34,16 +34,26 @@ func UpdateFileTag(composePath, envPath, serviceKey, targetTag string) (updatedC
 	var targetExpr string
 	inServices := false
 	currentSvc := ""
+	svcIndent := -1
 	for _, line := range lines {
 		if top := topLevelHeaderRe.FindStringSubmatch(line); len(top) == 2 {
 			inServices = (top[1] == "services")
 			currentSvc = ""
+			svcIndent = -1
 			continue
 		}
 		if inServices {
-			if sh := serviceHeaderRe.FindStringSubmatch(line); len(sh) == 2 {
-				currentSvc = sh[1]
-				continue
+			if sh := serviceHeaderRe.FindStringSubmatch(line); len(sh) == 3 {
+				indentLen := len(sh[1])
+				if svcIndent == -1 {
+					svcIndent = indentLen
+					currentSvc = sh[2]
+					continue
+				} else if indentLen == svcIndent {
+					currentSvc = sh[2]
+					continue
+				}
+				// indentLen > svcIndent indicates a nested mapping (e.g. environment:, volumes:)
 			}
 			if m := imageLineRe.FindStringSubmatch(line); len(m) > 0 {
 				if serviceKey != "" && currentSvc == serviceKey {
@@ -57,17 +67,26 @@ func UpdateFileTag(composePath, envPath, serviceKey, targetTag string) (updatedC
 	var envVarToUpdate string
 	inServices = false
 	currentSvc = ""
+	svcIndent = -1
 
 	for i, line := range lines {
 		if top := topLevelHeaderRe.FindStringSubmatch(line); len(top) == 2 {
 			inServices = (top[1] == "services")
 			currentSvc = ""
+			svcIndent = -1
 			continue
 		}
 		if inServices {
-			if sh := serviceHeaderRe.FindStringSubmatch(line); len(sh) == 2 {
-				currentSvc = sh[1]
-				continue
+			if sh := serviceHeaderRe.FindStringSubmatch(line); len(sh) == 3 {
+				indentLen := len(sh[1])
+				if svcIndent == -1 {
+					svcIndent = indentLen
+					currentSvc = sh[2]
+					continue
+				} else if indentLen == svcIndent {
+					currentSvc = sh[2]
+					continue
+				}
 			}
 		}
 

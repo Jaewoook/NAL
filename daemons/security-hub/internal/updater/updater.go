@@ -505,7 +505,15 @@ func (m *Manager) verifyContainerHealthy(ctx context.Context, containerName stri
 	for {
 		out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{json .State}}", containerName)
 		if err != nil {
-			return fmt.Errorf("failed to inspect container %s: %w", containerName, err)
+			if time.Now().After(deadline) {
+				return fmt.Errorf("failed to inspect container %s: %w", containerName, err)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(poll):
+			}
+			continue
 		}
 		raw := strings.TrimSpace(string(out))
 
@@ -518,26 +526,32 @@ func (m *Manager) verifyContainerHealthy(ctx context.Context, containerName stri
 			} `json:"Health"`
 		}
 		if strings.HasPrefix(raw, "{") && json.Unmarshal([]byte(raw), &stateObj) == nil {
-			if stateObj.Restarting || (stateObj.Status != "running" && stateObj.Status != "ok") {
+			if stateObj.Status == "created" {
+				// Container is still initializing; continue polling until deadline
+			} else if stateObj.Restarting || (stateObj.Status != "running" && stateObj.Status != "ok") {
 				return fmt.Errorf("container %s state is %q (restarting=%v)", containerName, stateObj.Status, stateObj.Restarting)
-			}
-			health := stateObj.HealthStatus
-			if health == "" && stateObj.Health != nil {
-				health = stateObj.Health.Status
-			}
-			if health == "unhealthy" {
-				return fmt.Errorf("container %s healthcheck reported unhealthy", containerName)
-			}
-			if health == "starting" {
-				// Container is still initializing its healthcheck; continue polling until deadline
-			} else if health == "" || health == "healthy" {
-				return nil
+			} else {
+				health := stateObj.HealthStatus
+				if health == "" && stateObj.Health != nil {
+					health = stateObj.Health.Status
+				}
+				if health == "unhealthy" {
+					return fmt.Errorf("container %s healthcheck reported unhealthy", containerName)
+				}
+				if health == "starting" {
+					// Container is still initializing its healthcheck; continue polling until deadline
+				} else if health == "" || health == "healthy" {
+					return nil
+				}
 			}
 		} else {
-			if raw != "running" && raw != "ok" {
+			if raw == "created" {
+				// Container is still initializing; continue polling until deadline
+			} else if raw != "running" && raw != "ok" {
 				return fmt.Errorf("container %s state is %q (expected running)", containerName, raw)
+			} else {
+				return nil
 			}
-			return nil
 		}
 
 		if time.Now().After(deadline) {

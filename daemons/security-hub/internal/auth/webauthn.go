@@ -9,7 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"strings"
+	"net/url"
 	"time"
 )
 
@@ -208,8 +208,13 @@ func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"User Presence flag not set"}`, http.StatusBadRequest)
 		return
 	}
-	if clientData.Origin != "" && m.cfg.RPID != "" {
-		if !strings.Contains(clientData.Origin, m.cfg.RPID) {
+	if m.cfg.RPID != "" {
+		if clientData.Origin == "" {
+			http.Error(w, `{"error":"clientData origin is required"}`, http.StatusBadRequest)
+			return
+		}
+		parsedOrigin, err := url.Parse(clientData.Origin)
+		if err != nil || parsedOrigin.Hostname() != m.cfg.RPID {
 			http.Error(w, `{"error":"clientData origin mismatch"}`, http.StatusBadRequest)
 			return
 		}

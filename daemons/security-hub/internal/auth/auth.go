@@ -54,7 +54,9 @@ type Manager struct {
 }
 
 func (m *Manager) isSecureCookie() bool {
-	return strings.HasPrefix(m.cfg.RedirectURL, "https://") || strings.HasPrefix(m.cfg.OIDCIssuer, "https://")
+	return strings.HasPrefix(m.cfg.RedirectURL, "https://") ||
+		strings.HasPrefix(m.cfg.OIDCIssuer, "https://") ||
+		strings.HasPrefix(m.cfg.PublicURL, "https://")
 }
 
 func NewManager(cfg config.AuthConfig, stateFilePath string) (*Manager, error) {
@@ -340,6 +342,35 @@ func (m *Manager) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
+type idTokenClaims struct {
+	Iss               string `json:"iss"`
+	Aud               any    `json:"aud"`
+	Exp               int64  `json:"exp"`
+	Nbf               int64  `json:"nbf"`
+	PreferredUsername string `json:"preferred_username"`
+	Nickname          string `json:"nickname"`
+	Name              string `json:"name"`
+	Email             string `json:"email"`
+	Sub               string `json:"sub"`
+}
+
+func extractUsernameFromClaims(claims idTokenClaims) string {
+	if claims.PreferredUsername != "" {
+		return claims.PreferredUsername
+	}
+	if claims.Nickname != "" {
+		return claims.Nickname
+	}
+	if claims.Email != "" {
+		parts := strings.Split(claims.Email, "@")
+		return parts[0]
+	}
+	if claims.Name != "" {
+		return claims.Name
+	}
+	return claims.Sub
+}
+
 func (m *Manager) verifyAndExtractIDToken(jwt string) (string, error) {
 	parts := strings.Split(jwt, ".")
 	if len(parts) != 3 {
@@ -349,38 +380,45 @@ func (m *Manager) verifyAndExtractIDToken(jwt string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to decode JWT payload: %w", err)
 	}
-	var claims struct {
-		Iss               string `json:"iss"`
-		Aud               any    `json:"aud"`
-		Exp               int64  `json:"exp"`
-		Nbf               int64  `json:"nbf"`
-		PreferredUsername string `json:"preferred_username"`
-		Nickname          string `json:"nickname"`
-		Name              string `json:"name"`
-		Email             string `json:"email"`
-		Sub               string `json:"sub"`
-	}
+	var claims idTokenClaims
 	if err := json.Unmarshal(raw, &claims); err != nil {
 		return "", fmt.Errorf("failed to parse JWT claims: %w", err)
 	}
 
 	now := time.Now().UTC().Unix()
-	if claims.Exp > 0 && now > (claims.Exp+60) {
+	if claims.Exp <= 0 {
+		return "", errors.New("ID token missing exp claim")
+	}
+	if now > (claims.Exp + 60) {
 		return "", errors.New("ID token is expired")
 	}
 	if claims.Nbf > 0 && now < (claims.Nbf-60) {
 		return "", errors.New("ID token not yet valid (nbf)")
 	}
 
-	if m.cfg.OIDCIssuer != "" && claims.Iss != "" {
-		expectedIss := strings.TrimRight(m.cfg.OIDCIssuer, "/")
-		actualIss := strings.TrimRight(claims.Iss, "/")
-		if actualIss != expectedIss && !strings.HasPrefix(expectedIss, actualIss) && !strings.HasPrefix(actualIss, expectedIss) {
-			return "", fmt.Errorf("issuer mismatch: expected %q, got %q", expectedIss, actualIss)
+	if m.cfg.OIDCIssuer != "" {
+		if claims.Iss == "" {
+			return "", errors.New("ID token missing iss claim")
+		}
+		expectedIss := m.cfg.OIDCIssuer
+		if !strings.Contains(expectedIss, "://") {
+			expectedIss = "https://" + expectedIss
+		}
+		actualIss := claims.Iss
+		if !strings.Contains(actualIss, "://") {
+			actualIss = "https://" + actualIss
+		}
+		expURL, err1 := url.Parse(expectedIss)
+		actURL, err2 := url.Parse(actualIss)
+		if err1 != nil || err2 != nil || expURL.Host == "" || expURL.Host != actURL.Host || strings.TrimRight(expURL.Path, "/") != strings.TrimRight(actURL.Path, "/") {
+			return "", fmt.Errorf("issuer mismatch: expected %q, got %q", m.cfg.OIDCIssuer, claims.Iss)
 		}
 	}
 
-	if m.cfg.OIDCClientID != "" && claims.Aud != nil {
+	if m.cfg.OIDCClientID != "" {
+		if claims.Aud == nil {
+			return "", errors.New("ID token missing aud claim")
+		}
 		var audMatched bool
 		switch a := claims.Aud.(type) {
 		case string:
@@ -398,24 +436,21 @@ func (m *Manager) verifyAndExtractIDToken(jwt string) (string, error) {
 		}
 	}
 
-	if claims.PreferredUsername != "" {
-		return claims.PreferredUsername, nil
-	}
-	if claims.Nickname != "" {
-		return claims.Nickname, nil
-	}
-	if claims.Email != "" {
-		parts := strings.Split(claims.Email, "@")
-		return parts[0], nil
-	}
-	if claims.Name != "" {
-		return claims.Name, nil
-	}
-	return claims.Sub, nil
+	return extractUsernameFromClaims(claims), nil
 }
 
 func extractUsernameFromJWT(jwt string) string {
-	m := &Manager{}
-	u, _ := m.verifyAndExtractIDToken(jwt)
-	return u
+	parts := strings.Split(jwt, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims idTokenClaims
+	if err := json.Unmarshal(raw, &claims); err != nil {
+		return ""
+	}
+	return extractUsernameFromClaims(claims)
 }

@@ -13,13 +13,14 @@ import (
 var errPostgresDown = errors.New("postgres connection refused")
 
 type fakePGBackend struct {
-	mu        sync.Mutex
-	online    bool
-	tasks     map[string]models.Task
-	logs      map[string]map[int]models.TaskLogLine
-	snapshots map[string]models.RollbackSnapshot
-	skipped   map[string]string
-	alerts    map[string]string
+	mu           sync.Mutex
+	online       bool
+	tasks        map[string]models.Task
+	logs         map[string]map[int]models.TaskLogLine
+	snapshots    map[string]models.RollbackSnapshot
+	skipped      map[string]string
+	alerts       map[string]string
+	onUpsertTask func(task models.Task)
 }
 
 func newFakePGBackend() *fakePGBackend {
@@ -41,11 +42,17 @@ func (f *fakePGBackend) setOnline(v bool) {
 
 func (f *fakePGBackend) UpsertTask(ctx context.Context, task models.Task) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	hook := f.onUpsertTask
 	if !f.online {
+		f.mu.Unlock()
 		return errPostgresDown
 	}
 	f.tasks[task.ID] = task
+	f.mu.Unlock()
+
+	if hook != nil {
+		hook(task)
+	}
 	return nil
 }
 
@@ -276,5 +283,102 @@ func TestProvisionDatabase_UsesContainerPostgresUserEnv(t *testing.T) {
 		t.Fatalf("expected ProvisionDatabase to use container POSTGRES_USER env var, got: %s", calls[0])
 	}
 }
+
+func TestSpoolStore_FlushPending_ConcurrentFinishTaskNotClobbered(t *testing.T) {
+	ctx := context.Background()
+	memPG := newFakePGBackend()
+	memPG.setOnline(false) // Start offline so task is created as SyncedToDB=false
+
+	store, err := NewSpoolStore(t.TempDir(), memPG)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, err := store.CreateTask(ctx, &models.Task{
+		TaskType:    "docker_update",
+		TargetType:  "docker",
+		TargetName:  "web",
+		FromVersion: "1.0",
+		ToVersion:   "1.1",
+		TriggeredBy: "admin",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Bring PG online
+	memPG.setOnline(true)
+
+	// When FlushPending upserts the running task, simulate FinishTask completing concurrently
+	memPG.onUpsertTask = func(upserted models.Task) {
+		if upserted.Status == "running" {
+			// FinishTask finishes task concurrently
+			_ = store.FinishTask(ctx, task.ID, "succeeded", "")
+		}
+	}
+
+	if err := store.FlushPending(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Local spool task MUST NOT be clobbered back to "running"
+	localTask, _, err := store.GetTaskWithLogs(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if localTask.Status != "succeeded" {
+		t.Fatalf("expected local task status 'succeeded', got %q (was clobbered by FlushPending)", localTask.Status)
+	}
+
+	// Second flush should sync "succeeded" to Postgres
+	memPG.onUpsertTask = nil
+	if err := store.FlushPending(ctx); err != nil {
+		t.Fatal(err)
+	}
+	pgTask, _, _ := memPG.GetTaskWithLogs(ctx, task.ID)
+	if pgTask.Status != "succeeded" {
+		t.Fatalf("expected PG task status 'succeeded', got %q", pgTask.Status)
+	}
+}
+
+func TestSpoolStore_StartupReconcilesOrphanedRunningTasks(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	// 1. Create a store and an active running task, then simulate daemon crash/exit
+	store1, err := NewSpoolStore(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := store1.CreateTask(ctx, &models.Task{
+		TaskType:   "daemon_scan",
+		TargetType: "host",
+		TargetName: "local",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != "running" {
+		t.Fatalf("expected running, got %s", task.Status)
+	}
+
+	// 2. Start new store from same data directory
+	store2, err := NewSpoolStore(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reconciled, _, err := store2.GetTaskWithLogs(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconciled.Status != "aborted" {
+		t.Fatalf("expected orphaned task to be reconciled to 'aborted', got %q", reconciled.Status)
+	}
+	if !strings.Contains(reconciled.ErrorMsg, "daemon restarted") {
+		t.Fatalf("expected error message to mention daemon restart, got %q", reconciled.ErrorMsg)
+	}
+}
+
 
 
