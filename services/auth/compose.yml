@@ -41,6 +41,7 @@ services:
       - ./assets/icons/apps/nginx-proxy-manager.svg:/data/media/public/apps/nginx-proxy-manager.svg:ro
       - ./assets/icons/apps/synology-dsm.svg:/data/media/public/apps/synology-dsm.svg:ro
       - ./assets/icons/apps/technitium-dns.png:/data/media/public/apps/technitium-dns.png:ro
+      - ./assets/icons/apps/litellm.svg:/data/media/public/apps/litellm.svg:ro
 
   worker:
     image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}
