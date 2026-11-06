@@ -1,9 +1,17 @@
 .DS_Store
 *.log
-.env
 
+# secrets for production deployment
+.env
+.env.local
+config.json
+config.yml
+config.yaml
+
+# dependencies and build cache
 node_modules
 build
+
 # backup directory for volume data
 backup
 
