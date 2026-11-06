@@ -9,8 +9,10 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"testing"
 	"time"
@@ -124,7 +126,8 @@ func TestManager_StatelessCookieBreakGlassAndWebAuthnPasskey(t *testing.T) {
 	_ = json.Unmarshal(loginBeginW.Body.Bytes(), &loginOpts)
 
 	// Simulate WebAuthn assertion signature: sign(authenticatorData || sha256(clientDataJSON))
-	authData := []byte("mock-authenticator-data-37-bytes-min!!")
+	rpIDHash := sha256.Sum256([]byte(cfg.RPID))
+	authData := append(rpIDHash[:], 0x01, 0, 0, 0, 1) // 32-byte RP ID hash + 0x01 UP flag + 4-byte counter = 37 bytes
 	clientDataJSON, _ := json.Marshal(map[string]string{
 		"type":      "webauthn.get",
 		"challenge": loginOpts.Challenge,
@@ -174,5 +177,136 @@ func TestExtractUsernameFromJWT(t *testing.T) {
 	jwt3 := "header." + base64.RawURLEncoding.EncodeToString([]byte(claims3)) + ".sig"
 	if u := extractUsernameFromJWT(jwt3); u != "service-account" {
 		t.Fatalf("expected service-account, got %q", u)
+	}
+}
+
+func TestOIDC_StateCSRF_And_IDTokenVerification(t *testing.T) {
+	mgr, _ := NewManager(config.AuthConfig{
+		OIDCIssuer:   "https://auth.example.com",
+		OIDCClientID: "my-client",
+		RedirectURL:  "https://hub.example.com/api/auth/oidc/callback",
+	}, "")
+
+	// 1. Start OIDC Login sets state cookie and redirect param
+	loginW := httptest.NewRecorder()
+	loginR := httptest.NewRequest(http.MethodGet, "/api/auth/oidc/login", nil)
+	mgr.StartOIDCLogin(loginW, loginR)
+	if loginW.Code != http.StatusFound {
+		t.Fatalf("expected 302 redirect, got %d", loginW.Code)
+	}
+	cookies := loginW.Result().Cookies()
+	var stateCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == OIDCStateCookieName {
+			stateCookie = c
+			break
+		}
+	}
+	if stateCookie == nil || stateCookie.Value == "" {
+		t.Fatal("expected OIDC state cookie to be set")
+	}
+
+	loc, _ := url.Parse(loginW.Header().Get("Location"))
+	stateParam := loc.Query().Get("state")
+	if stateParam != stateCookie.Value {
+		t.Fatalf("expected state param %q to match state cookie %q", stateParam, stateCookie.Value)
+	}
+
+	// 2. Callback without state cookie fails (CSRF protection)
+	cbW := httptest.NewRecorder()
+	cbR := httptest.NewRequest(http.MethodGet, "/api/auth/oidc/callback?code=1234&state="+stateParam, nil)
+	mgr.HandleOIDCCallback(cbW, cbR)
+	if cbW.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request on missing state cookie, got %d", cbW.Code)
+	}
+
+	// 3. Callback with mismatched state fails
+	cbW2 := httptest.NewRecorder()
+	cbR2 := httptest.NewRequest(http.MethodGet, "/api/auth/oidc/callback?code=1234&state=wrong-state", nil)
+	cbR2.AddCookie(stateCookie)
+	mgr.HandleOIDCCallback(cbW2, cbR2)
+	if cbW2.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request on state mismatch, got %d", cbW2.Code)
+	}
+
+	// 4. Token validation: expired token rejected
+	now := time.Now().UTC().Unix()
+	expiredClaims := fmt.Sprintf(`{"sub":"admin","aud":"my-client","iss":"https://auth.example.com","exp":%d}`, now-120)
+	expiredJWT := "h." + base64.RawURLEncoding.EncodeToString([]byte(expiredClaims)) + ".s"
+	if _, err := mgr.verifyAndExtractIDToken(expiredJWT); err == nil {
+		t.Fatal("expected expired ID token to be rejected")
+	}
+
+	// 5. Token validation: audience mismatch rejected
+	audMismatch := fmt.Sprintf(`{"sub":"admin","aud":"other-client","iss":"https://auth.example.com","exp":%d}`, now+600)
+	audJWT := "h." + base64.RawURLEncoding.EncodeToString([]byte(audMismatch)) + ".s"
+	if _, err := mgr.verifyAndExtractIDToken(audJWT); err == nil {
+		t.Fatal("expected audience mismatch to be rejected")
+	}
+
+	// 6. Token validation: valid token accepted
+	validClaims := fmt.Sprintf(`{"sub":"admin-sub","preferred_username":"jaewook","aud":"my-client","iss":"https://auth.example.com","exp":%d}`, now+600)
+	validJWT := "h." + base64.RawURLEncoding.EncodeToString([]byte(validClaims)) + ".s"
+	sub, err := mgr.verifyAndExtractIDToken(validJWT)
+	if err != nil {
+		t.Fatalf("expected valid token to pass, got: %v", err)
+	}
+	if sub != "jaewook" {
+		t.Fatalf("expected username jaewook, got %q", sub)
+	}
+}
+
+func TestPasskey_SecurityChecks_RPIDHash_UPFlag(t *testing.T) {
+	mgr, _ := NewManager(config.AuthConfig{
+		RPID: "securityhub.jaewook.dev",
+	}, "")
+	ch, _ := mgr.newChallenge()
+
+	// 1. Missing UP flag rejected
+	rpIDHash := sha256.Sum256([]byte("securityhub.jaewook.dev"))
+	badAuthData := append(rpIDHash[:], 0x00, 0, 0, 0, 1) // UP flag bit 0 is 0!
+
+	clientDataJSON, _ := json.Marshal(map[string]string{
+		"type":      "webauthn.get",
+		"challenge": ch,
+		"origin":    "https://securityhub.jaewook.dev",
+	})
+
+	w := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]string{
+		"credential_id":      "cred-1",
+		"authenticator_data": base64.RawURLEncoding.EncodeToString(badAuthData),
+		"client_data_json":   base64.RawURLEncoding.EncodeToString(clientDataJSON),
+		"signature":          "dummy-sig",
+	})
+	mgr.state.Passkeys = append(mgr.state.Passkeys, PasskeyCredential{
+		CredentialID: "cred-1",
+		Label:        "Key",
+	})
+	mgr.FinishPasskeyLogin(w, httptest.NewRequest(http.MethodPost, "/api/auth/passkey/login/finish", bytes.NewReader(body)))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request on missing UP flag, got %d", w.Code)
+	}
+
+	// 2. RP ID Hash mismatch rejected
+	ch2, _ := mgr.newChallenge()
+	wrongRPIDHash := sha256.Sum256([]byte("evil.com"))
+	wrongRPIDAuthData := append(wrongRPIDHash[:], 0x01, 0, 0, 0, 1)
+
+	clientDataJSON2, _ := json.Marshal(map[string]string{
+		"type":      "webauthn.get",
+		"challenge": ch2,
+		"origin":    "https://securityhub.jaewook.dev",
+	})
+	w2 := httptest.NewRecorder()
+	body2, _ := json.Marshal(map[string]string{
+		"credential_id":      "cred-1",
+		"authenticator_data": base64.RawURLEncoding.EncodeToString(wrongRPIDAuthData),
+		"client_data_json":   base64.RawURLEncoding.EncodeToString(clientDataJSON2),
+		"signature":          "dummy-sig",
+	})
+	mgr.FinishPasskeyLogin(w2, httptest.NewRequest(http.MethodPost, "/api/auth/passkey/login/finish", bytes.NewReader(body2)))
+	if w2.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request on RP ID mismatch, got %d", w2.Code)
 	}
 }

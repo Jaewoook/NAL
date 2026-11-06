@@ -2,14 +2,25 @@ package auth
 
 import (
 	"crypto/ecdsa"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 )
+
+func (m *Manager) pruneExpiredChallengesLocked() {
+	now := time.Now().UTC()
+	for ch, exp := range m.challenges {
+		if now.After(exp) {
+			delete(m.challenges, ch)
+		}
+	}
+}
 
 func (m *Manager) newChallenge() (string, error) {
 	buf := make([]byte, 32)
@@ -18,6 +29,7 @@ func (m *Manager) newChallenge() (string, error) {
 	}
 	ch := base64.RawURLEncoding.EncodeToString(buf)
 	m.mu.Lock()
+	m.pruneExpiredChallengesLocked()
 	m.challenges[ch] = time.Now().UTC().Add(5 * time.Minute)
 	m.mu.Unlock()
 	return ch, nil
@@ -29,6 +41,7 @@ func (m *Manager) consumeChallenge(ch string) bool {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.pruneExpiredChallengesLocked()
 	exp, ok := m.challenges[ch]
 	if !ok {
 		return false
@@ -166,14 +179,40 @@ func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 	var clientData struct {
 		Type      string `json:"type"`
 		Challenge string `json:"challenge"`
+		Origin    string `json:"origin"`
 	}
 	if err := json.Unmarshal(clientDataBytes, &clientData); err != nil {
 		http.Error(w, `{"error":"invalid clientDataJSON"}`, http.StatusBadRequest)
 		return
 	}
+	if clientData.Type != "webauthn.get" {
+		http.Error(w, `{"error":"invalid clientData type"}`, http.StatusBadRequest)
+		return
+	}
 	if !m.consumeChallenge(clientData.Challenge) {
 		http.Error(w, `{"error":"invalid or expired WebAuthn challenge"}`, http.StatusUnauthorized)
 		return
+	}
+	if len(authData) < 37 {
+		http.Error(w, `{"error":"invalid authenticatorData length"}`, http.StatusBadRequest)
+		return
+	}
+	if m.cfg.RPID != "" {
+		expectedRPIDHash := sha256.Sum256([]byte(m.cfg.RPID))
+		if !hmac.Equal(authData[:32], expectedRPIDHash[:]) {
+			http.Error(w, `{"error":"RP ID hash mismatch"}`, http.StatusBadRequest)
+			return
+		}
+	}
+	if (authData[32] & 0x01) == 0 {
+		http.Error(w, `{"error":"User Presence flag not set"}`, http.StatusBadRequest)
+		return
+	}
+	if clientData.Origin != "" && m.cfg.RPID != "" {
+		if !strings.Contains(clientData.Origin, m.cfg.RPID) {
+			http.Error(w, `{"error":"clientData origin mismatch"}`, http.StatusBadRequest)
+			return
+		}
 	}
 
 	spkiBytes, _ := base64.RawURLEncoding.DecodeString(matched.PublicKeySPKI)

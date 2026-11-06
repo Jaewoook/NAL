@@ -391,14 +391,32 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 			ErrorMsg string               `json:"error_msg"`
 			Logs     []models.TaskLogLine `json:"logs"`
 		}
-		_ = json.NewDecoder(resp.Body).Decode(&payload)
+		decodeErr := json.NewDecoder(resp.Body).Decode(&payload)
 		for _, l := range payload.Logs {
 			m.logStep(ctx, task.ID, l.Stream, fmt.Sprintf("[%s] %s", nodeName, l.Line))
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			errMsg := fmt.Sprintf("remote agent %s returned HTTP %d", nodeName, resp.StatusCode)
+			if payload.ErrorMsg != "" {
+				errMsg = payload.ErrorMsg
+			}
+			payload.Status = "failed"
+			payload.ErrorMsg = errMsg
+			_ = m.store.FinishTask(ctx, task.ID, payload.Status, payload.ErrorMsg)
+			return task, fmt.Errorf("%s", errMsg)
+		}
+		if decodeErr != nil {
+			errMsg := fmt.Sprintf("failed to decode agent response from %s: %v", nodeName, decodeErr)
+			_ = m.store.FinishTask(ctx, task.ID, "failed", errMsg)
+			return task, fmt.Errorf("%s", errMsg)
 		}
 		if payload.Status == "" {
 			payload.Status = "succeeded"
 		}
 		_ = m.store.FinishTask(ctx, task.ID, payload.Status, payload.ErrorMsg)
+		if payload.Status != "succeeded" {
+			return task, fmt.Errorf("remote rollback on %s ended with status %q: %s", nodeName, payload.Status, payload.ErrorMsg)
+		}
 		return task, nil
 	}
 
@@ -485,7 +503,7 @@ func (m *Manager) verifyContainerHealthy(ctx context.Context, containerName stri
 	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
 
 	for {
-		out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{.State.Status}}", containerName)
+		out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{json .State}}", containerName)
 		if err != nil {
 			return fmt.Errorf("failed to inspect container %s: %w", containerName, err)
 		}
@@ -495,15 +513,24 @@ func (m *Manager) verifyContainerHealthy(ctx context.Context, containerName stri
 			Status       string `json:"Status"`
 			Restarting   bool   `json:"Restarting"`
 			HealthStatus string `json:"HealthStatus"`
+			Health       *struct {
+				Status string `json:"Status"`
+			} `json:"Health"`
 		}
 		if strings.HasPrefix(raw, "{") && json.Unmarshal([]byte(raw), &stateObj) == nil {
 			if stateObj.Restarting || (stateObj.Status != "running" && stateObj.Status != "ok") {
 				return fmt.Errorf("container %s state is %q (restarting=%v)", containerName, stateObj.Status, stateObj.Restarting)
 			}
-			if stateObj.HealthStatus == "unhealthy" {
+			health := stateObj.HealthStatus
+			if health == "" && stateObj.Health != nil {
+				health = stateObj.Health.Status
+			}
+			if health == "unhealthy" {
 				return fmt.Errorf("container %s healthcheck reported unhealthy", containerName)
 			}
-			if stateObj.HealthStatus == "" || stateObj.HealthStatus == "healthy" {
+			if health == "starting" {
+				// Container is still initializing its healthcheck; continue polling until deadline
+			} else if health == "" || health == "healthy" {
 				return nil
 			}
 		} else {

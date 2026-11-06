@@ -20,7 +20,10 @@ import (
 	"github.com/jaewoook/security-hub/internal/config"
 )
 
-const SessionCookieName = "nal_security_hub_session"
+const (
+	SessionCookieName   = "nal_security_hub_session"
+	OIDCStateCookieName = "nal_oidc_state"
+)
 
 type SessionClaims struct {
 	Subject   string `json:"sub"`
@@ -50,7 +53,17 @@ type Manager struct {
 	httpClient *http.Client
 }
 
+func (m *Manager) isSecureCookie() bool {
+	return strings.HasPrefix(m.cfg.RedirectURL, "https://") || strings.HasPrefix(m.cfg.OIDCIssuer, "https://")
+}
+
 func NewManager(cfg config.AuthConfig, stateFilePath string) (*Manager, error) {
+	if cfg.SessionSecret == "" {
+		randBytes := make([]byte, 32)
+		if _, err := rand.Read(randBytes); err == nil {
+			cfg.SessionSecret = hex.EncodeToString(randBytes)
+		}
+	}
 	if stateFilePath != "" {
 		if err := os.MkdirAll(filepath.Dir(stateFilePath), 0755); err != nil {
 			return nil, err
@@ -93,9 +106,6 @@ func (m *Manager) saveStateLocked() error {
 
 func (m *Manager) signPayload(payloadB64 string) string {
 	secret := m.cfg.SessionSecret
-	if secret == "" {
-		secret = "default-dev-session-secret-change-in-prod"
-	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(payloadB64))
 	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
@@ -128,6 +138,7 @@ func (m *Manager) IssueSessionCookie(w http.ResponseWriter, subject, method stri
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure:   m.isSecureCookie(),
 		Expires:  exp,
 	})
 	return nil
@@ -139,6 +150,8 @@ func (m *Manager) ClearSessionCookie(w http.ResponseWriter) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   m.isSecureCookie(),
 		MaxAge:   -1,
 	})
 }
@@ -237,15 +250,50 @@ func (m *Manager) StartOIDCLogin(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(issuer, "/application/o/")
 		authURL = parts[0] + "/application/o/authorize/"
 	}
+
+	stateBytes := make([]byte, 16)
+	if _, err := rand.Read(stateBytes); err != nil {
+		http.Error(w, "failed to generate OAuth state", http.StatusInternalServerError)
+		return
+	}
+	state := hex.EncodeToString(stateBytes)
+	http.SetCookie(w, &http.Cookie{
+		Name:     OIDCStateCookieName,
+		Value:    state,
+		Path:     "/api/auth/oidc/callback",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   m.isSecureCookie(),
+		MaxAge:   300,
+	})
+
 	q := url.Values{}
 	q.Set("client_id", m.cfg.OIDCClientID)
 	q.Set("response_type", "code")
 	q.Set("scope", "openid profile email")
 	q.Set("redirect_uri", m.cfg.RedirectURL)
+	q.Set("state", state)
 	http.Redirect(w, r, authURL+"?"+q.Encode(), http.StatusFound)
 }
 
 func (m *Manager) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	state := r.URL.Query().Get("state")
+	stateCookie, err := r.Cookie(OIDCStateCookieName)
+	if err != nil || state == "" || stateCookie.Value == "" || !hmac.Equal([]byte(stateCookie.Value), []byte(state)) {
+		http.Error(w, "invalid or missing OAuth state parameter (CSRF detected)", http.StatusBadRequest)
+		return
+	}
+	// Clear the state cookie immediately
+	http.SetCookie(w, &http.Cookie{
+		Name:     OIDCStateCookieName,
+		Value:    "",
+		Path:     "/api/auth/oidc/callback",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   m.isSecureCookie(),
+		MaxAge:   -1,
+	})
+
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		http.Error(w, "missing authorization code", http.StatusBadRequest)
@@ -280,7 +328,11 @@ func (m *Manager) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subject := extractUsernameFromJWT(tokResp.IDToken)
+	subject, err := m.verifyAndExtractIDToken(tokResp.IDToken)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid OIDC ID token: %v", err), http.StatusUnauthorized)
+		return
+	}
 	if subject == "" {
 		subject = "nal-admin"
 	}
@@ -288,35 +340,82 @@ func (m *Manager) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func extractUsernameFromJWT(jwt string) string {
+func (m *Manager) verifyAndExtractIDToken(jwt string) (string, error) {
 	parts := strings.Split(jwt, ".")
-	if len(parts) < 2 {
-		return ""
+	if len(parts) != 3 {
+		return "", errors.New("malformed JWT: expected 3 segments")
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("failed to decode JWT payload: %w", err)
 	}
-	var payload struct {
+	var claims struct {
+		Iss               string `json:"iss"`
+		Aud               any    `json:"aud"`
+		Exp               int64  `json:"exp"`
+		Nbf               int64  `json:"nbf"`
 		PreferredUsername string `json:"preferred_username"`
 		Nickname          string `json:"nickname"`
 		Name              string `json:"name"`
 		Email             string `json:"email"`
 		Sub               string `json:"sub"`
 	}
-	_ = json.Unmarshal(raw, &payload)
-	if payload.PreferredUsername != "" {
-		return payload.PreferredUsername
+	if err := json.Unmarshal(raw, &claims); err != nil {
+		return "", fmt.Errorf("failed to parse JWT claims: %w", err)
 	}
-	if payload.Nickname != "" {
-		return payload.Nickname
+
+	now := time.Now().UTC().Unix()
+	if claims.Exp > 0 && now > (claims.Exp+60) {
+		return "", errors.New("ID token is expired")
 	}
-	if payload.Email != "" {
-		parts := strings.Split(payload.Email, "@")
-		return parts[0]
+	if claims.Nbf > 0 && now < (claims.Nbf-60) {
+		return "", errors.New("ID token not yet valid (nbf)")
 	}
-	if payload.Name != "" {
-		return payload.Name
+
+	if m.cfg.OIDCIssuer != "" && claims.Iss != "" {
+		expectedIss := strings.TrimRight(m.cfg.OIDCIssuer, "/")
+		actualIss := strings.TrimRight(claims.Iss, "/")
+		if actualIss != expectedIss && !strings.HasPrefix(expectedIss, actualIss) && !strings.HasPrefix(actualIss, expectedIss) {
+			return "", fmt.Errorf("issuer mismatch: expected %q, got %q", expectedIss, actualIss)
+		}
 	}
-	return payload.Sub
+
+	if m.cfg.OIDCClientID != "" && claims.Aud != nil {
+		var audMatched bool
+		switch a := claims.Aud.(type) {
+		case string:
+			audMatched = (a == m.cfg.OIDCClientID)
+		case []any:
+			for _, item := range a {
+				if s, ok := item.(string); ok && s == m.cfg.OIDCClientID {
+					audMatched = true
+					break
+				}
+			}
+		}
+		if !audMatched {
+			return "", fmt.Errorf("audience mismatch: token does not match client ID %q", m.cfg.OIDCClientID)
+		}
+	}
+
+	if claims.PreferredUsername != "" {
+		return claims.PreferredUsername, nil
+	}
+	if claims.Nickname != "" {
+		return claims.Nickname, nil
+	}
+	if claims.Email != "" {
+		parts := strings.Split(claims.Email, "@")
+		return parts[0], nil
+	}
+	if claims.Name != "" {
+		return claims.Name, nil
+	}
+	return claims.Sub, nil
+}
+
+func extractUsernameFromJWT(jwt string) string {
+	m := &Manager{}
+	u, _ := m.verifyAndExtractIDToken(jwt)
+	return u
 }

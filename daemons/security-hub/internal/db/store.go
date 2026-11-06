@@ -16,6 +16,7 @@ import (
 type Backend interface {
 	UpsertTask(ctx context.Context, task models.Task) error
 	InsertTaskLog(ctx context.Context, line models.TaskLogLine) error
+	InsertTaskLogsBatch(ctx context.Context, lines []models.TaskLogLine) error
 	UpsertSnapshot(ctx context.Context, snap models.RollbackSnapshot) error
 	UpsertSkippedVersion(ctx context.Context, targetType, targetName, version, actor string) error
 	DeleteSkippedVersion(ctx context.Context, targetType, targetName string) error
@@ -177,7 +178,9 @@ func (s *SpoolStore) AppendTaskLog(ctx context.Context, taskID string, stream st
 		Line:     line,
 	}
 	s.state.Logs[taskID] = append(s.state.Logs[taskID], entry)
-	_ = s.saveStateLocked()
+	if seq%50 == 0 {
+		_ = s.saveStateLocked()
+	}
 
 	// Also append to raw .log file on disk
 	f, err := os.OpenFile(s.GetRawLogPath(taskID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -207,7 +210,9 @@ func (s *SpoolStore) AppendTaskLog(ctx context.Context, taskID string, stream st
 				s.mu.Lock()
 				if s.state.SyncedSeq[taskID] == seq-1 {
 					s.state.SyncedSeq[taskID] = seq
-					_ = s.saveStateLocked()
+					if seq%50 == 0 {
+						_ = s.saveStateLocked()
+					}
 				}
 				s.mu.Unlock()
 			}
@@ -508,17 +513,28 @@ func (s *SpoolStore) FlushPending(ctx context.Context) error {
 			s.mu.Unlock()
 		}
 
+		var pendingLogs []models.TaskLogLine
 		for _, line := range logs {
-			if line.Seq <= syncedSeq {
-				continue
+			if line.Seq > syncedSeq {
+				pendingLogs = append(pendingLogs, line)
 			}
-			if err := s.pg.InsertTaskLog(ctx, line); err != nil {
-				return err
+		}
+		if len(pendingLogs) > 0 {
+			batchSize := 200
+			for i := 0; i < len(pendingLogs); i += batchSize {
+				end := i + batchSize
+				if end > len(pendingLogs) {
+					end = len(pendingLogs)
+				}
+				chunk := pendingLogs[i:end]
+				if err := s.pg.InsertTaskLogsBatch(ctx, chunk); err != nil {
+					return err
+				}
+				s.mu.Lock()
+				s.state.SyncedSeq[id] = chunk[len(chunk)-1].Seq
+				_ = s.saveStateLocked()
+				s.mu.Unlock()
 			}
-			s.mu.Lock()
-			s.state.SyncedSeq[id] = line.Seq
-			_ = s.saveStateLocked()
-			s.mu.Unlock()
 		}
 	}
 

@@ -50,15 +50,21 @@ func (f *fakePGBackend) UpsertTask(ctx context.Context, task models.Task) error 
 }
 
 func (f *fakePGBackend) InsertTaskLog(ctx context.Context, line models.TaskLogLine) error {
+	return f.InsertTaskLogsBatch(ctx, []models.TaskLogLine{line})
+}
+
+func (f *fakePGBackend) InsertTaskLogsBatch(ctx context.Context, lines []models.TaskLogLine) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.online {
 		return errPostgresDown
 	}
-	if f.logs[line.TaskID] == nil {
-		f.logs[line.TaskID] = make(map[int]models.TaskLogLine)
+	for _, line := range lines {
+		if f.logs[line.TaskID] == nil {
+			f.logs[line.TaskID] = make(map[int]models.TaskLogLine)
+		}
+		f.logs[line.TaskID][line.Seq] = line
 	}
-	f.logs[line.TaskID][line.Seq] = line
 	return nil
 }
 

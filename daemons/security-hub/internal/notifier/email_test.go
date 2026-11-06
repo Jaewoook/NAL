@@ -293,3 +293,61 @@ func TestAlerter_DefaultSendMail_Timeout(t *testing.T) {
 		t.Fatalf("expected timeout error, got %v", err)
 	}
 }
+
+func TestAlerter_STARTTLS_Required_FailsFastIfMissing(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		r := bufio.NewReader(conn)
+		w := bufio.NewWriter(conn)
+		_, _ = w.WriteString("220 mock.smtp Service Ready\r\n")
+		_ = w.Flush()
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			upper := strings.ToUpper(strings.TrimSpace(line))
+			if strings.HasPrefix(upper, "EHLO") || strings.HasPrefix(upper, "HELO") {
+				_, _ = w.WriteString("250-mock.smtp Hello\r\n250 AUTH PLAIN\r\n")
+				_ = w.Flush()
+			} else if strings.HasPrefix(upper, "QUIT") {
+				_, _ = w.WriteString("221 Bye\r\n")
+				_ = w.Flush()
+				return
+			}
+		}
+	}()
+
+	cfg := config.EmailConfig{
+		Enabled:   true,
+		SMTPHost:  "127.0.0.1",
+		SMTPPort:  587,
+		UseTLS:    true,
+		Username:  "user",
+		Password:  "pass",
+		FromEmail: "from@example.com",
+		ToEmail:   "to@example.com",
+	}
+	alerter := NewAlerter(cfg, nil)
+	alerter.timeout = 2 * time.Second
+	alerter.dialer = func(ctx context.Context, addr string, isImplicit bool, clientTLS *tls.Config) (net.Conn, error) {
+		return net.Dial("tcp", ln.Addr().String())
+	}
+	err = alerter.SendTestEmail(context.Background())
+	if err == nil {
+		t.Fatal("expected failure when STARTTLS is required but not advertised")
+	}
+	if !strings.Contains(err.Error(), "STARTTLS") {
+		t.Fatalf("expected error mentioning STARTTLS, got: %v", err)
+	}
+}

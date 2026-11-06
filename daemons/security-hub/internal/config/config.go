@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
@@ -94,7 +96,7 @@ func DefaultConfig() *Config {
 			OIDCIssuer:      "",
 			OIDCClientID:    "security-hub",
 			RedirectURL:     "http://localhost:10311/api/auth/oidc/callback",
-			SessionSecret:   "default-dev-session-secret-change-in-prod",
+			SessionSecret:   "",
 			SessionTTLHours: 24,
 			RPID:            "localhost",
 		},
@@ -236,6 +238,12 @@ func ValidateAndApplyDefaults(cfg *Config) {
 	}
 	if cfg.Web.Port <= 0 {
 		cfg.Web.Port = 10311
+	}
+	if cfg.Auth.SessionSecret == "" || cfg.Auth.SessionSecret == "default-dev-session-secret-change-in-prod" {
+		randBytes := make([]byte, 32)
+		if _, err := rand.Read(randBytes); err == nil {
+			cfg.Auth.SessionSecret = hex.EncodeToString(randBytes)
+		}
 	}
 	if cfg.Auth.SessionTTLHours <= 0 {
 		cfg.Auth.SessionTTLHours = 24

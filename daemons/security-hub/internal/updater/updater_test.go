@@ -2,6 +2,8 @@ package updater
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/jaewoook/security-hub/internal/config"
 	"github.com/jaewoook/security-hub/internal/db"
+	"github.com/jaewoook/security-hub/internal/models"
 	"github.com/jaewoook/security-hub/internal/notifier"
 )
 
@@ -94,6 +97,18 @@ AUTHENTIK_TAG=2026.5.3
 	if !strings.Contains(string(iotOut), "ghcr.io/riddix/home-assistant-matter-hub:2.0.60") {
 		t.Fatalf("expected matter-hub tag updated to 2.0.60, got:\n%s", string(iotOut))
 	}
+
+	// Test 4-space indentation and digest-pinned images: 'image: repo/app:v1.0@sha256:abcd...'
+	pinnedCompose := filepath.Join(dir, "pinned-compose.yml")
+	pinnedOriginal := "services:\n    app:\n        image: \"cloudflare/cloudflared:2024.1.0@sha256:4a91f8c0e123456789\"\n"
+	_ = os.WriteFile(pinnedCompose, []byte(pinnedOriginal), 0644)
+	pinnedOut, _, err := UpdateFileTag(pinnedCompose, "", "app", "2026.10.2")
+	if err != nil {
+		t.Fatalf("UpdateFileTag(pinned) failed: %v", err)
+	}
+	if !strings.Contains(string(pinnedOut), "\"cloudflare/cloudflared:2026.10.2\"") {
+		t.Fatalf("expected digest stripped and tag replaced cleanly, got:\n%s", string(pinnedOut))
+	}
 }
 
 func TestManager_RunUpdateSync_DeadManRollbackOnFailure(t *testing.T) {
@@ -128,9 +143,9 @@ func TestManager_RunUpdateSync_DeadManRollbackOnFailure(t *testing.T) {
 				return []byte(`"sha256:img111"`), nil
 			case strings.Contains(cmdLine, "docker image inspect --format {{json .RepoDigests}}"):
 				return []byte(`["cloudflare/cloudflared@sha256:4a91f8c0"]`), nil
-			case strings.Contains(cmdLine, "docker inspect --format {{.State.Status}}"):
+			case strings.Contains(cmdLine, "docker inspect --format {{json .State}}"):
 				// Simulate new container exiting/crashing!
-				return []byte("exited"), nil
+				return []byte(`{"Status":"exited","Restarting":false}`), nil
 			default:
 				return []byte("ok"), nil
 			}
@@ -209,6 +224,38 @@ func TestManager_VerifyContainerHealthy_PollsUntilHealthyAndChecksUnhealthy(t *t
 	}
 	if attempts < 3 {
 		t.Fatalf("expected at least 3 poll attempts, got %d", attempts)
+	}
+}
+
+func TestManager_RollbackServiceOnNode_RemoteFailureHandled(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"status":"failed","error_msg":"internal agent failure"}`))
+	}))
+	defer ts.Close()
+
+	root := t.TempDir()
+	store, err := db.NewSpoolStore(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	_ = store.UpsertNode(ctx, models.NodeInfo{
+		Name: "remote-atlas",
+		URL:  ts.URL,
+		Role: "agent",
+	})
+
+	cfg := config.DefaultConfig()
+	cfg.NodeName = "hub-local"
+	mgr := NewManager(cfg, store, &recordingRunner{}, nil)
+
+	_, err = mgr.RollbackServiceOnNode(ctx, "remote-atlas", "db", "admin")
+	if err == nil {
+		t.Fatal("expected RollbackServiceOnNode to fail when remote agent returns HTTP 500")
+	}
+	if !strings.Contains(err.Error(), "internal agent failure") {
+		t.Fatalf("expected error message to mention agent failure, got: %v", err)
 	}
 }
 

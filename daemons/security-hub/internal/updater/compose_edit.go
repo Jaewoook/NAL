@@ -10,7 +10,7 @@ import (
 var (
 	trailingEnvTagRe = regexp.MustCompile(`^(.*):\$\{([A-Za-z0-9_]+)(:-|-)?([^}]*)\}$`)
 	imageLineRe      = regexp.MustCompile(`^(\s*image:\s*)(['"]?)([^'"\s#]+)(['"]?)(\s*(?:#.*)?)$`)
-	serviceHeaderRe  = regexp.MustCompile(`^  ([A-Za-z0-9_.-]+):\s*(?:#.*)?$`)
+	serviceHeaderRe  = regexp.MustCompile(`^\s+([A-Za-z0-9_.-]+):\s*(?:#.*)?$`)
 	topLevelHeaderRe = regexp.MustCompile(`^([A-Za-z0-9_.-]+):\s*(?:#.*)?$`)
 )
 
@@ -101,11 +101,18 @@ func UpdateFileTag(composePath, envPath, serviceKey, targetTag string) (updatedC
 			continue
 		}
 
-		// Case 2: Standard `repo:tag`
-		lastColon := strings.LastIndexByte(expr, ':')
-		lastSlash := strings.LastIndexByte(expr, '/')
+		// Case 2: Standard `repo:tag`, digest-pinned `repo:tag@sha256:...`, or tagless `repo`
+		exprClean := expr
+		if atIdx := strings.Index(exprClean, "@"); atIdx != -1 {
+			exprClean = exprClean[:atIdx]
+		}
+		lastColon := strings.LastIndexByte(exprClean, ':')
+		lastSlash := strings.LastIndexByte(exprClean, '/')
 		if lastColon > lastSlash {
-			newExpr := expr[:lastColon+1] + targetTag
+			newExpr := exprClean[:lastColon+1] + targetTag
+			lines[i] = prefix + quoteOpen + newExpr + quoteClose + trailing
+		} else {
+			newExpr := exprClean + ":" + targetTag
 			lines[i] = prefix + quoteOpen + newExpr + quoteClose + trailing
 		}
 	}

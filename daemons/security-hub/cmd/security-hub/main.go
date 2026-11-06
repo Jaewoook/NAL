@@ -329,13 +329,15 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 
 	addr := fmt.Sprintf("%s:%d", cfg.Web.Host, cfg.Web.Port)
 	httpSrv := &http.Server{
-		Addr:    addr,
-		Handler: srv.Handler(),
+		Addr:              addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	go func() {
 		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(shutCtx)
 	}()
@@ -368,12 +370,14 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 
 	addr := fmt.Sprintf("%s:%d", cfg.Web.Host, cfg.Web.Port)
 	httpSrv := &http.Server{
-		Addr:    addr,
-		Handler: srv.Handler(),
+		Addr:              addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	go func() {
 		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(shutCtx)
 	}()

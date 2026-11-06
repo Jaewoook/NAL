@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jaewoook/security-hub/internal/config"
@@ -176,17 +177,41 @@ func (o *Orchestrator) RunFullScan(ctx context.Context) (*models.ScanResult, err
 	if o.store != nil {
 		prevScan, _ := o.store.LoadLatestScanResult(ctx)
 		remoteNodes, _ := o.store.ListNodes(ctx)
-		for _, rn := range remoteNodes {
+
+		type nodeScanResult struct {
+			node  models.NodeInfo
+			items []models.ManagedItem
+			err   error
+		}
+		var wg sync.WaitGroup
+		results := make([]nodeScanResult, len(remoteNodes))
+
+		for i, rn := range remoteNodes {
 			if rn.Name == hubName {
 				continue
 			}
-			remoteItems, err := o.fetchRemoteAgentScan(ctx, rn)
-			if err != nil {
+			wg.Add(1)
+			go func(idx int, node models.NodeInfo) {
+				defer wg.Done()
+				scanCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+				items, err := o.fetchRemoteAgentScan(scanCtx, node)
+				results[idx] = nodeScanResult{node: node, items: items, err: err}
+			}(i, rn)
+		}
+		wg.Wait()
+
+		for _, res := range results {
+			rn := res.node
+			if rn.Name == "" || rn.Name == hubName {
+				continue
+			}
+			if res.err != nil {
 				rn.Online = false
-				rn.LastError = err.Error()
+				rn.LastError = res.err.Error()
 				_ = o.store.UpsertNode(ctx, rn)
 				if taskID != "" {
-					_, _ = o.store.AppendTaskLog(ctx, taskID, "stderr", fmt.Sprintf("[%s] Remote agent unreachable (%v) — retaining cached items if available", rn.Name, err))
+					_, _ = o.store.AppendTaskLog(ctx, taskID, "stderr", fmt.Sprintf("[%s] Remote agent unreachable (%v) — retaining cached items if available", rn.Name, res.err))
 				}
 				if prevScan != nil {
 					for _, prevItem := range prevScan.Items {
@@ -200,9 +225,9 @@ func (o *Orchestrator) RunFullScan(ctx context.Context) (*models.ScanResult, err
 				rn.LastSeenAt = time.Now().UTC()
 				rn.LastError = ""
 				_ = o.store.UpsertNode(ctx, rn)
-				allItems = append(allItems, remoteItems...)
+				allItems = append(allItems, res.items...)
 				if taskID != "" {
-					_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[%s] Scanned %d remote agent components", rn.Name, len(remoteItems)))
+					_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[%s] Scanned %d remote agent components", rn.Name, len(res.items)))
 				}
 			}
 			rnCopy := rn

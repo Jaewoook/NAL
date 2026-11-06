@@ -120,6 +120,10 @@ func quoteLiteral(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
+func quoteIdent(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
 func (p *PostgresBackend) UpsertTask(ctx context.Context, t models.Task) error {
 	fin := "NULL"
 	if !t.FinishedAt.IsZero() {
@@ -217,7 +221,7 @@ func ProvisionDatabase(ctx context.Context, containerName, dbName, dbUser, dbPas
 	}
 
 	roleSQL := fmt.Sprintf("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = %s) THEN CREATE USER %s WITH PASSWORD %s; ELSE ALTER USER %s WITH PASSWORD %s; END IF; END $$;",
-		quoteLiteral(dbUser), dbUser, quoteLiteral(dbPass), dbUser, quoteLiteral(dbPass))
+		quoteLiteral(dbUser), quoteIdent(dbUser), quoteLiteral(dbPass), quoteIdent(dbUser), quoteLiteral(dbPass))
 	if out, err := runner("docker", "exec", "-i", containerName,
 		"sh", "-c", `psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -c "$1"`, "--", roleSQL); err != nil {
 		return fmt.Errorf("failed to create/update role %s in container %q: %w (%s)", dbUser, containerName, err, strings.TrimSpace(string(out)))
@@ -227,14 +231,14 @@ func ProvisionDatabase(ctx context.Context, containerName, dbName, dbUser, dbPas
 	checkDB, _ := runner("docker", "exec", "-i", containerName,
 		"sh", "-c", `psql -tAc "$1" -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}"`, "--", checkSQL)
 	if strings.TrimSpace(string(checkDB)) != "1" {
-		createDB := fmt.Sprintf("CREATE DATABASE %s OWNER %s;", dbName, dbUser)
+		createDB := fmt.Sprintf("CREATE DATABASE %s OWNER %s;", quoteIdent(dbName), quoteIdent(dbUser))
 		if out, err := runner("docker", "exec", "-i", containerName,
 			"sh", "-c", `psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -c "$1"`, "--", createDB); err != nil {
 			return fmt.Errorf("failed to create database %s: %w (%s)", dbName, err, strings.TrimSpace(string(out)))
 		}
 	}
 
-	grantSQL := fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE %s TO %s;", dbName, dbUser)
+	grantSQL := fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE %s TO %s;", quoteIdent(dbName), quoteIdent(dbUser))
 	_, _ = runner("docker", "exec", "-i", containerName,
 		"sh", "-c", `psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -c "$1"`, "--", grantSQL)
 

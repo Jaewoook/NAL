@@ -117,10 +117,12 @@ func sendMailWithDialer(ctx context.Context, dialer dialerFunc, cfg config.Email
 	defer client.Close()
 
 	if !isImplicit && (cfg.UseTLS || cfg.SMTPPort == 587) {
-		if ok, _ := client.Extension("STARTTLS"); ok {
-			if err := client.StartTLS(tlsConfig); err != nil {
-				return fmt.Errorf("smtp starttls failed for %s: %w", addr, err)
-			}
+		ok, _ := client.Extension("STARTTLS")
+		if !ok {
+			return fmt.Errorf("smtp server %s does not support required STARTTLS encryption", addr)
+		}
+		if err := client.StartTLS(tlsConfig); err != nil {
+			return fmt.Errorf("smtp starttls failed for %s: %w", addr, err)
 		}
 	}
 
