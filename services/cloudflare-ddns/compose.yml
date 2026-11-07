@@ -1,6 +1,6 @@
 services:
   cloudflare-ddns:
-    image: timothyjmiller/cloudflare-ddns:latest
+    image: timothyjmiller/cloudflare-ddns:2.3.1
     container_name: cloudflare-ddns
     security_opt:
       - no-new-privileges:true
