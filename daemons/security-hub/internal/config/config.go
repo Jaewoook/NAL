@@ -45,11 +45,20 @@ type ScannerConfig struct {
 	EoLAPIURL      string `yaml:"eol_api_url"`
 }
 
+type GitBotConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	BotName  string `yaml:"bot_name"`
+	BotEmail string `yaml:"bot_email"`
+	GPGSign  bool   `yaml:"gpg_sign"`
+	GPGKey   string `yaml:"gpg_key"`
+}
+
 type UpdaterConfig struct {
 	BatchDir              string            `yaml:"batch_dir"`
 	DeadManTimeoutSeconds int               `yaml:"deadman_timeout_seconds"`
 	CriticalServices      []string          `yaml:"critical_services"`
 	StatefulVolumes       map[string]string `yaml:"stateful_volumes"`
+	Git                   GitBotConfig      `yaml:"git"`
 }
 
 type EmailConfig struct {
@@ -132,6 +141,13 @@ func DefaultConfig() *Config {
 				"dns":         "nal_dns_config",
 				"iot":         "nal_ha_config",
 				"nginx-proxy": "nginx_proxy_data",
+			},
+			Git: GitBotConfig{
+				Enabled:  true,
+				BotName:  "NAL Bot",
+				BotEmail: "nal-git-system@jaewook.me",
+				GPGSign:  true,
+				GPGKey:   "024D4017DFF5360A",
 			},
 		},
 		Notifications: NotificationsConfig{
@@ -230,7 +246,28 @@ func ApplyEnvOverrides(cfg *Config) {
 		cfg.Notifications.Email.Enabled = true
 	}
 	if v := getEnv("EMAIL_ENABLED"); v != "" {
-		cfg.Notifications.Email.Enabled = (v == "true" || v == "1" || v == "yes")
+		if b, ok := parseBoolEnv(v); ok {
+			cfg.Notifications.Email.Enabled = b
+		}
+	}
+	if v := getEnv("SECURITY_HUB_GIT_COMMIT_ENABLED", "GIT_BOT_ENABLED"); v != "" {
+		if b, ok := parseBoolEnv(v); ok {
+			cfg.Updater.Git.Enabled = b
+		}
+	}
+	if v := getEnv("SECURITY_HUB_GIT_BOT_NAME", "GIT_BOT_NAME"); v != "" {
+		cfg.Updater.Git.BotName = v
+	}
+	if v := getEnv("SECURITY_HUB_GIT_BOT_EMAIL", "GIT_BOT_EMAIL"); v != "" {
+		cfg.Updater.Git.BotEmail = v
+	}
+	if v := getEnv("SECURITY_HUB_GIT_GPG_SIGN", "GIT_BOT_GPG_SIGN"); v != "" {
+		if b, ok := parseBoolEnv(v); ok {
+			cfg.Updater.Git.GPGSign = b
+		}
+	}
+	if v := getEnv("SECURITY_HUB_GIT_GPG_KEY", "GIT_BOT_GPG_KEY"); v != "" {
+		cfg.Updater.Git.GPGKey = v
 	}
 }
 
@@ -267,6 +304,26 @@ func ValidateAndApplyDefaults(cfg *Config) {
 	}
 	if len(cfg.Updater.CriticalServices) == 0 {
 		cfg.Updater.CriticalServices = []string{"cloudflare-tunnel", "nginx-proxy", "auth", "db", "dns"}
+	}
+	if strings.TrimSpace(cfg.Updater.Git.BotName) == "" {
+		cfg.Updater.Git.BotName = "NAL Bot"
+	}
+	if strings.TrimSpace(cfg.Updater.Git.BotEmail) == "" {
+		cfg.Updater.Git.BotEmail = "nal-git-system@jaewook.me"
+	}
+	if strings.TrimSpace(cfg.Updater.Git.GPGKey) == "" {
+		cfg.Updater.Git.GPGKey = "024D4017DFF5360A"
+	}
+}
+
+func parseBoolEnv(v string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "1", "yes", "on":
+		return true, true
+	case "false", "0", "no", "off":
+		return false, true
+	default:
+		return false, false
 	}
 }
 

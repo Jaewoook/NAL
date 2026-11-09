@@ -121,6 +121,12 @@ updater:
     dns: "nal_dns_config"
     iot: "nal_ha_config"
     nginx-proxy: "nginx_proxy_data"
+  git:
+    enabled: true
+    bot_name: "NAL Bot"
+    bot_email: "nal-git-system@jaewook.me"
+    gpg_sign: true
+    gpg_key: "024D4017DFF5360A"
 
 notifications:
   email:
@@ -157,6 +163,11 @@ notifications:
 | `EMAIL_PASSWORD` / `SMTP_PASSWORD` | SMTP password or app password |
 | `EMAIL_FROM` / `SMTP_FROM` | Sender email address |
 | `EMAIL_TO` / `SMTP_TO` | Recipient email address (setting this automatically enables email alerts) |
+| `SECURITY_HUB_GIT_COMMIT_ENABLED` / `GIT_BOT_ENABLED` | Enable/disable automated git commit after healthy Docker update (default: `true`) |
+| `SECURITY_HUB_GIT_BOT_NAME` / `GIT_BOT_NAME` | Automated git committer/author name (default: `NAL Bot`) |
+| `SECURITY_HUB_GIT_BOT_EMAIL` / `GIT_BOT_EMAIL` | Automated git committer/author email (default: `nal-git-system@jaewook.me`) |
+| `SECURITY_HUB_GIT_GPG_SIGN` / `GIT_BOT_GPG_SIGN` | Enable/disable GPG commit signing for automated commits (default: `true`) |
+| `SECURITY_HUB_GIT_GPG_KEY` / `GIT_BOT_GPG_KEY` | GPG signing key ID for automated commits (default: `024D4017DFF5360A`) |
 
 ---
 

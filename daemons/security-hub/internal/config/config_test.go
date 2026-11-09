@@ -50,3 +50,48 @@ func TestDefaultConfigAndEnvOverrides(t *testing.T) {
 		t.Fatalf("expected non-empty default NodeName from hostname, got %q", loaded.NodeName)
 	}
 }
+
+func TestGitBotConfigDefaultsAndEnvOverrides(t *testing.T) {
+	def := DefaultConfig()
+	if !def.Updater.Git.Enabled {
+		t.Fatal("expected default Updater.Git.Enabled to be true")
+	}
+	if def.Updater.Git.BotName != "NAL Bot" {
+		t.Fatalf("expected default BotName 'NAL Bot', got %q", def.Updater.Git.BotName)
+	}
+	if def.Updater.Git.BotEmail != "nal-git-system@jaewook.me" {
+		t.Fatalf("expected default BotEmail 'nal-git-system@jaewook.me', got %q", def.Updater.Git.BotEmail)
+	}
+	if !def.Updater.Git.GPGSign {
+		t.Fatal("expected default Updater.Git.GPGSign to be true")
+	}
+	if def.Updater.Git.GPGKey != "024D4017DFF5360A" {
+		t.Fatalf("expected default GPGKey '024D4017DFF5360A', got %q", def.Updater.Git.GPGKey)
+	}
+
+	// Verify environment variable overrides including turning off GPG signing and commit
+	t.Setenv("SECURITY_HUB_GIT_BOT_NAME", "Custom Bot")
+	t.Setenv("SECURITY_HUB_GIT_BOT_EMAIL", "bot@example.com")
+	t.Setenv("SECURITY_HUB_GIT_GPG_SIGN", "false")
+	t.Setenv("SECURITY_HUB_GIT_GPG_KEY", "AABBCCDD11223344")
+
+	cfg := DefaultConfigWithEnv()
+	if cfg.Updater.Git.BotName != "Custom Bot" {
+		t.Fatalf("expected overridden BotName 'Custom Bot', got %q", cfg.Updater.Git.BotName)
+	}
+	if cfg.Updater.Git.BotEmail != "bot@example.com" {
+		t.Fatalf("expected overridden BotEmail 'bot@example.com', got %q", cfg.Updater.Git.BotEmail)
+	}
+	if cfg.Updater.Git.GPGSign {
+		t.Fatal("expected SECURITY_HUB_GIT_GPG_SIGN=false to disable GPGSign")
+	}
+	if cfg.Updater.Git.GPGKey != "AABBCCDD11223344" {
+		t.Fatalf("expected overridden GPGKey 'AABBCCDD11223344', got %q", cfg.Updater.Git.GPGKey)
+	}
+
+	t.Setenv("SECURITY_HUB_GIT_COMMIT_ENABLED", "0")
+	cfgDisabled := DefaultConfigWithEnv()
+	if cfgDisabled.Updater.Git.Enabled {
+		t.Fatal("expected SECURITY_HUB_GIT_COMMIT_ENABLED=0 to disable Git auto-commit")
+	}
+}

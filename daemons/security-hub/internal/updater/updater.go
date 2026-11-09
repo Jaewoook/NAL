@@ -231,7 +231,7 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	}
 
 	// Step 1: Save Rollback Snapshot
-	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 1/5: Saving rollback snapshot for %s (%s:%s)...", req.TargetName, ref.ImageRepo, ref.Tag))
+	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 1/6: Saving rollback snapshot for %s (%s:%s)...", req.TargetName, ref.ImageRepo, ref.Tag))
 	composeBytes, _ := os.ReadFile(ref.ComposePath)
 	envBytes, _ := os.ReadFile(ref.EnvPath)
 	prevDigest := m.inspectDigest(ctx, ref.ContainerName, ref.ImageRepo+":"+ref.Tag)
@@ -260,7 +260,7 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 		if volName != "" {
 			args = append(args, volName)
 		}
-		m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 2/5: Running pre-update volume backup (%s %s)...", backupScript, volName))
+		m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 2/6: Running pre-update volume backup (%s %s)...", backupScript, volName))
 		out, bErr := m.runner.Run(ctx, backupScript, args...)
 		if len(out) > 0 {
 			m.logStep(ctx, taskID, "stdout", strings.TrimSpace(string(out)))
@@ -272,7 +272,7 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 			return fmt.Errorf(errMsg)
 		}
 	} else {
-		m.logStep(ctx, taskID, "info", "STEP 2/5: Pre-update volume backup skipped.")
+		m.logStep(ctx, taskID, "info", "STEP 2/6: Pre-update volume backup skipped.")
 	}
 
 	// Step 3: Pre-pull target image BEFORE stopping running container
@@ -281,7 +281,7 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 		targetTag = ref.Tag
 	}
 	targetImage := ref.ImageRepo + ":" + targetTag
-	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 3/5: Pre-pulling target image %s before stopping container...", targetImage))
+	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 3/6: Pre-pulling target image %s before stopping container...", targetImage))
 	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ docker pull %s", targetImage))
 	pullOut, pullErr := m.runner.Run(ctx, "docker", "pull", targetImage)
 	if len(pullOut) > 0 {
@@ -295,7 +295,7 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	}
 
 	// Step 4: Surgical Config Update & Container Recreate
-	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 4/5: Applying tag %s and recreating container...", targetTag))
+	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 4/6: Applying tag %s and recreating container...", targetTag))
 	if _, _, err := UpdateFileTag(ref.ComposePath, ref.EnvPath, ref.ServiceKey, targetTag); err != nil {
 		errMsg := fmt.Sprintf("failed to update compose tag: %v", err)
 		m.logStep(ctx, taskID, "error", errMsg)
@@ -310,7 +310,7 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	}
 
 	// Step 5: Post-Update Health Verification & 60s Dead-Man's Rollback
-	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 5/5: Verifying container health (Dead-Man's Rollback armed=%v, timeout=%ds)...", req.EnableDeadMan, m.cfg.Updater.DeadManTimeoutSeconds))
+	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 5/6: Verifying container health (Dead-Man's Rollback armed=%v, timeout=%ds)...", req.EnableDeadMan, m.cfg.Updater.DeadManTimeoutSeconds))
 	verifyErr := upErr
 	if verifyErr == nil {
 		verifyErr = m.verifyContainerHealthy(ctx, ref.ContainerName, svcName)
@@ -334,9 +334,78 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 		return verifyErr
 	}
 
+	// Step 6: Commit updated compose file to NAL repository using NAL Bot identity
+	commitMsg := fmt.Sprintf("chore(services): update %s image to %s", req.TargetName, targetTag)
+	m.commitComposeFile(ctx, taskID, "STEP 6/6: ", ref.ComposePath, composeBytes, commitMsg)
+
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("Service %s updated to %s and verified healthy.", req.TargetName, targetTag))
 	_ = m.store.FinishTask(ctx, taskID, "succeeded", "")
 	return nil
+}
+
+func (m *Manager) commitComposeFile(ctx context.Context, taskID, stepPrefix, composePath string, preEditBytes []byte, commitMsg string) {
+	if m.cfg == nil || !m.cfg.Updater.Git.Enabled {
+		m.logStep(ctx, taskID, "info", stepPrefix+"Git auto-commit disabled; skipping.")
+		return
+	}
+	gitCfg := m.cfg.Updater.Git
+	botName := strings.TrimSpace(gitCfg.BotName)
+	if botName == "" {
+		botName = "NAL Bot"
+	}
+	botEmail := strings.TrimSpace(gitCfg.BotEmail)
+	if botEmail == "" {
+		botEmail = "nal-git-system@jaewook.me"
+	}
+	gpgKey := strings.TrimSpace(gitCfg.GPGKey)
+	if gpgKey == "" {
+		gpgKey = "024D4017DFF5360A"
+	}
+
+	composeDir := filepath.Dir(composePath)
+	composeFile := filepath.Base(composePath)
+
+	m.logStep(ctx, taskID, "info", fmt.Sprintf("%sCommitting updated %s as %s <%s>...", stepPrefix, composeFile, botName, botEmail))
+	headOut, headErr := m.runner.Run(ctx, "git", "-C", composeDir, "show", "HEAD:./"+composeFile)
+	if headErr != nil {
+		m.logStep(ctx, taskID, "warn", fmt.Sprintf("Skipping git commit (failed to inspect HEAD version of %s): %v", composePath, headErr))
+		return
+	}
+	if !bytes.Equal(preEditBytes, headOut) {
+		m.logStep(ctx, taskID, "warn", fmt.Sprintf("Skipping git commit: %s had pre-existing uncommitted changes before this operation.", composeFile))
+		return
+	}
+	postEditBytes, readErr := os.ReadFile(composePath)
+	if readErr != nil || bytes.Equal(postEditBytes, headOut) {
+		m.logStep(ctx, taskID, "info", fmt.Sprintf("No git changes in %s; skipping commit.", composeFile))
+		return
+	}
+
+	args := []string{
+		"-C", composeDir,
+		"-c", "user.name=" + botName,
+		"-c", "user.email=" + botEmail,
+		"commit",
+		"--only",
+		fmt.Sprintf("--author=%s <%s>", botName, botEmail),
+	}
+	if gitCfg.GPGSign {
+		args = append(args, "-S"+gpgKey)
+	} else {
+		args = append(args, "--no-gpg-sign")
+	}
+	args = append(args, "-m", commitMsg, "--", composeFile)
+
+	m.logStep(ctx, taskID, "cmd", "$ git "+strings.Join(args, " "))
+	commitOut, commitErr := m.runner.Run(ctx, "git", args...)
+	if len(commitOut) > 0 {
+		m.logStep(ctx, taskID, "stdout", strings.TrimSpace(string(commitOut)))
+	}
+	if commitErr != nil {
+		m.logStep(ctx, taskID, "warn", fmt.Sprintf("Git commit warning (container remains healthy): %v", commitErr))
+		return
+	}
+	m.logStep(ctx, taskID, "info", fmt.Sprintf("Committed %s to NAL repository.", composeFile))
 }
 
 func (m *Manager) RollbackService(ctx context.Context, serviceName, triggeredBy string) (*models.Task, error) {
@@ -444,9 +513,17 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 	}
 	composeDir := filepath.Join(m.cfg.Scanner.ServicesDir, svcDirName)
 
+	var preRollbackBytes []byte
+	if snap.ComposePath != "" {
+		preRollbackBytes, _ = os.ReadFile(snap.ComposePath)
+	}
 	if err := m.restoreSnapshot(ctx, task.ID, snap, composeDir); err != nil {
 		_ = m.store.FinishTask(ctx, task.ID, "failed", err.Error())
 		return task, err
+	}
+	if snap.ComposePath != "" {
+		commitMsg := fmt.Sprintf("revert(services): roll back %s image to %s", serviceName, snap.PreviousVersion)
+		m.commitComposeFile(ctx, task.ID, "", snap.ComposePath, preRollbackBytes, commitMsg)
 	}
 	_ = m.store.FinishTask(ctx, task.ID, "succeeded", "")
 	return task, nil

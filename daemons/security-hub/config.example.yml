@@ -47,6 +47,12 @@ updater:
     dns: "nal_dns_config"
     iot: "nal_ha_config"
     nginx-proxy: "nginx_proxy_data"
+  git:
+    enabled: true
+    bot_name: "NAL Bot"
+    bot_email: "nal-git-system@jaewook.me"
+    gpg_sign: true
+    gpg_key: "024D4017DFF5360A"
 
 notifications:
   email:
