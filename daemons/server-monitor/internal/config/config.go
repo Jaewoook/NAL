@@ -63,10 +63,20 @@ type DiskHealthConfig struct {
 	CooldownMinutes  int     `yaml:"cooldown_minutes"`
 }
 
+// TemperatureHealthConfig configures CPU and GPU thermal alerting.
+type TemperatureHealthConfig struct {
+	Enabled             bool    `yaml:"enabled"`
+	CPUThresholdCelsius float64 `yaml:"cpu_threshold_celsius"`
+	GPUThresholdCelsius float64 `yaml:"gpu_threshold_celsius"`
+	SustainedSeconds    int     `yaml:"sustained_seconds"`
+	CooldownMinutes     int     `yaml:"cooldown_minutes"`
+}
+
 // HealthConfig bundles general system health checks.
 type HealthConfig struct {
-	Memory MemoryHealthConfig `yaml:"memory"`
-	Disk   DiskHealthConfig   `yaml:"disk"`
+	Memory      MemoryHealthConfig      `yaml:"memory"`
+	Disk        DiskHealthConfig        `yaml:"disk"`
+	Temperature TemperatureHealthConfig `yaml:"temperature"`
 }
 
 // AlertingConfig defines global alert manager options.
@@ -196,6 +206,13 @@ func DefaultConfig() *Config {
 				ThresholdPercent: 85.0,
 				MountPoint:       "/",
 				CooldownMinutes:  60,
+			},
+			Temperature: TemperatureHealthConfig{
+				Enabled:             true,
+				CPUThresholdCelsius: 75.0,
+				GPUThresholdCelsius: 75.0,
+				SustainedSeconds:    30,
+				CooldownMinutes:     30,
 			},
 		},
 		Alerting: AlertingConfig{
@@ -361,6 +378,29 @@ func ApplyEnvOverrides(cfg *Config) {
 	if val := getEnv("LOG_CONSOLE"); val != "" {
 		cfg.Logging.Console = (val == "true" || val == "1" || val == "yes")
 	}
+	if val := getEnv("TEMP_ENABLED", "TEMPERATURE_ENABLED"); val != "" {
+		cfg.Health.Temperature.Enabled = (val == "true" || val == "1" || val == "yes")
+	}
+	if val := getEnv("TEMP_CPU_THRESHOLD", "CPU_TEMP_THRESHOLD"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil && f > 0 {
+			cfg.Health.Temperature.CPUThresholdCelsius = f
+		}
+	}
+	if val := getEnv("TEMP_GPU_THRESHOLD", "GPU_TEMP_THRESHOLD"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil && f > 0 {
+			cfg.Health.Temperature.GPUThresholdCelsius = f
+		}
+	}
+	if val := getEnv("TEMP_SUSTAINED_SECONDS"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			cfg.Health.Temperature.SustainedSeconds = n
+		}
+	}
+	if val := getEnv("TEMP_COOLDOWN_MINUTES"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			cfg.Health.Temperature.CooldownMinutes = n
+		}
+	}
 }
 
 func getEnv(keys ...string) string {
@@ -442,5 +482,17 @@ func ValidateAndApplyDefaults(cfg *Config) {
 	}
 	if cfg.Logging.MaxBackups <= 0 {
 		cfg.Logging.MaxBackups = 3
+	}
+	if cfg.Health.Temperature.CPUThresholdCelsius <= 0 {
+		cfg.Health.Temperature.CPUThresholdCelsius = 75.0
+	}
+	if cfg.Health.Temperature.GPUThresholdCelsius <= 0 {
+		cfg.Health.Temperature.GPUThresholdCelsius = 75.0
+	}
+	if cfg.Health.Temperature.SustainedSeconds <= 0 {
+		cfg.Health.Temperature.SustainedSeconds = 30
+	}
+	if cfg.Health.Temperature.CooldownMinutes <= 0 {
+		cfg.Health.Temperature.CooldownMinutes = 30
 	}
 }

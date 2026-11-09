@@ -277,4 +277,117 @@ func TestLoggingConfigValidation(t *testing.T) {
 	}
 }
 
+func TestTemperatureConfigDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.Health.Temperature.Enabled {
+		t.Errorf("expected Health.Temperature.Enabled true by default")
+	}
+	if cfg.Health.Temperature.CPUThresholdCelsius != 75.0 {
+		t.Errorf("expected CPUThresholdCelsius 75.0, got %f", cfg.Health.Temperature.CPUThresholdCelsius)
+	}
+	if cfg.Health.Temperature.GPUThresholdCelsius != 75.0 {
+		t.Errorf("expected GPUThresholdCelsius 75.0, got %f", cfg.Health.Temperature.GPUThresholdCelsius)
+	}
+	if cfg.Health.Temperature.SustainedSeconds != 30 {
+		t.Errorf("expected SustainedSeconds 30, got %d", cfg.Health.Temperature.SustainedSeconds)
+	}
+	if cfg.Health.Temperature.CooldownMinutes != 30 {
+		t.Errorf("expected CooldownMinutes 30, got %d", cfg.Health.Temperature.CooldownMinutes)
+	}
+}
+
+func TestTemperatureConfigYaml(t *testing.T) {
+	yamlData := `
+server:
+  name: "temp-server"
+health:
+  temperature:
+    enabled: true
+    cpu_threshold_celsius: 82.5
+    gpu_threshold_celsius: 78.0
+    sustained_seconds: 45
+    cooldown_minutes: 20
+`
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(cfgPath, []byte(yamlData), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !cfg.Health.Temperature.Enabled {
+		t.Errorf("expected Temperature.Enabled true")
+	}
+	if cfg.Health.Temperature.CPUThresholdCelsius != 82.5 {
+		t.Errorf("expected 82.5, got %f", cfg.Health.Temperature.CPUThresholdCelsius)
+	}
+	if cfg.Health.Temperature.GPUThresholdCelsius != 78.0 {
+		t.Errorf("expected 78.0, got %f", cfg.Health.Temperature.GPUThresholdCelsius)
+	}
+	if cfg.Health.Temperature.SustainedSeconds != 45 {
+		t.Errorf("expected 45, got %d", cfg.Health.Temperature.SustainedSeconds)
+	}
+	if cfg.Health.Temperature.CooldownMinutes != 20 {
+		t.Errorf("expected 20, got %d", cfg.Health.Temperature.CooldownMinutes)
+	}
+}
+
+func TestTemperatureConfigEnvOverrides(t *testing.T) {
+	t.Setenv("TEMP_ENABLED", "false")
+	t.Setenv("TEMP_CPU_THRESHOLD", "88.0")
+	t.Setenv("TEMP_GPU_THRESHOLD", "82.0")
+	t.Setenv("TEMP_SUSTAINED_SECONDS", "60")
+	t.Setenv("TEMP_COOLDOWN_MINUTES", "45")
+
+	cfg := DefaultConfigWithEnv()
+	if cfg.Health.Temperature.Enabled {
+		t.Errorf("expected Temperature.Enabled false via env override")
+	}
+	if cfg.Health.Temperature.CPUThresholdCelsius != 88.0 {
+		t.Errorf("expected 88.0, got %f", cfg.Health.Temperature.CPUThresholdCelsius)
+	}
+	if cfg.Health.Temperature.GPUThresholdCelsius != 82.0 {
+		t.Errorf("expected 82.0, got %f", cfg.Health.Temperature.GPUThresholdCelsius)
+	}
+	if cfg.Health.Temperature.SustainedSeconds != 60 {
+		t.Errorf("expected 60, got %d", cfg.Health.Temperature.SustainedSeconds)
+	}
+	if cfg.Health.Temperature.CooldownMinutes != 45 {
+		t.Errorf("expected 45, got %d", cfg.Health.Temperature.CooldownMinutes)
+	}
+}
+
+func TestTemperatureConfigValidation(t *testing.T) {
+	cfg := &Config{
+		Health: HealthConfig{
+			Temperature: TemperatureHealthConfig{
+				Enabled:             true,
+				CPUThresholdCelsius: -5,
+				GPUThresholdCelsius: 0,
+				SustainedSeconds:    -10,
+				CooldownMinutes:     0,
+			},
+		},
+	}
+	ValidateAndApplyDefaults(cfg)
+
+	if cfg.Health.Temperature.CPUThresholdCelsius != 75.0 {
+		t.Errorf("expected fallback 75.0, got %f", cfg.Health.Temperature.CPUThresholdCelsius)
+	}
+	if cfg.Health.Temperature.GPUThresholdCelsius != 75.0 {
+		t.Errorf("expected fallback 75.0, got %f", cfg.Health.Temperature.GPUThresholdCelsius)
+	}
+	if cfg.Health.Temperature.SustainedSeconds != 30 {
+		t.Errorf("expected fallback 30, got %d", cfg.Health.Temperature.SustainedSeconds)
+	}
+	if cfg.Health.Temperature.CooldownMinutes != 30 {
+		t.Errorf("expected fallback 30, got %d", cfg.Health.Temperature.CooldownMinutes)
+	}
+}
+
+
 

@@ -109,6 +109,8 @@ func New(cfg *config.Config, opts ...Option) (*Daemon, error) {
 		detector.RuleCPUFloor:  time.Duration(cfg.CPU.FloorDrop.CooldownMinutes) * time.Minute,
 		detector.RuleMemory:    time.Duration(cfg.Health.Memory.CooldownMinutes) * time.Minute,
 		detector.RuleDisk:      time.Duration(cfg.Health.Disk.CooldownMinutes) * time.Minute,
+		detector.RuleCPUTemp:   time.Duration(cfg.Health.Temperature.CooldownMinutes) * time.Minute,
+		detector.RuleGPUTemp:   time.Duration(cfg.Health.Temperature.CooldownMinutes) * time.Minute,
 	}
 	mgr := alert.NewManager(cfg.Server.Name, cooldowns, cfg.Alerting.NotifyOnRecovery)
 
@@ -243,8 +245,15 @@ func (d *Daemon) sendStartupNotification() {
 	if d.collector != nil {
 		if m, err := d.collector.Collect(); err == nil && m != nil {
 			uptimeStr := digest.FormatUptime(m.UptimeSeconds)
-			msg = fmt.Sprintf("Daemon online and monitoring %s.\nCheck Interval: %v | Uptime: %s | CPU: %.1f%% | RAM: %.1f%%",
-				d.cfg.Server.Name, d.interval, uptimeStr, m.CPUPercent, m.MemoryPercent)
+			extra := ""
+			if m.HasCPUTemp {
+				extra += fmt.Sprintf(" | Temp: %.1f°C", m.CPUTempCelsius)
+			}
+			if m.HasGPUTemp {
+				extra += fmt.Sprintf(" | GPU Temp: %.1f°C", m.GPUTempCelsius)
+			}
+			msg = fmt.Sprintf("Daemon online and monitoring %s.\nCheck Interval: %v | Uptime: %s | CPU: %.1f%% | RAM: %.1f%%%s",
+				d.cfg.Server.Name, d.interval, uptimeStr, m.CPUPercent, m.MemoryPercent, extra)
 		}
 	}
 
@@ -267,8 +276,15 @@ func (d *Daemon) sendShutdownNotification() {
 	if d.collector != nil {
 		if m, err := d.collector.Collect(); err == nil && m != nil {
 			uptimeStr := digest.FormatUptime(m.UptimeSeconds)
-			msg = fmt.Sprintf("Daemon received termination signal on %s. Monitoring stopped cleanly.\nUptime: %s | CPU: %.1f%% | RAM: %.1f%%",
-				d.cfg.Server.Name, uptimeStr, m.CPUPercent, m.MemoryPercent)
+			extra := ""
+			if m.HasCPUTemp {
+				extra += fmt.Sprintf(" | Temp: %.1f°C", m.CPUTempCelsius)
+			}
+			if m.HasGPUTemp {
+				extra += fmt.Sprintf(" | GPU Temp: %.1f°C", m.GPUTempCelsius)
+			}
+			msg = fmt.Sprintf("Daemon received termination signal on %s. Monitoring stopped cleanly.\nUptime: %s | CPU: %.1f%% | RAM: %.1f%%%s",
+				d.cfg.Server.Name, uptimeStr, m.CPUPercent, m.MemoryPercent, extra)
 		}
 	}
 

@@ -374,3 +374,188 @@ func TestOngoingActiveSpikeEmitsActiveEvent(t *testing.T) {
 	}
 }
 
+func TestCPUTemperatureDetectionSustainedAndRecovery(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Health.Temperature.Enabled = true
+	cfg.Health.Temperature.CPUThresholdCelsius = 75.0
+	cfg.Health.Temperature.SustainedSeconds = 10
+	cfg.Server.CheckIntervalSeconds = 5
+
+	d := New(cfg)
+	t0 := time.Now()
+
+	m1 := makeMetrics(10, 10, 10, t0)
+	m1.HasCPUTemp = true
+	m1.CPUTempCelsius = 76.0
+
+	// Sample 1 (5s): not yet sustained
+	evs1 := d.Evaluate(m1)
+	for _, e := range evs1 {
+		if e.RuleName == RuleCPUTemp && e.IsActive {
+			t.Fatalf("cpu_temperature fired too early at 5s")
+		}
+	}
+
+	// Sample 2 (10s): sustained breach -> triggers
+	m2 := makeMetrics(10, 10, 10, t0.Add(5*time.Second))
+	m2.HasCPUTemp = true
+	m2.CPUTempCelsius = 78.5
+	m2.TopProcesses = []models.ProcessInfo{{PID: 100, Name: "stress", CPUPercent: 99.0}}
+
+	evs2 := d.Evaluate(m2)
+	found := false
+	for _, e := range evs2 {
+		if e.RuleName == RuleCPUTemp && e.IsActive {
+			found = true
+			if e.Level != models.AlertLevelCritical {
+				t.Errorf("expected CRITICAL level for cpu temp alert, got %s", e.Level)
+			}
+			if e.CurrentValue != 78.5 {
+				t.Errorf("expected current value 78.5, got %f", e.CurrentValue)
+			}
+			if len(e.TopProcesses) != 1 || e.TopProcesses[0].Name != "stress" {
+				t.Errorf("expected top processes preserved in event, got %v", e.TopProcesses)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected cpu_temperature breach event")
+	}
+
+	// Ongoing active event
+	evsOngoing := d.Evaluate(m2)
+	foundOngoing := false
+	for _, e := range evsOngoing {
+		if e.RuleName == RuleCPUTemp && e.IsActive {
+			foundOngoing = true
+			break
+		}
+	}
+	if !foundOngoing {
+		t.Fatalf("expected ongoing cpu_temperature event")
+	}
+
+	// Recovery sample 1 (5s): not yet sustained recovery
+	m3 := makeMetrics(10, 10, 10, t0.Add(15*time.Second))
+	m3.HasCPUTemp = true
+	m3.CPUTempCelsius = 70.0
+	evs3 := d.Evaluate(m3)
+	for _, e := range evs3 {
+		if e.RuleName == RuleCPUTemp && !e.IsActive {
+			t.Fatalf("recovery fired too early at 5s")
+		}
+	}
+
+	// Recovery sample 2 (10s): sustained recovery
+	m4 := makeMetrics(10, 10, 10, t0.Add(20*time.Second))
+	m4.HasCPUTemp = true
+	m4.CPUTempCelsius = 68.0
+	evs4 := d.Evaluate(m4)
+	foundRecovery := false
+	for _, e := range evs4 {
+		if e.RuleName == RuleCPUTemp && !e.IsActive {
+			foundRecovery = true
+			if e.Level != models.AlertLevelResolved {
+				t.Errorf("expected RESOLVED level, got %s", e.Level)
+			}
+			break
+		}
+	}
+	if !foundRecovery {
+		t.Fatalf("expected cpu_temperature recovery event")
+	}
+}
+
+func TestGPUTemperatureDetectionSustainedAndRecovery(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Health.Temperature.Enabled = true
+	cfg.Health.Temperature.GPUThresholdCelsius = 75.0
+	cfg.Health.Temperature.SustainedSeconds = 10
+	cfg.Server.CheckIntervalSeconds = 5
+
+	d := New(cfg)
+	t0 := time.Now()
+
+	m1 := makeMetrics(10, 10, 10, t0)
+	m1.HasGPUTemp = true
+	m1.GPUTempCelsius = 80.0
+
+	// 5s: not yet sustained
+	d.Evaluate(m1)
+
+	// 10s: sustained -> triggers
+	m2 := makeMetrics(10, 10, 10, t0.Add(5*time.Second))
+	m2.HasGPUTemp = true
+	m2.GPUTempCelsius = 82.0
+
+	evs2 := d.Evaluate(m2)
+	found := false
+	for _, e := range evs2 {
+		if e.RuleName == RuleGPUTemp && e.IsActive {
+			found = true
+			if e.Level != models.AlertLevelCritical {
+				t.Errorf("expected CRITICAL level, got %s", e.Level)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected gpu_temperature breach event")
+	}
+
+	// Sustained recovery
+	m3 := makeMetrics(10, 10, 10, t0.Add(10*time.Second))
+	m3.HasGPUTemp = true
+	m3.GPUTempCelsius = 60.0
+	d.Evaluate(m3)
+
+	m4 := makeMetrics(10, 10, 10, t0.Add(15*time.Second))
+	m4.HasGPUTemp = true
+	m4.GPUTempCelsius = 58.0
+	evs4 := d.Evaluate(m4)
+	foundRecovery := false
+	for _, e := range evs4 {
+		if e.RuleName == RuleGPUTemp && !e.IsActive {
+			foundRecovery = true
+			break
+		}
+	}
+	if !foundRecovery {
+		t.Fatalf("expected gpu_temperature recovery event")
+	}
+}
+
+func TestTemperatureDetection_NoSensorsOrDisabled(t *testing.T) {
+	// Case 1: Disabled
+	cfgDisabled := &config.Config{}
+	cfgDisabled.Health.Temperature.Enabled = false
+	cfgDisabled.Health.Temperature.CPUThresholdCelsius = 75.0
+	d1 := New(cfgDisabled)
+
+	m := makeMetrics(10, 10, 10, time.Now())
+	m.HasCPUTemp = true
+	m.CPUTempCelsius = 95.0
+	evs := d1.Evaluate(m)
+	if len(evs) != 0 {
+		t.Fatalf("expected no events when temperature monitoring is disabled")
+	}
+
+	// Case 2: Enabled but HasCPUTemp / HasGPUTemp are false
+	cfgEnabled := &config.Config{}
+	cfgEnabled.Health.Temperature.Enabled = true
+	cfgEnabled.Health.Temperature.CPUThresholdCelsius = 75.0
+	cfgEnabled.Health.Temperature.GPUThresholdCelsius = 75.0
+	d2 := New(cfgEnabled)
+
+	mNoSensors := makeMetrics(10, 10, 10, time.Now())
+	mNoSensors.HasCPUTemp = false
+	mNoSensors.CPUTempCelsius = 95.0
+	mNoSensors.HasGPUTemp = false
+	mNoSensors.GPUTempCelsius = 95.0
+	evs2 := d2.Evaluate(mNoSensors)
+	if len(evs2) != 0 {
+		t.Fatalf("expected no events when HasCPUTemp/HasGPUTemp are false")
+	}
+}
+

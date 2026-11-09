@@ -467,3 +467,41 @@ func TestAlertManagerEmptyAndNilEvents(t *testing.T) {
 		t.Errorf("expected nil for empty events, got %v", alerts)
 	}
 }
+
+func TestAlertManagerTemperature(t *testing.T) {
+	mgr := NewManager("server-m5", nil, true)
+	t0 := time.Now()
+
+	cpuEv := models.RawConditionEvent{
+		RuleName:       "cpu_temperature",
+		IsActive:       true,
+		Level:          models.AlertLevelCritical,
+		CurrentValue:   82.0,
+		ThresholdValue: 75.0,
+		Message:        "CPU temperature high: 82.0°C >= 75.0°C",
+	}
+
+	alerts := mgr.ProcessEvents([]models.RawConditionEvent{cpuEv}, &models.SystemMetrics{Timestamp: t0})
+	if len(alerts) != 1 {
+		t.Fatalf("expected 1 alert, got %d", len(alerts))
+	}
+	if alerts[0].Title != "[server-m5] CPU Temperature Alert" {
+		t.Errorf("expected title '[server-m5] CPU Temperature Alert', got %q", alerts[0].Title)
+	}
+
+	// Recovery
+	recoverEv := models.RawConditionEvent{
+		RuleName:       "cpu_temperature",
+		IsActive:       false,
+		Level:          models.AlertLevelResolved,
+		CurrentValue:   65.0,
+		ThresholdValue: 75.0,
+	}
+	recoverAlerts := mgr.ProcessEvents([]models.RawConditionEvent{recoverEv}, &models.SystemMetrics{Timestamp: t0.Add(5 * time.Minute)})
+	if len(recoverAlerts) != 1 {
+		t.Fatalf("expected 1 recovery alert, got %d", len(recoverAlerts))
+	}
+	if recoverAlerts[0].Title != "[server-m5] CPU Temperature Resolved" {
+		t.Errorf("expected title '[server-m5] CPU Temperature Resolved', got %q", recoverAlerts[0].Title)
+	}
+}

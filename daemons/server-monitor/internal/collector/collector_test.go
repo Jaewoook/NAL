@@ -1,8 +1,11 @@
 package collector
 
 import (
+	"math"
 	"testing"
 	"time"
+
+	"github.com/shirou/gopsutil/v4/sensors"
 
 	"github.com/jaewoook/server-monitor/internal/models"
 )
@@ -27,6 +30,12 @@ func TestCollectRealMetrics(t *testing.T) {
 	}
 	if m.UptimeSeconds <= 0 {
 		t.Errorf("invalid uptime: %d", m.UptimeSeconds)
+	}
+	if m.HasCPUTemp && (m.CPUTempCelsius <= 0 || m.CPUTempCelsius > 150) {
+		t.Errorf("invalid CPU temperature: %f", m.CPUTempCelsius)
+	}
+	if m.HasGPUTemp && (m.GPUTempCelsius <= 0 || m.GPUTempCelsius > 150) {
+		t.Errorf("invalid GPU temperature: %f", m.GPUTempCelsius)
 	}
 	if time.Since(m.Timestamp) > 10*time.Second {
 		t.Errorf("expected recent timestamp, got %v", m.Timestamp)
@@ -135,3 +144,70 @@ func TestCollector_LazyTopProcesses(t *testing.T) {
 		t.Errorf("expected top processes when lazy threshold is 0, got 0")
 	}
 }
+
+func TestParseTemperatures(t *testing.T) {
+	stats := []sensors.TemperatureStat{
+		{SensorKey: "PMU tdie1", Temperature: 40.0},
+		{SensorKey: "PMU tdie2", Temperature: 44.0},
+		{SensorKey: "PMU tdev4", Temperature: -19.7}, // invalid: negative
+		{SensorKey: "NAND CH0", Temperature: 30.0},   // ignored
+		{SensorKey: "gpu_core", Temperature: 55.0},
+		{SensorKey: "gpu_mem", Temperature: 65.0},
+		{SensorKey: "glitch_hot", Temperature: 200.0},               // invalid: > 150
+		{SensorKey: "glitch_zero", Temperature: 0.0},                // invalid: zero
+		{SensorKey: "cpu_nan", Temperature: math.NaN()},             // invalid: NaN
+		{SensorKey: "gpu_inf", Temperature: math.Inf(1)},            // invalid: +Inf
+		{SensorKey: "gpu_neg_inf", Temperature: math.Inf(-1)},       // invalid: -Inf
+	}
+
+	cpuTemp, hasCPU, gpuTemp, hasGPU := parseTemperatures(stats)
+	if !hasCPU {
+		t.Errorf("expected hasCPU true")
+	}
+	if cpuTemp != 42.0 {
+		t.Errorf("expected cpuTemp 42.0, got %f", cpuTemp)
+	}
+
+	if !hasGPU {
+		t.Errorf("expected hasGPU true")
+	}
+	if gpuTemp != 60.0 {
+		t.Errorf("expected gpuTemp 60.0, got %f", gpuTemp)
+	}
+
+	// Empty input
+	_, hasCPU2, _, hasGPU2 := parseTemperatures(nil)
+	if hasCPU2 || hasGPU2 {
+		t.Errorf("expected false for nil stats, got CPU:%v GPU:%v", hasCPU2, hasGPU2)
+	}
+
+	// Only generic thermal zone
+	genericStats := []sensors.TemperatureStat{
+		{SensorKey: "thermal_zone0", Temperature: 45.0},
+	}
+	cpuTemp3, hasCPU3, _, hasGPU3 := parseTemperatures(genericStats)
+	if !hasCPU3 {
+		t.Errorf("expected hasCPU3 true for generic thermal zone fallback")
+	}
+	if cpuTemp3 != 45.0 {
+		t.Errorf("expected cpuTemp3 45.0, got %f", cpuTemp3)
+	}
+	if hasGPU3 {
+		t.Errorf("expected hasGPU3 false when no GPU sensor exists")
+	}
+
+	// Apple Silicon M1 IOHID sensor naming (pACC / eACC / GPU MTR)
+	m1Stats := []sensors.TemperatureStat{
+		{SensorKey: "eACC MTR Temp Sensor0", Temperature: 38.0},
+		{SensorKey: "pACC MTR Temp Sensor2", Temperature: 42.0},
+		{SensorKey: "GPU MTR Temp Sensor1", Temperature: 36.5},
+	}
+	cpuTempM1, hasCPUM1, gpuTempM1, hasGPUM1 := parseTemperatures(m1Stats)
+	if !hasCPUM1 || cpuTempM1 != 40.0 {
+		t.Errorf("expected M1 CPU temp 40.0, got hasCPU=%v temp=%f", hasCPUM1, cpuTempM1)
+	}
+	if !hasGPUM1 || gpuTempM1 != 36.5 {
+		t.Errorf("expected M1 GPU temp 36.5, got hasGPU=%v temp=%f", hasGPUM1, gpuTempM1)
+	}
+}
+

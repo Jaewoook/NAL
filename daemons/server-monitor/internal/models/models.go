@@ -24,15 +24,19 @@ type ProcessInfo struct {
 
 // SystemMetrics captures point-in-time system resource utilization and telemetry.
 type SystemMetrics struct {
-	Timestamp     time.Time     `json:"timestamp" yaml:"timestamp"`
-	CPUPercent    float64       `json:"cpu_percent" yaml:"cpu_percent"`
-	MemoryPercent float64       `json:"memory_percent" yaml:"memory_percent"`
-	DiskPercent   float64       `json:"disk_percent" yaml:"disk_percent"`
-	Load1         float64       `json:"load_1" yaml:"load_1"`
-	Load5         float64       `json:"load_5" yaml:"load_5"`
-	Load15        float64       `json:"load_15" yaml:"load_15"`
-	UptimeSeconds uint64        `json:"uptime_seconds" yaml:"uptime_seconds"`
-	TopProcesses  []ProcessInfo `json:"top_processes,omitempty" yaml:"top_processes,omitempty"`
+	Timestamp      time.Time     `json:"timestamp" yaml:"timestamp"`
+	CPUPercent     float64       `json:"cpu_percent" yaml:"cpu_percent"`
+	MemoryPercent  float64       `json:"memory_percent" yaml:"memory_percent"`
+	DiskPercent    float64       `json:"disk_percent" yaml:"disk_percent"`
+	CPUTempCelsius float64       `json:"cpu_temp_celsius" yaml:"cpu_temp_celsius"`
+	GPUTempCelsius float64       `json:"gpu_temp_celsius" yaml:"gpu_temp_celsius"`
+	HasCPUTemp     bool          `json:"has_cpu_temp" yaml:"has_cpu_temp"`
+	HasGPUTemp     bool          `json:"has_gpu_temp" yaml:"has_gpu_temp"`
+	Load1          float64       `json:"load_1" yaml:"load_1"`
+	Load5          float64       `json:"load_5" yaml:"load_5"`
+	Load15         float64       `json:"load_15" yaml:"load_15"`
+	UptimeSeconds  uint64        `json:"uptime_seconds" yaml:"uptime_seconds"`
+	TopProcesses   []ProcessInfo `json:"top_processes,omitempty" yaml:"top_processes,omitempty"`
 }
 
 // RawConditionEvent represents an evaluation outcome from the anomaly detector.

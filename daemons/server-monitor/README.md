@@ -18,6 +18,7 @@ Alerts are dispatched across multiple channels including **Telegram**, **Discord
   - One-shot incident alert with cooldown—no false recovery alarms when your server naturally idles.
 - **Server Health & Resource Monitoring:**
   - Real-time telemetry: aggregate CPU %, per-mount disk usage %, RAM usage & available MB, system load averages (1m, 5m, 15m), and system uptime.
+  - **Thermal & Hardware Temperature:** Real-time CPU and GPU average temperature sensing with anomaly detection and high-temperature alerts (default threshold: 75.0°C).
   - **Process Attribution:** Automatically inspects and attaches the top CPU-consuming processes (PID, Name, CPU%, Memory%) to alert notifications.
 - **Server Aliveness & Outbound Dead-Man's Switch:**
   - Periodically pings an external monitor (e.g. [Healthchecks.io](https://healthchecks.io), [BetterStack](https://betterstack.com), or Uptime Kuma) via HTTP GET/POST.
@@ -95,6 +96,7 @@ Uptime:    33d 2h 15m 10s
 
 [System Metrics]
   CPU Utilization:    7.4%
+  CPU Temperature:    42.0°C
   Memory Utilization: 66.8%
   Disk Utilization:   82.9% (/)
   Load Averages:      2.10 (1m), 2.05 (5m), 1.98 (15m)
@@ -212,6 +214,12 @@ health:
     threshold_percent: 85.0
     mount_point: "/"
     cooldown_minutes: 60
+  temperature:
+    enabled: true
+    cpu_threshold_celsius: 75.0 # Alert if CPU exceeds 75°C
+    gpu_threshold_celsius: 75.0 # Alert if GPU exceeds 75°C
+    sustained_seconds: 30       # Must stay above 75°C for 30s
+    cooldown_minutes: 30        # Do not repeat alert for 30m
 
 alerting:
   notify_on_recovery: true      # Send "RESOLVED" alert when CPU/memory normalizes
@@ -278,6 +286,11 @@ Any configuration value can be set via environment variables. Setting a channel 
 | `CPU_SPIKE_SUSTAINED_SECONDS`| Spike sustained duration in seconds (default: `15`) |
 | `MEMORY_THRESHOLD` | Memory utilization threshold % (default: `90.0`) |
 | `DISK_THRESHOLD` | Disk utilization threshold % (default: `85.0`) |
+| `TEMP_ENABLED` | Enable temperature monitoring (`true`/`false`) |
+| `TEMP_CPU_THRESHOLD` | CPU temperature threshold in Celsius (default: `75.0`) |
+| `TEMP_GPU_THRESHOLD` | GPU temperature threshold in Celsius (default: `75.0`) |
+| `TEMP_SUSTAINED_SECONDS` | Sustained duration for thermal alerts (default: `30`) |
+| `TEMP_COOLDOWN_MINUTES` | Cooldown period for thermal alerts (default: `30`) |
 | `NOTIFY_ON_RECOVERY` | Send alerts on recovery (`true`/`false`) |
 | `NOTIFY_ON_STARTUP` | Send alert when daemon starts up (`true`/`false`) |
 | `NOTIFY_ON_SHUTDOWN` | Send alert when daemon shuts down (`true`/`false`) |

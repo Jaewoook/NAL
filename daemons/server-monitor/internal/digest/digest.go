@@ -95,9 +95,18 @@ func (e *Engine) BuildDigest(now time.Time, m *models.SystemMetrics) (*models.Al
 	hostname := e.hostname
 	e.mu.Unlock()
 
+	tempLines := ""
+	if m.HasCPUTemp {
+		tempLines += fmt.Sprintf("• CPU Temp: %.1f°C\n", m.CPUTempCelsius)
+	}
+	if m.HasGPUTemp {
+		tempLines += fmt.Sprintf("• GPU Temp: %.1f°C\n", m.GPUTempCelsius)
+	}
+
 	msg := fmt.Sprintf(
 		"Periodic System Health Digest\n"+
 			"• CPU: %.1f%%\n"+
+			tempLines+
 			"• Memory: %.1f%%\n"+
 			"• Disk: %.1f%%\n"+
 			"• Load Averages: %.2f (1m), %.2f (5m), %.2f (15m)\n"+

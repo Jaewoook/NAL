@@ -16,6 +16,8 @@ const (
 	RuleCPUFloor  = "cpu_floor"
 	RuleMemory    = "memory"
 	RuleDisk      = "disk"
+	RuleCPUTemp   = "cpu_temperature"
+	RuleGPUTemp   = "gpu_temperature"
 )
 
 type cpuSample struct {
@@ -48,6 +50,16 @@ type Detector struct {
 
 	// Disk state
 	diskActive bool
+
+	// CPU Temperature state
+	cpuTempActive        bool
+	cpuTempBreachCount   int
+	cpuTempRecoveryCount int
+
+	// GPU Temperature state
+	gpuTempActive        bool
+	gpuTempBreachCount   int
+	gpuTempRecoveryCount int
 }
 
 // New creates a new Detector with the given configuration.
@@ -89,6 +101,12 @@ func (d *Detector) Evaluate(m *models.SystemMetrics) []models.RawConditionEvent 
 		events = append(events, *ev)
 	}
 	if ev := d.checkDisk(m); ev != nil {
+		events = append(events, *ev)
+	}
+	if ev := d.checkCPUTemp(m, interval); ev != nil {
+		events = append(events, *ev)
+	}
+	if ev := d.checkGPUTemp(m, interval); ev != nil {
 		events = append(events, *ev)
 	}
 
@@ -380,6 +398,132 @@ func (d *Detector) checkDisk(m *models.SystemMetrics) *models.RawConditionEvent 
 			ThresholdValue: threshold,
 			Message:        fmt.Sprintf("Disk usage recovered on %s: %.1f%% < %.1f%%", mount, m.DiskPercent, threshold),
 			TopProcesses:   m.TopProcesses,
+		}
+	}
+
+	return nil
+}
+
+func (d *Detector) checkCPUTemp(m *models.SystemMetrics, interval int) *models.RawConditionEvent {
+	if !d.cfg.Health.Temperature.Enabled || !m.HasCPUTemp {
+		return nil
+	}
+
+	threshold := d.cfg.Health.Temperature.CPUThresholdCelsius
+	sustainedSec := d.cfg.Health.Temperature.SustainedSeconds
+	if sustainedSec <= 0 {
+		sustainedSec = interval
+	}
+
+	if m.CPUTempCelsius >= threshold {
+		d.cpuTempRecoveryCount = 0
+		d.cpuTempBreachCount++
+		if !d.cpuTempActive {
+			if d.cpuTempBreachCount*interval >= sustainedSec {
+				d.cpuTempActive = true
+				return &models.RawConditionEvent{
+					RuleName:       RuleCPUTemp,
+					IsActive:       true,
+					Level:          models.AlertLevelCritical,
+					CurrentValue:   m.CPUTempCelsius,
+					ThresholdValue: threshold,
+					Message:        fmt.Sprintf("CPU temperature sustained high: %.1f°C >= %.1f°C for %ds", m.CPUTempCelsius, threshold, d.cpuTempBreachCount*interval),
+					TopProcesses:   m.TopProcesses,
+				}
+			}
+		} else {
+			return &models.RawConditionEvent{
+				RuleName:       RuleCPUTemp,
+				IsActive:       true,
+				Level:          models.AlertLevelCritical,
+				CurrentValue:   m.CPUTempCelsius,
+				ThresholdValue: threshold,
+				Message:        fmt.Sprintf("CPU temperature high: %.1f°C >= %.1f°C", m.CPUTempCelsius, threshold),
+				TopProcesses:   m.TopProcesses,
+			}
+		}
+	} else {
+		d.cpuTempBreachCount = 0
+		if d.cpuTempActive {
+			d.cpuTempRecoveryCount++
+			if d.cpuTempRecoveryCount*interval >= sustainedSec {
+				d.cpuTempActive = false
+				d.cpuTempRecoveryCount = 0
+				return &models.RawConditionEvent{
+					RuleName:       RuleCPUTemp,
+					IsActive:       false,
+					Level:          models.AlertLevelResolved,
+					CurrentValue:   m.CPUTempCelsius,
+					ThresholdValue: threshold,
+					Message:        fmt.Sprintf("CPU temperature recovered: %.1f°C < %.1f°C", m.CPUTempCelsius, threshold),
+					TopProcesses:   m.TopProcesses,
+				}
+			}
+		} else {
+			d.cpuTempRecoveryCount = 0
+		}
+	}
+
+	return nil
+}
+
+func (d *Detector) checkGPUTemp(m *models.SystemMetrics, interval int) *models.RawConditionEvent {
+	if !d.cfg.Health.Temperature.Enabled || !m.HasGPUTemp {
+		return nil
+	}
+
+	threshold := d.cfg.Health.Temperature.GPUThresholdCelsius
+	sustainedSec := d.cfg.Health.Temperature.SustainedSeconds
+	if sustainedSec <= 0 {
+		sustainedSec = interval
+	}
+
+	if m.GPUTempCelsius >= threshold {
+		d.gpuTempRecoveryCount = 0
+		d.gpuTempBreachCount++
+		if !d.gpuTempActive {
+			if d.gpuTempBreachCount*interval >= sustainedSec {
+				d.gpuTempActive = true
+				return &models.RawConditionEvent{
+					RuleName:       RuleGPUTemp,
+					IsActive:       true,
+					Level:          models.AlertLevelCritical,
+					CurrentValue:   m.GPUTempCelsius,
+					ThresholdValue: threshold,
+					Message:        fmt.Sprintf("GPU temperature sustained high: %.1f°C >= %.1f°C for %ds", m.GPUTempCelsius, threshold, d.gpuTempBreachCount*interval),
+					TopProcesses:   m.TopProcesses,
+				}
+			}
+		} else {
+			return &models.RawConditionEvent{
+				RuleName:       RuleGPUTemp,
+				IsActive:       true,
+				Level:          models.AlertLevelCritical,
+				CurrentValue:   m.GPUTempCelsius,
+				ThresholdValue: threshold,
+				Message:        fmt.Sprintf("GPU temperature high: %.1f°C >= %.1f°C", m.GPUTempCelsius, threshold),
+				TopProcesses:   m.TopProcesses,
+			}
+		}
+	} else {
+		d.gpuTempBreachCount = 0
+		if d.gpuTempActive {
+			d.gpuTempRecoveryCount++
+			if d.gpuTempRecoveryCount*interval >= sustainedSec {
+				d.gpuTempActive = false
+				d.gpuTempRecoveryCount = 0
+				return &models.RawConditionEvent{
+					RuleName:       RuleGPUTemp,
+					IsActive:       false,
+					Level:          models.AlertLevelResolved,
+					CurrentValue:   m.GPUTempCelsius,
+					ThresholdValue: threshold,
+					Message:        fmt.Sprintf("GPU temperature recovered: %.1f°C < %.1f°C", m.GPUTempCelsius, threshold),
+					TopProcesses:   m.TopProcesses,
+				}
+			}
+		} else {
+			d.gpuTempRecoveryCount = 0
 		}
 	}
 

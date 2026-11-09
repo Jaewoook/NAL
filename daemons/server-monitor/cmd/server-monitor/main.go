@@ -142,6 +142,12 @@ func runApp(args []string, stdout, stderr io.Writer, opts ...AppOption) int {
 
 		fmt.Fprintln(stdout, "[System Metrics]")
 		fmt.Fprintf(stdout, "  CPU Utilization:    %.1f%%\n", metrics.CPUPercent)
+		if metrics.HasCPUTemp {
+			fmt.Fprintf(stdout, "  CPU Temperature:    %.1f°C\n", metrics.CPUTempCelsius)
+		}
+		if metrics.HasGPUTemp {
+			fmt.Fprintf(stdout, "  GPU Temperature:    %.1f°C\n", metrics.GPUTempCelsius)
+		}
 		fmt.Fprintf(stdout, "  Memory Utilization: %.1f%%\n", metrics.MemoryPercent)
 		fmt.Fprintf(stdout, "  Disk Utilization:   %.1f%% (%s)\n", metrics.DiskPercent, cfg.Health.Disk.MountPoint)
 		fmt.Fprintf(stdout, "  Load Averages:      %.2f (1m), %.2f (5m), %.2f (15m)\n\n", metrics.Load1, metrics.Load5, metrics.Load15)

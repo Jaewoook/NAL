@@ -198,7 +198,7 @@ func (m *Manager) getCooldown(ruleName string) time.Duration {
 	switch ruleName {
 	case "cpu_plunge":
 		return 15 * time.Minute
-	case "cpu_spike", "cpu_floor", "memory":
+	case "cpu_spike", "cpu_floor", "memory", "cpu_temperature", "gpu_temperature":
 		return 30 * time.Minute
 	case "disk":
 		return 60 * time.Minute
@@ -267,6 +267,10 @@ func formatRuleName(rule string) string {
 		return "Memory"
 	case "disk":
 		return "Disk"
+	case "cpu_temperature":
+		return "CPU Temperature"
+	case "gpu_temperature":
+		return "GPU Temperature"
 	default:
 		words := strings.Split(rule, "_")
 		for i, w := range words {

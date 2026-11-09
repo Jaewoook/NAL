@@ -249,3 +249,23 @@ func TestDigestConcurrentTicks(t *testing.T) {
 		t.Errorf("expected exactly 1 alert from concurrent first ticks, got %d", atomic.LoadInt32(&alertCount))
 	}
 }
+
+func TestDigestWithTemperature(t *testing.T) {
+	engine := New("temp-host", 24*time.Hour)
+	m := sampleMetrics()
+	m.HasCPUTemp = true
+	m.CPUTempCelsius = 42.5
+	m.HasGPUTemp = true
+	m.GPUTempCelsius = 55.0
+
+	alert, err := engine.BuildDigest(time.Now(), m)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(alert.Message, "CPU Temp: 42.5°C") {
+		t.Errorf("expected CPU Temp in message, got:\n%s", alert.Message)
+	}
+	if !strings.Contains(alert.Message, "GPU Temp: 55.0°C") {
+		t.Errorf("expected GPU Temp in message, got:\n%s", alert.Message)
+	}
+}

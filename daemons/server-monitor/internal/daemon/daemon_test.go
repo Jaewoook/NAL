@@ -336,3 +336,47 @@ func TestDaemonStartupAndShutdownNotifications(t *testing.T) {
 		t.Errorf("expected Warning level for shutdown, got: %s", shutdownAlert.Level)
 	}
 }
+
+func TestDaemonTemperatureAlert(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Server.Name = "test-host"
+	cfg.Health.Temperature.Enabled = true
+	cfg.Health.Temperature.CPUThresholdCelsius = 75.0
+	cfg.Health.Temperature.SustainedSeconds = 1
+	cfg.Server.CheckIntervalSeconds = 1
+
+	coll := &mockCollector{
+		metrics: &models.SystemMetrics{
+			Timestamp:      time.Now(),
+			CPUPercent:     10.0,
+			MemoryPercent:  20.0,
+			DiskPercent:    30.0,
+			HasCPUTemp:     true,
+			CPUTempCelsius: 82.5,
+		},
+	}
+
+	d, err := New(cfg, WithCollector(coll))
+	if err != nil {
+		t.Fatalf("failed to create daemon: %v", err)
+	}
+
+	ch := &mockChannel{name: "test-chan"}
+	disp := notifier.NewDispatcher(ch)
+	d.dispatcher = disp
+
+	ctx := context.Background()
+	if err := d.Step(ctx); err != nil {
+		t.Fatalf("step failed: %v", err)
+	}
+
+	if len(ch.alerts) != 1 {
+		t.Fatalf("expected 1 temperature alert, got %d", len(ch.alerts))
+	}
+	if ch.alerts[0].Title != "[test-host] CPU Temperature Alert" {
+		t.Errorf("expected title '[test-host] CPU Temperature Alert', got %q", ch.alerts[0].Title)
+	}
+	if !strings.Contains(ch.alerts[0].Message, "82.5°C") {
+		t.Errorf("expected 82.5°C in alert message, got %q", ch.alerts[0].Message)
+	}
+}

@@ -2,7 +2,9 @@ package collector
 
 import (
 	"fmt"
+	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -11,6 +13,7 @@ import (
 	"github.com/shirou/gopsutil/v4/load"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/shirou/gopsutil/v4/process"
+	"github.com/shirou/gopsutil/v4/sensors"
 
 	"github.com/jaewoook/server-monitor/internal/models"
 )
@@ -97,6 +100,34 @@ func (c *Collector) Collect() (*models.SystemMetrics, error) {
 		metrics.TopProcesses = c.collectTopProcesses()
 	}
 
+	// 7. Thermal sensors (CPU / GPU temperature)
+	// On Darwin platforms (including Apple Silicon), query hardware SMC keys (Tg* for GPU, Tp*/Te* for CPU)
+	smcCPUTemp, smcHasCPU, smcGPUTemp, smcHasGPU := readDarwinSMCTemperatures()
+	if smcHasCPU {
+		metrics.CPUTempCelsius = smcCPUTemp
+		metrics.HasCPUTemp = true
+	}
+	if smcHasGPU {
+		metrics.GPUTempCelsius = smcGPUTemp
+		metrics.HasGPUTemp = true
+	}
+
+	// If either CPU or GPU temperature is not populated from SMC, query standard system sensors
+	if !metrics.HasCPUTemp || !metrics.HasGPUTemp {
+		temps, err := sensors.SensorsTemperatures()
+		if err == nil && len(temps) > 0 {
+			cpuTemp, hasCPU, gpuTemp, hasGPU := parseTemperatures(temps)
+			if !metrics.HasCPUTemp && hasCPU {
+				metrics.CPUTempCelsius = cpuTemp
+				metrics.HasCPUTemp = true
+			}
+			if !metrics.HasGPUTemp && hasGPU {
+				metrics.GPUTempCelsius = gpuTemp
+				metrics.HasGPUTemp = true
+			}
+		}
+	}
+
 	return metrics, nil
 }
 
@@ -148,4 +179,70 @@ func sortAndLimitProcesses(procs []models.ProcessInfo, count int) []models.Proce
 		procs = procs[:count]
 	}
 	return procs
+}
+
+// parseTemperatures categorizes temperature sensor readings into CPU and GPU groups,
+// filtering out invalid readings (<= 0 or > 150 C), and returns their averages.
+// If no explicit CPU sensor is found, generic thermal zones are used as a fallback.
+func parseTemperatures(stats []sensors.TemperatureStat) (cpuTemp float64, hasCPU bool, gpuTemp float64, hasGPU bool) {
+	var cpuTemps []float64
+	var gpuTemps []float64
+	var fallbackTemps []float64
+
+	for _, stat := range stats {
+		if math.IsNaN(stat.Temperature) || math.IsInf(stat.Temperature, 0) ||
+			stat.Temperature <= 0 || stat.Temperature > 150 {
+			continue
+		}
+		name := strings.ToLower(stat.SensorKey)
+
+		// GPU sensors (check first so "gpu_core" is attributed to GPU)
+		if strings.Contains(name, "gpu") || strings.Contains(name, "vga") ||
+			strings.Contains(name, "nvidia") || strings.Contains(name, "amdgpu") ||
+			strings.Contains(name, "radeon") || strings.HasPrefix(name, "tg") ||
+			strings.Contains(name, " tg") || strings.Contains(name, "_tg") {
+			gpuTemps = append(gpuTemps, stat.Temperature)
+			continue
+		}
+
+		// CPU sensors (including Apple Silicon IOHID pACC / eACC MTR sensors)
+		if strings.Contains(name, "cpu") || strings.Contains(name, "die") ||
+			strings.Contains(name, "core") || strings.Contains(name, "package") ||
+			strings.Contains(name, "soc") || strings.Contains(name, "k10temp") ||
+			strings.Contains(name, "acpitz") || strings.Contains(name, "pacc") ||
+			strings.Contains(name, "eacc") || strings.HasPrefix(name, "tc") ||
+			strings.Contains(name, " tc") || strings.Contains(name, "_tc") {
+			cpuTemps = append(cpuTemps, stat.Temperature)
+			continue
+		}
+
+		// Fallback for general thermal zones
+		if strings.Contains(name, "thermal_zone") || strings.Contains(name, "thermal") {
+			fallbackTemps = append(fallbackTemps, stat.Temperature)
+		}
+	}
+
+	if len(cpuTemps) == 0 && len(fallbackTemps) > 0 {
+		cpuTemps = fallbackTemps
+	}
+
+	if len(cpuTemps) > 0 {
+		var sum float64
+		for _, t := range cpuTemps {
+			sum += t
+		}
+		cpuTemp = sum / float64(len(cpuTemps))
+		hasCPU = true
+	}
+
+	if len(gpuTemps) > 0 {
+		var sum float64
+		for _, t := range gpuTemps {
+			sum += t
+		}
+		gpuTemp = sum / float64(len(gpuTemps))
+		hasGPU = true
+	}
+
+	return cpuTemp, hasCPU, gpuTemp, hasGPU
 }
