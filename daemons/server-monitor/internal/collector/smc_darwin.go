@@ -50,14 +50,24 @@ const (
 	kSMCReadKey         = 5
 	kSMCGetKeyFromIndex = 8
 	kSMCGetKeyInfo      = 9
+
+	// minActiveSMCTempCelsius is the minimum valid live die temperature in Celsius.
+	// On Apple Silicon, power-gated (asleep/idle) GPU clusters report ~4.6°C (< 11.0°C);
+	// Macs Fan Control treats readings below 11.0°C as power-gated sleep values and
+	// substitutes the Te05 SoC thermal sensor.
+	minActiveSMCTempCelsius = 11.0
+	maxValidSMCTempCelsius  = 150.0
+	appleSiliconSleepSubKey = "Te05"
 )
 
 var (
-	smcOnce           sync.Once
-	smcMu             sync.Mutex
-	smcKeysDiscovered bool
-	cachedGPUKeys     []smcKeyDescriptor
-	cachedCPUKeys     []smcKeyDescriptor
+	smcOnce            sync.Once
+	smcMu              sync.Mutex
+	smcKeysDiscovered  bool
+	cachedGPUKeys      []smcKeyDescriptor
+	cachedCPUKeys      []smcKeyDescriptor
+	cachedSleepSubDesc *smcKeyDescriptor
+	lastValidGPUTemp   float64
 
 	ioServiceMatching           func(string) uintptr
 	ioServiceGetMatchingService func(uintptr, uintptr) uint32
@@ -269,8 +279,9 @@ func querySMCKeyDescriptor(conn uint32, keyName string) (smcKeyDescriptor, bool)
 		dataType: typeStr,
 		dataSize: size,
 	}
-	// Verify the key actually produces a valid temperature reading before caching it
-	if _, ok := readSMCKeyTemperature(conn, desc); !ok {
+	// Verify the key is readable (accepting > 0 during discovery because power-gated
+	// Apple Silicon GPU clusters report ~4.6°C while asleep).
+	if rawVal, ok := readRawSMCTemperature(conn, desc); !ok || rawVal <= 0 || rawVal > maxValidSMCTempCelsius {
 		return smcKeyDescriptor{}, false
 	}
 	return desc, true
@@ -286,7 +297,12 @@ func resolveDescriptors(conn uint32, names []string) []smcKeyDescriptor {
 	return out
 }
 
-func discoverSMCKeys(conn uint32) ([]smcKeyDescriptor, []smcKeyDescriptor) {
+func discoverSMCKeys(conn uint32) ([]smcKeyDescriptor, []smcKeyDescriptor, *smcKeyDescriptor) {
+	var sleepSub *smcKeyDescriptor
+	if subDesc, ok := querySMCKeyDescriptor(conn, appleSiliconSleepSubKey); ok {
+		sleepSub = &subDesc
+	}
+
 	// 1. Check if current hardware model has an exact Apple Silicon sensor specification
 	if hwModel, err := syscall.Sysctl("hw.model"); err == nil && hwModel != "" {
 		hwModel = strings.TrimRight(hwModel, "\x00")
@@ -294,7 +310,7 @@ func discoverSMCKeys(conn uint32) ([]smcKeyDescriptor, []smcKeyDescriptor) {
 			gpuDescs := resolveDescriptors(conn, spec.gpuKeys)
 			cpuDescs := resolveDescriptors(conn, spec.cpuKeys)
 			if len(gpuDescs) > 0 || len(cpuDescs) > 0 {
-				return gpuDescs, cpuDescs
+				return gpuDescs, cpuDescs, sleepSub
 			}
 		}
 	}
@@ -308,13 +324,13 @@ func discoverSMCKeys(conn uint32) ([]smcKeyDescriptor, []smcKeyDescriptor) {
 	inp.key = smcToUint32("#KEY")
 	inp.data8 = kSMCGetKeyInfo
 	if ioConnectCallStructMethod(conn, kSMCHandleYPCEvent, unsafe.Pointer(&inp), inSize, unsafe.Pointer(&out), &outSize) != 0 || out.result != 0 {
-		return nil, nil
+		return nil, nil, sleepSub
 	}
 
 	inp.keyInfo.dataSize = out.keyInfo.dataSize
 	inp.data8 = kSMCReadKey
 	if ioConnectCallStructMethod(conn, kSMCHandleYPCEvent, unsafe.Pointer(&inp), inSize, unsafe.Pointer(&out), &outSize) != 0 || out.result != 0 {
-		return nil, nil
+		return nil, nil, sleepSub
 	}
 
 	totalKeys := binary.BigEndian.Uint32(out.bytes[:4])
@@ -355,12 +371,12 @@ func discoverSMCKeys(conn uint32) ([]smcKeyDescriptor, []smcKeyDescriptor) {
 		}
 	}
 
-	return gpuKeys, cpuKeys
+	return gpuKeys, cpuKeys, sleepSub
 }
 
-// decodeSMCTemperature converts raw SMC key bytes (`flt ` or `sp78`) into a validated
-// Celsius reading in the range (0, 150], rejecting NaN and Inf values.
-func decodeSMCTemperature(dataType string, dataSize uint32, raw [32]byte) (float64, bool) {
+// decodeRawSMCTemperature decodes raw SMC key bytes (`flt ` or `sp78`) into a float64,
+// rejecting NaN and Inf values.
+func decodeRawSMCTemperature(dataType string, dataSize uint32, raw [32]byte) (float64, bool) {
 	var val float64
 	if dataType == "flt " && dataSize == 4 {
 		bits := binary.LittleEndian.Uint32(raw[:4])
@@ -371,13 +387,24 @@ func decodeSMCTemperature(dataType string, dataSize uint32, raw [32]byte) (float
 		return 0, false
 	}
 
-	if math.IsNaN(val) || math.IsInf(val, 0) || val <= 0 || val > 150 {
+	if math.IsNaN(val) || math.IsInf(val, 0) {
 		return 0, false
 	}
 	return val, true
 }
 
-func readSMCKeyTemperature(conn uint32, desc smcKeyDescriptor) (float64, bool) {
+// decodeSMCTemperature converts raw SMC key bytes (`flt ` or `sp78`) into a validated
+// active Celsius reading in the range [11.0, 150.0], rejecting NaN, Inf, and
+// power-gated sleep values (< 11.0°C, such as 4.6°C on idle Apple Silicon GPU clusters).
+func decodeSMCTemperature(dataType string, dataSize uint32, raw [32]byte) (float64, bool) {
+	val, ok := decodeRawSMCTemperature(dataType, dataSize, raw)
+	if !ok || val < minActiveSMCTempCelsius || val > maxValidSMCTempCelsius {
+		return 0, false
+	}
+	return val, true
+}
+
+func readRawSMCTemperature(conn uint32, desc smcKeyDescriptor) (float64, bool) {
 	if desc.dataSize == 0 || desc.dataSize > 32 {
 		return 0, false
 	}
@@ -394,7 +421,15 @@ func readSMCKeyTemperature(conn uint32, desc smcKeyDescriptor) (float64, bool) {
 		return 0, false
 	}
 
-	return decodeSMCTemperature(desc.dataType, desc.dataSize, outRead.bytes)
+	return decodeRawSMCTemperature(desc.dataType, desc.dataSize, outRead.bytes)
+}
+
+func readSMCKeyTemperature(conn uint32, desc smcKeyDescriptor) (float64, bool) {
+	val, ok := readRawSMCTemperature(conn, desc)
+	if !ok || val < minActiveSMCTempCelsius || val > maxValidSMCTempCelsius {
+		return 0, false
+	}
+	return val, true
 }
 
 func readDarwinSMCTemperatures() (cpuTemp float64, hasCPU bool, gpuTemp float64, hasGPU bool) {
@@ -406,19 +441,35 @@ func readDarwinSMCTemperatures() (cpuTemp float64, hasCPU bool, gpuTemp float64,
 
 	smcMu.Lock()
 	if !smcKeysDiscovered {
-		cachedGPUKeys, cachedCPUKeys = discoverSMCKeys(conn)
+		cachedGPUKeys, cachedCPUKeys, cachedSleepSubDesc = discoverSMCKeys(conn)
 		smcKeysDiscovered = true
 	}
 	gpuKeys := make([]smcKeyDescriptor, len(cachedGPUKeys))
 	copy(gpuKeys, cachedGPUKeys)
 	cpuKeys := make([]smcKeyDescriptor, len(cachedCPUKeys))
 	copy(cpuKeys, cachedCPUKeys)
+	sleepSub := cachedSleepSubDesc
+	prevGPUTemp := lastValidGPUTemp
 	smcMu.Unlock()
 
 	var gpuTemps []float64
 	for _, desc := range gpuKeys {
 		if val, ok := readSMCKeyTemperature(conn, desc); ok {
 			gpuTemps = append(gpuTemps, val)
+		}
+	}
+
+	// When Apple Silicon GPU clusters are power-gated in idle state (raw reading ~4.6°C < 11.0°C),
+	// substitute the Apple Silicon sleep_substitute sensor (Te05) just like Macs Fan Control,
+	// or fall back to the last valid active GPU temperature reading.
+	if len(gpuTemps) == 0 && len(gpuKeys) > 0 {
+		if sleepSub != nil {
+			if subVal, ok := readSMCKeyTemperature(conn, *sleepSub); ok {
+				gpuTemps = append(gpuTemps, subVal)
+			}
+		}
+		if len(gpuTemps) == 0 && prevGPUTemp >= minActiveSMCTempCelsius {
+			gpuTemps = append(gpuTemps, prevGPUTemp)
 		}
 	}
 
@@ -436,6 +487,10 @@ func readDarwinSMCTemperatures() (cpuTemp float64, hasCPU bool, gpuTemp float64,
 		}
 		gpuTemp = sum / float64(len(gpuTemps))
 		hasGPU = true
+
+		smcMu.Lock()
+		lastValidGPUTemp = gpuTemp
+		smcMu.Unlock()
 	}
 
 	if len(cpuTemps) > 0 {

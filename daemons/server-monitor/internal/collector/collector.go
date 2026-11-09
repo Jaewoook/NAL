@@ -191,7 +191,7 @@ func parseTemperatures(stats []sensors.TemperatureStat) (cpuTemp float64, hasCPU
 
 	for _, stat := range stats {
 		if math.IsNaN(stat.Temperature) || math.IsInf(stat.Temperature, 0) ||
-			stat.Temperature <= 0 || stat.Temperature > 150 {
+			stat.Temperature < 10 || stat.Temperature > 150 {
 			continue
 		}
 		name := strings.ToLower(stat.SensorKey)

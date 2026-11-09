@@ -13,12 +13,12 @@ func TestReadDarwinSMCTemperatures(t *testing.T) {
 	t.Logf("Darwin SMC: hasCPU=%v (%.1f°C), hasGPU=%v (%.1f°C)", hasCPU, cpuTemp, hasGPU, gpuTemp)
 
 	if hasGPU {
-		if math.IsNaN(gpuTemp) || math.IsInf(gpuTemp, 0) || gpuTemp <= 0 || gpuTemp > 150 {
+		if math.IsNaN(gpuTemp) || math.IsInf(gpuTemp, 0) || gpuTemp < 11 || gpuTemp > 150 {
 			t.Errorf("invalid GPU temperature from SMC: %f", gpuTemp)
 		}
 	}
 	if hasCPU {
-		if math.IsNaN(cpuTemp) || math.IsInf(cpuTemp, 0) || cpuTemp <= 0 || cpuTemp > 150 {
+		if math.IsNaN(cpuTemp) || math.IsInf(cpuTemp, 0) || cpuTemp < 11 || cpuTemp > 150 {
 			t.Errorf("invalid CPU temperature from SMC: %f", cpuTemp)
 		}
 	}
@@ -31,10 +31,10 @@ func TestReadDarwinSMCTemperatures(t *testing.T) {
 	if hasCPU != hasCPU2 {
 		t.Errorf("hasCPU mismatch on second call: %v vs %v", hasCPU, hasCPU2)
 	}
-	if hasGPU && (gpu2 <= 0 || gpu2 > 150) {
+	if hasGPU && (gpu2 < 11 || gpu2 > 150) {
 		t.Errorf("invalid GPU temperature on cached call: %f", gpu2)
 	}
-	if hasCPU && (cpu2 <= 0 || cpu2 > 150) {
+	if hasCPU && (cpu2 < 11 || cpu2 > 150) {
 		t.Errorf("invalid CPU temperature on cached call: %f", cpu2)
 	}
 }
@@ -71,10 +71,15 @@ func TestDecodeSMCTemperature(t *testing.T) {
 		t.Errorf("expected +Inf to be rejected")
 	}
 
-	// 5. Reject <= 0 and > 150
+	// 5. Reject <= 0, power-gated sleep (< 11.0°C, e.g. 4.6°C), and > 150
 	var rawZero [32]byte
 	if _, ok := decodeSMCTemperature("flt ", 4, rawZero); ok {
 		t.Errorf("expected 0.0 to be rejected")
+	}
+	var rawSleep [32]byte
+	binary.LittleEndian.PutUint32(rawSleep[:4], math.Float32bits(4.61))
+	if _, ok := decodeSMCTemperature("flt ", 4, rawSleep); ok {
+		t.Errorf("expected power-gated 4.61°C to be rejected")
 	}
 	var rawHot [32]byte
 	binary.LittleEndian.PutUint32(rawHot[:4], math.Float32bits(175.0))
