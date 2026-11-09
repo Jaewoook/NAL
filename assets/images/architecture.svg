@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="960" viewBox="0 0 1600 960">
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1080" viewBox="0 0 1800 1080">
 <defs>
   <pattern id="gridDots" width="24" height="24" patternUnits="userSpaceOnUse">
     <circle cx="2" cy="2" r="1.1" fill="#cbd5e1" opacity="0.45"/>
@@ -9,315 +9,373 @@
 </defs>
 
 <!-- Canvas Background -->
-<rect width="1600" height="960" fill="#faf9f6"/>
-<rect width="1600" height="960" fill="url(#gridDots)"/>
+<rect width="1800" height="1080" fill="#faf9f6"/>
+<rect width="1800" height="1080" fill="url(#gridDots)"/>
 
 <!-- ============================================================================== -->
 <!-- 0. TOP HEADER BAR                                                              -->
 <!-- ============================================================================== -->
-<polygon points="40.2,26.4 1559.8,25.8 1560.5,102.6 39.8,103.2" fill="#ffffff" rx="12" filter="url(#cardShadow)"/>
-<path d="M 40.0 27.0 Q 799.5 25.5 1560.0 26.2" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
-<path d="M 40.5 28.2 Q 801.0 27.2 1559.2 25.5" fill="none" stroke="#0f172a" stroke-width="1.8" stroke-linecap="round" opacity="0.55"/>
-<path d="M 1560.2 26.5 Q 1561.0 64.5 1560.1 102.5" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
-<path d="M 1559.5 102.8 Q 800.5 103.5 40.2 103.0" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
-<path d="M 40.0 102.5 Q 39.2 64.8 40.2 27.0" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<polygon points="32.2,24.4 1767.8,23.8 1768.5,100.6 31.8,101.2" fill="#ffffff" rx="12" filter="url(#cardShadow)"/>
+<path d="M 32.0 25.0 Q 900.0 23.5 1768.0 24.2" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 32.5 26.2 Q 901.0 25.2 1767.2 23.5" fill="none" stroke="#0f172a" stroke-width="1.8" stroke-linecap="round" opacity="0.55"/>
+<path d="M 1768.2 24.5 Q 1769.0 62.5 1768.1 100.5" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1767.5 100.8 Q 900.5 101.5 32.2 101.0" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
+<path d="M 32.0 100.5 Q 31.2 62.8 32.2 25.0" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" opacity="0.95"/>
 
-<text x="70" y="66" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="26" font-weight="bold" fill="#0f172a">Network Attached Laboratory (NAL)</text>
-<text x="70" y="88" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" fill="#64748b">Physical Hardware Architecture &amp; Distributed Host Separation</text>
-<text x="1530" y="72" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#0284c7" text-anchor="end">Distributed Multi-Node Homelab Architecture</text>
+<text x="64" y="62" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="26" font-weight="bold" fill="#0f172a">Network Attached Laboratory (NAL)</text>
+<text x="64" y="85" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" fill="#64748b">Physical Hardware Architecture &amp; Distributed Host Separation</text>
+<text x="1736" y="68" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#0284c7" text-anchor="end">Distributed Multi-Node Homelab Architecture</text>
 
 <!-- ============================================================================== -->
 <!-- 1. LEFT COLUMN: CLIENTS & NETWORK INGRESS                                      -->
 <!-- ============================================================================== -->
-<text x="50" y="136" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="17" font-weight="bold" fill="#0369a1">1. Clients &amp; Ingress</text>
+<text x="38" y="134" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="17" font-weight="bold" fill="#0369a1">1. Clients &amp; Ingress</text>
 
-<polygon points="40.5,147.2 309.8,146.5 310.2,868.5 39.8,869.2" fill="#f8fafc" rx="12" filter="url(#cardShadow)"/>
-<path d="M 40.2 147.5 Q 175.0 146.2 310.0 147.0" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
-<path d="M 310.0 147.0 Q 310.8 508.0 310.0 868.0" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
-<path d="M 310.0 868.0 Q 175.0 869.5 40.0 868.5" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
-<path d="M 40.0 868.5 Q 39.2 508.0 40.2 147.5" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<polygon points="32.5,146.2 281.8,145.5 282.2,964.5 31.8,965.2" fill="#f8fafc" rx="12" filter="url(#cardShadow)"/>
+<path d="M 32.2 146.5 Q 157.0 145.2 282.0 146.0" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 282.0 146.0 Q 282.8 555.0 282.0 964.0" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 282.0 964.0 Q 157.0 965.5 32.0 964.5" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
+<path d="M 32.0 964.5 Q 31.2 555.0 32.2 146.5" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
 
 <!-- 1.A External Web Ingress -->
-<polygon points="55.2,170.0 294.8,169.5 295.2,490.0 54.8,490.5" fill="#f0f9ff" rx="10"/>
-<path d="M 55.0 170.0 Q 175.0 169.0 295.0 169.8" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 295.0 169.8 Q 295.5 329.5 295.0 490.0" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 295.0 490.0 Q 175.0 490.8 55.0 490.2" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 55.0 490.2 Q 54.5 329.5 55.0 170.0" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
-<text x="175" y="206" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="16" font-weight="bold" fill="#0369a1" text-anchor="middle">🌐 External Web Ingress</text>
-<text x="175" y="234" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">Cloudflare Zero-Trust Edge</text>
-<text x="175" y="270" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#0284c7" text-anchor="middle">• Remote Desktop Ingress</text>
-<text x="175" y="298" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#0284c7" text-anchor="middle">• Local LLM Web Service</text>
-<text x="175" y="326" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#0284c7" text-anchor="middle">• SSO Identity &amp; Auth Portal</text>
-<text x="175" y="354" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#0284c7" text-anchor="middle">• Container Management</text>
-<text x="175" y="382" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#0284c7" text-anchor="middle">• WebSockets &amp; TLS Ingress</text>
-<text x="175" y="420" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#0369a1" text-anchor="middle">Outbound Tunnel Only</text>
-<text x="175" y="445" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-style="italic" fill="#334155" text-anchor="middle">Zero Open Router Ports</text>
+<polygon points="46.2,166.0 267.8,165.5 268.2,542.0 45.8,542.5" fill="#f0f9ff" rx="10"/>
+<path d="M 46.0 166.0 Q 157.0 165.0 268.0 165.8" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 268.0 165.8 Q 268.5 354.0 268.0 542.0" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 268.0 542.0 Q 157.0 542.8 46.0 542.2" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 46.0 542.2 Q 45.5 354.0 46.0 166.0" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
+<text x="157" y="200" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="16" font-weight="bold" fill="#0369a1" text-anchor="middle">🌐 External Web Ingress</text>
+<text x="157" y="226" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">Cloudflare Zero-Trust Edge</text>
+<text x="157" y="262" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#0284c7" text-anchor="middle">• AI Gateway &amp; Coding Agents</text>
+<text x="157" y="290" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#0284c7" text-anchor="middle">• Local LLM Web Chat UI</text>
+<text x="157" y="318" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#0284c7" text-anchor="middle">• Remote Desktop Gateway</text>
+<text x="157" y="346" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#0284c7" text-anchor="middle">• SSO Identity &amp; Security Hub</text>
+<text x="157" y="374" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#0284c7" text-anchor="middle">• NAS Storage &amp; Infra Consoles</text>
+<text x="157" y="402" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#0284c7" text-anchor="middle">• Lab Services</text>
+<text x="157" y="466" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#0369a1" text-anchor="middle">Outbound Tunnel Only</text>
+<text x="157" y="492" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-style="italic" fill="#334155" text-anchor="middle">Zero Open Router Ports</text>
 
 <!-- 1.B Home LAN & Matter IoT -->
-<polygon points="55.2,525.0 294.8,524.5 295.2,845.0 54.8,845.5" fill="#f0fdf4" rx="10"/>
-<path d="M 55.0 525.0 Q 175.0 524.2 295.0 525.0" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 295.0 525.0 Q 295.5 685.0 295.0 845.0" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 295.0 845.0 Q 175.0 845.8 55.0 845.2" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 55.0 845.2 Q 54.5 685.0 55.0 525.0" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/>
-<text x="175" y="562" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="16" font-weight="bold" fill="#15803d" text-anchor="middle">🏠 Home LAN &amp; Local Fabric</text>
-<text x="175" y="590" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">Isolated Physical Subnet</text>
-<text x="175" y="628" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#16a34a" text-anchor="middle">• Technitium DNS Server</text>
-<text x="175" y="656" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">• Internal Zone Resolution</text>
-<text x="175" y="684" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">• Matter Protocol &amp; IoT Bridge</text>
-<text x="175" y="712" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">• SmartThings Local Automation</text>
-<text x="175" y="740" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">• 1Gbps Dedicated LAN Link</text>
-<text x="175" y="780" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#15803d" text-anchor="middle">Local Air-Gapped Network</text>
-<text x="175" y="805" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-style="italic" fill="#334155" text-anchor="middle">No External Cloud Dependencies</text>
+<polygon points="46.2,568.0 267.8,567.5 268.2,944.0 45.8,944.5" fill="#f0fdf4" rx="10"/>
+<path d="M 46.0 568.0 Q 157.0 567.2 268.0 568.0" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 268.0 568.0 Q 268.5 756.0 268.0 944.0" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 268.0 944.0 Q 157.0 944.8 46.0 944.2" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 46.0 944.2 Q 45.5 756.0 46.0 568.0" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round"/>
+<text x="157" y="604" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="16" font-weight="bold" fill="#15803d" text-anchor="middle">🏠 Home LAN &amp; Local Fabric</text>
+<text x="157" y="630" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">Isolated Physical Subnet</text>
+<text x="157" y="668" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#16a34a" text-anchor="middle">• Technitium DNS Server</text>
+<text x="157" y="698" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">• Internal Zone Resolution</text>
+<text x="157" y="728" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">• Matter Protocol &amp; IoT Bridge</text>
+<text x="157" y="758" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">• SmartThings Local Automation</text>
+<text x="157" y="788" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">• Dedicated Gigabit LAN Link</text>
+<text x="157" y="846" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#15803d" text-anchor="middle">Local Private Network</text>
+<text x="157" y="872" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-style="italic" fill="#334155" text-anchor="middle">Direct Inter-Host Fabric</text>
 
 <!-- ============================================================================== -->
-<!-- 2. MIDDLE COLUMN: PHYSICAL HOST 1 - APPLE MAC MINI                              -->
+<!-- 2. MIDDLE COLUMN: PHYSICAL HOST 1 - APPLE MAC MINI (AXIS)                       -->
 <!-- ============================================================================== -->
-<text x="345" y="136" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="17" font-weight="bold" fill="#0f172a">2. Physical Host: Apple Mac Mini (Axis)</text>
+<text x="342" y="134" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="17" font-weight="bold" fill="#0f172a">2. Physical Host: Apple Mac Mini (Axis)</text>
 
-<polygon points="335.5,147.2 879.8,146.5 880.2,868.5 334.8,869.2" fill="#ffffff" rx="14" filter="url(#cardShadow)"/>
-<path d="M 335.0 147.5 Q 607.0 146.0 880.0 147.0" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
-<path d="M 880.0 147.0 Q 881.0 508.0 880.0 868.0" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
-<path d="M 880.0 868.0 Q 607.0 869.5 335.0 868.5" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
-<path d="M 335.0 868.5 Q 334.0 508.0 335.0 147.5" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
+<polygon points="336.5,146.2 975.8,145.5 976.2,964.5 335.8,965.2" fill="#ffffff" rx="14" filter="url(#cardShadow)"/>
+<path d="M 336.0 146.5 Q 656.0 145.0 976.0 146.0" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 976.0 146.0 Q 977.0 555.0 976.0 964.0" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 976.0 964.0 Q 656.0 965.5 336.0 964.5" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 336.0 964.5 Q 335.0 555.0 336.0 146.5" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
 
 <!-- Host 1 Header Badge -->
-<rect x="350" y="160" width="515" height="34" rx="8" fill="#0f172a"/>
-<text x="607" y="182" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">🍎 Apple Mac Mini: Axis (M2 • 16GB RAM • 256GB SSD • 1Gbps LAN)</text>
+<rect x="352" y="160" width="608" height="34" rx="8" fill="#0f172a"/>
+<text x="656" y="182" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">🍎 Apple Mac Mini: Axis (M2 • 16GB RAM • 256GB SSD • 1Gbps LAN)</text>
 
 <!-- Tier 2.A: Edge Ingress & Identity SSO -->
-<polygon points="350.2,208.0 864.8,207.5 865.2,400.0 349.8,400.5" fill="#fff7ed" rx="10"/>
-<path d="M 350.0 208.0 Q 607.0 207.2 865.0 207.8" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 865.0 207.8 Q 865.5 304.0 865.0 400.0" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 865.0 400.0 Q 607.0 400.8 350.0 400.2" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 350.0 400.2 Q 349.5 304.0 350.0 208.0" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round"/>
-<text x="365" y="230" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#c2410c">🚪 Ingress Gateway &amp; SSO Identity</text>
+<polygon points="352.2,206.0 959.8,205.5 960.2,384.0 351.8,384.5" fill="#fff7ed" rx="10"/>
+<path d="M 352.0 206.0 Q 656.0 205.2 960.0 205.8" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 960.0 205.8 Q 960.5 295.0 960.0 384.0" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 960.0 384.0 Q 656.0 384.8 352.0 384.2" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 352.0 384.2 Q 351.5 295.0 352.0 206.0" fill="none" stroke="#ea580c" stroke-width="1.8" stroke-linecap="round"/>
+<text x="368" y="228" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#c2410c">🚪 Ingress Gateway &amp; SSO Identity</text>
 
 <!-- Card: Cloudflare Tunnel & Nginx -->
-<polygon points="362.0,244.0 598.0,243.5 598.0,385.0 362.0,385.5" fill="#ffffff" rx="8"/>
-<path d="M 362.0 244.0 Q 480.0 243.5 598.0 244.0" fill="none" stroke="#ea580c" stroke-width="1.3"/>
-<path d="M 598.0 244.0 Q 598.5 314.5 598.0 385.0" fill="none" stroke="#ea580c" stroke-width="1.3"/>
-<path d="M 598.0 385.0 Q 480.0 385.5 362.0 385.0" fill="none" stroke="#ea580c" stroke-width="1.3"/>
-<path d="M 362.0 385.0 Q 361.5 314.5 362.0 244.0" fill="none" stroke="#ea580c" stroke-width="1.3"/>
-<text x="480" y="268" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#c2410c" text-anchor="middle">☁️ Cloudflare Tunnel</text>
-<text x="480" y="288" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#7c2d12" text-anchor="middle">Outbound Only • Zero Port Forward</text>
-<text x="480" y="318" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#c2410c" text-anchor="middle">🔀 Nginx Proxy Manager</text>
-<text x="480" y="338" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#7c2d12" text-anchor="middle">TLS Termination • WebSocket Upgrade</text>
-<text x="480" y="360" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#ea580c" text-anchor="middle">Internal 172.22.0.0/16 Bridge</text>
+<polygon points="366.0,240.0 648.0,239.5 648.0,370.0 366.0,370.5" fill="#ffffff" rx="8"/>
+<path d="M 366.0 240.0 Q 507.0 239.5 648.0 240.0" fill="none" stroke="#ea580c" stroke-width="1.3"/>
+<path d="M 648.0 240.0 Q 648.5 305.0 648.0 370.0" fill="none" stroke="#ea580c" stroke-width="1.3"/>
+<path d="M 648.0 370.0 Q 507.0 370.5 366.0 370.0" fill="none" stroke="#ea580c" stroke-width="1.3"/>
+<path d="M 366.0 370.0 Q 365.5 305.0 366.0 240.0" fill="none" stroke="#ea580c" stroke-width="1.3"/>
+<text x="507" y="264" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#c2410c" text-anchor="middle">☁️ Cloudflare Tunnel &amp; DDNS</text>
+<text x="507" y="284" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#7c2d12" text-anchor="middle">Outbound Only • Zero Port Forward</text>
+<text x="507" y="312" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#c2410c" text-anchor="middle">🔀 Nginx Proxy Manager</text>
+<text x="507" y="332" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#7c2d12" text-anchor="middle">TLS Termination • WebSocket Upgrade</text>
+<text x="507" y="354" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#ea580c" text-anchor="middle">Internal nginx_network Bridge</text>
 
 <!-- Card: Authentik SSO -->
-<polygon points="615.0,244.0 852.0,243.5 852.0,385.0 615.0,385.5" fill="#ffffff" rx="8"/>
-<path d="M 615.0 244.0 Q 733.5 243.5 852.0 244.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
-<path d="M 852.0 244.0 Q 852.5 314.5 852.0 385.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
-<path d="M 852.0 385.0 Q 733.5 385.5 615.0 385.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
-<path d="M 615.0 385.0 Q 614.5 314.5 615.0 244.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
-<text x="733" y="270" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#4338ca" text-anchor="middle">🔑 Authentik SSO</text>
-<text x="733" y="294" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#312e81" text-anchor="middle">Central Identity Provider</text>
-<text x="733" y="320" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#4f46e5" text-anchor="middle">OAuth2 / OIDC &amp; Passkeys</text>
-<text x="733" y="342" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#312e81" text-anchor="middle">Session &amp; Access Policies</text>
-<text x="733" y="365" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#4338ca" text-anchor="middle">OIDC / Forward-Auth</text>
+<polygon points="664.0,240.0 946.0,239.5 946.0,370.0 664.0,370.5" fill="#ffffff" rx="8"/>
+<path d="M 664.0 240.0 Q 805.0 239.5 946.0 240.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
+<path d="M 946.0 240.0 Q 946.5 305.0 946.0 370.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
+<path d="M 946.0 370.0 Q 805.0 370.5 664.0 370.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
+<path d="M 664.0 370.0 Q 663.5 305.0 664.0 240.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
+<text x="805" y="266" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#4338ca" text-anchor="middle">🔑 Authentik SSO</text>
+<text x="805" y="288" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#312e81" text-anchor="middle">Central Identity Provider</text>
+<text x="805" y="312" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#4f46e5" text-anchor="middle">OIDC &amp; Passkey Authentication</text>
+<text x="805" y="334" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#312e81" text-anchor="middle">RBAC, Session &amp; Access Policies</text>
+<text x="805" y="354" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#4338ca" text-anchor="middle">OIDC / Forward-Auth / LDAP</text>
 
-<!-- Tier 2.B: Web Portals & Gateways -->
-<polygon points="350.2,416.0 864.8,415.5 865.2,630.0 349.8,630.5" fill="#eff6ff" rx="10"/>
-<path d="M 350.0 416.0 Q 607.0 415.2 865.0 415.8" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 865.0 415.8 Q 865.5 523.0 865.0 630.0" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 865.0 630.0 Q 607.0 630.8 350.0 630.2" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 350.0 630.2 Q 349.5 523.0 350.0 416.0" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round"/>
-<text x="365" y="438" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#1d4ed8">🌐 Web Applications &amp; Gateway Portals (Docker)</text>
+<!-- Tier 2.B: AI, Search & Application Gateways -->
+<polygon points="352.2,398.0 959.8,397.5 960.2,716.0 351.8,716.5" fill="#eff6ff" rx="10"/>
+<path d="M 352.0 398.0 Q 656.0 397.2 960.0 397.8" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 960.0 397.8 Q 960.5 557.0 960.0 716.0" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 960.0 716.0 Q 656.0 716.8 352.0 716.2" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 352.0 716.2 Q 351.5 557.0 352.0 398.0" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round"/>
+<text x="368" y="420" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#1d4ed8">🌐 AI, Search &amp; Application Gateways (Docker)</text>
 
-<!-- Sub-Card: Guacamole Remote Desktop -->
-<polygon points="362.0,450.0 598.0,449.5 598.0,578.0 362.0,578.5" fill="#ffffff" rx="8"/>
-<path d="M 362.0 450.0 Q 480.0 449.5 598.0 450.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
-<path d="M 598.0 450.0 Q 598.5 514.0 598.0 578.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
-<path d="M 598.0 578.0 Q 480.0 578.5 362.0 578.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
-<path d="M 362.0 578.0 Q 361.5 514.0 362.0 450.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
-<text x="480" y="474" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#4338ca" text-anchor="middle">🖥️ Guacamole Gateway</text>
-<text x="480" y="494" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#2563eb" text-anchor="middle">Clientless Web VNC</text>
-<text x="480" y="515" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">HTML5 Browser Streaming</text>
-<text x="480" y="535" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Authentik OIDC Integration</text>
-<text x="480" y="558" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#4338ca" text-anchor="middle">Proxies VNC ➔ Atlas</text>
+<!-- Sub-Card B1 (Top-Left): Open WebUI -->
+<polygon points="366.0,432.0 640.0,431.5 640.0,548.0 366.0,548.5" fill="#ffffff" rx="8"/>
+<path d="M 366.0 432.0 Q 503.0 431.5 640.0 432.0" fill="none" stroke="#059669" stroke-width="1.3"/>
+<path d="M 640.0 432.0 Q 640.5 490.0 640.0 548.0" fill="none" stroke="#059669" stroke-width="1.3"/>
+<path d="M 640.0 548.0 Q 503.0 548.5 366.0 548.0" fill="none" stroke="#059669" stroke-width="1.3"/>
+<path d="M 366.0 548.0 Q 365.5 490.0 366.0 432.0" fill="none" stroke="#059669" stroke-width="1.3"/>
+<text x="503" y="456" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#047857" text-anchor="middle">🧠 Open WebUI</text>
+<text x="503" y="476" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#059669" text-anchor="middle">On-Premise AI Chat Interface</text>
+<text x="503" y="496" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Authentik SSO &amp; RAG Pipelines</text>
+<text x="503" y="516" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Grounded Search via SearXNG</text>
+<text x="503" y="536" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#047857" text-anchor="middle">Routes Prompts ➔ AI Gateway</text>
 
-<!-- Sub-Card: Open WebUI -->
-<polygon points="615.0,450.0 852.0,449.5 852.0,578.0 615.0,578.5" fill="#ffffff" rx="8"/>
-<path d="M 615.0 450.0 Q 733.5 449.5 852.0 450.0" fill="none" stroke="#059669" stroke-width="1.3"/>
-<path d="M 852.0 450.0 Q 852.5 514.0 852.0 578.0" fill="none" stroke="#059669" stroke-width="1.3"/>
-<path d="M 852.0 578.0 Q 733.5 578.5 615.0 578.0" fill="none" stroke="#059669" stroke-width="1.3"/>
-<path d="M 615.0 578.0 Q 614.5 514.0 615.0 450.0" fill="none" stroke="#059669" stroke-width="1.3"/>
-<text x="733" y="474" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#047857" text-anchor="middle">🧠 Open WebUI</text>
-<text x="733" y="494" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#059669" text-anchor="middle">Chat &amp; Pipelines Web UI</text>
-<text x="733" y="515" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Multi-Model Web Interface</text>
-<text x="733" y="535" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">RAG &amp; Inference Orchestration</text>
-<text x="733" y="558" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#047857" text-anchor="middle">Routes API ➔ Atlas</text>
+<!-- Sub-Card B2 (Top-Right): AI Gateway (LiteLLM) -->
+<polygon points="672.0,432.0 946.0,431.5 946.0,548.0 672.0,548.5" fill="#ffffff" rx="8"/>
+<path d="M 672.0 432.0 Q 809.0 431.5 946.0 432.0" fill="none" stroke="#0d9488" stroke-width="1.3"/>
+<path d="M 946.0 432.0 Q 946.5 490.0 946.0 548.0" fill="none" stroke="#0d9488" stroke-width="1.3"/>
+<path d="M 946.0 548.0 Q 809.0 548.5 672.0 548.0" fill="none" stroke="#0d9488" stroke-width="1.3"/>
+<path d="M 672.0 548.0 Q 671.5 490.0 672.0 432.0" fill="none" stroke="#0d9488" stroke-width="1.3"/>
+<text x="809" y="456" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#0f766e" text-anchor="middle">🤖 AI Gateway (LiteLLM)</text>
+<text x="809" y="476" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#0d9488" text-anchor="middle">Unified Inference Proxy &amp; Key Portal</text>
+<text x="809" y="496" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">OpenAI &amp; Anthropic API Translation</text>
+<text x="809" y="516" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">OIDC Self-Service Virtual Keys</text>
+<text x="809" y="536" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#0f766e" text-anchor="middle">Forwards Inference ➔ Atlas oMLX</text>
 
-<text x="607" y="605" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">🛠️ Infrastructure: Portainer • Gerrit Code Review • Homebrew Tap</text>
+<!-- Internal Arrow: Open WebUI -> AI Gateway -->
+<path d="M 640.0 490.0 L 670.0 490.0" fill="none" stroke="#059669" stroke-width="2.0" stroke-linecap="round"/>
+<path d="M 662.0 485.0 L 670.0 490.0 L 662.0 495.0" fill="none" stroke="#059669" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/>
 
-<!-- Tier 2.C: Database & Host Daemons -->
-<polygon points="350.2,646.0 864.8,645.5 865.2,852.0 349.8,852.5" fill="#f8fafc" rx="10"/>
-<path d="M 350.0 646.0 Q 607.0 645.2 865.0 645.8" fill="none" stroke="#475569" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 865.0 645.8 Q 865.5 749.0 865.0 852.0" fill="none" stroke="#475569" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 865.0 852.0 Q 607.0 852.8 350.0 852.2" fill="none" stroke="#475569" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 350.0 852.2 Q 349.5 749.0 350.0 646.0" fill="none" stroke="#475569" stroke-width="1.8" stroke-linecap="round"/>
-<text x="365" y="668" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">🗄️ Shared Persistence &amp; Host Daemons</text>
+<!-- Internal Arrow: Open WebUI -> SearXNG -->
+<path d="M 503.0 548.0 L 503.0 568.0" fill="none" stroke="#0284c7" stroke-width="2.0" stroke-linecap="round"/>
+<path d="M 498.0 560.0 L 503.0 568.0 L 508.0 560.0" fill="none" stroke="#0284c7" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"/>
 
-<polygon points="362.0,680.0 598.0,679.5 598.0,805.0 362.0,805.5" fill="#ffffff" rx="8"/>
-<path d="M 362.0 680.0 Q 480.0 679.5 598.0 680.0" fill="none" stroke="#7c3aed" stroke-width="1.3"/>
-<path d="M 598.0 680.0 Q 598.5 742.5 598.0 805.0" fill="none" stroke="#7c3aed" stroke-width="1.3"/>
-<path d="M 598.0 805.0 Q 480.0 805.5 362.0 805.0" fill="none" stroke="#7c3aed" stroke-width="1.3"/>
-<path d="M 362.0 805.0 Q 361.5 742.5 362.0 680.0" fill="none" stroke="#7c3aed" stroke-width="1.3"/>
-<text x="480" y="705" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#6d28d9" text-anchor="middle">🗄️ PostgreSQL 16</text>
-<text x="480" y="728" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Shared Database Server</text>
-<text x="480" y="748" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#7c3aed" text-anchor="middle">Service Schemas &amp; Metadata</text>
-<text x="480" y="770" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Internal `db_network` Isolation</text>
+<!-- Sub-Card B3 (Bottom-Left): SearXNG Web Search -->
+<polygon points="366.0,568.0 640.0,567.5 640.0,680.0 366.0,680.5" fill="#ffffff" rx="8"/>
+<path d="M 366.0 568.0 Q 503.0 567.5 640.0 568.0" fill="none" stroke="#0284c7" stroke-width="1.3"/>
+<path d="M 640.0 568.0 Q 640.5 624.0 640.0 680.0" fill="none" stroke="#0284c7" stroke-width="1.3"/>
+<path d="M 640.0 680.0 Q 503.0 680.5 366.0 680.0" fill="none" stroke="#0284c7" stroke-width="1.3"/>
+<path d="M 366.0 680.0 Q 365.5 624.0 366.0 568.0" fill="none" stroke="#0284c7" stroke-width="1.3"/>
+<text x="503" y="592" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#0369a1" text-anchor="middle">🔍 SearXNG Web Search</text>
+<text x="503" y="612" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#0284c7" text-anchor="middle">Self-Hosted Meta-Search Tool</text>
+<text x="503" y="632" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Privacy-Preserving Web Search</text>
+<text x="503" y="650" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">JSON Retrieval for Open WebUI</text>
+<text x="503" y="668" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#0369a1" text-anchor="middle">Isolated Internal Service</text>
 
-<polygon points="615.0,680.0 852.0,679.5 852.0,805.0 615.0,805.5" fill="#ffffff" rx="8"/>
-<path d="M 615.0 680.0 Q 733.5 679.5 852.0 680.0" fill="none" stroke="#d97706" stroke-width="1.3"/>
-<path d="M 852.0 680.0 Q 852.5 742.5 852.0 805.0" fill="none" stroke="#d97706" stroke-width="1.3"/>
-<path d="M 852.0 805.0 Q 733.5 805.5 615.0 805.0" fill="none" stroke="#d97706" stroke-width="1.3"/>
-<path d="M 615.0 805.0 Q 614.5 742.5 615.0 680.0" fill="none" stroke="#d97706" stroke-width="1.3"/>
-<text x="733" y="705" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#92400e" text-anchor="middle">🏡 Home Assistant + Matter</text>
-<text x="733" y="728" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">IoT Protocol Bridge</text>
-<text x="733" y="748" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#b45309" text-anchor="middle">Matter Fabric Automation</text>
-<text x="733" y="770" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Host Network Integration</text>
+<!-- Sub-Card B4 (Bottom-Right): Guacamole Remote Desktop -->
+<polygon points="672.0,568.0 946.0,567.5 946.0,680.0 672.0,680.5" fill="#ffffff" rx="8"/>
+<path d="M 672.0 568.0 Q 809.0 567.5 946.0 568.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
+<path d="M 946.0 568.0 Q 946.5 624.0 946.0 680.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
+<path d="M 946.0 680.0 Q 809.0 680.5 672.0 680.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
+<path d="M 672.0 680.0 Q 671.5 624.0 672.0 568.0" fill="none" stroke="#4f46e5" stroke-width="1.3"/>
+<text x="809" y="592" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#4338ca" text-anchor="middle">🖥️ Guacamole Gateway</text>
+<text x="809" y="612" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#2563eb" text-anchor="middle">Clientless Web VNC Gateway</text>
+<text x="809" y="632" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Web Browser Desktop Streaming</text>
+<text x="809" y="650" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Authentik OIDC Auto-Connect</text>
+<text x="809" y="668" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#4338ca" text-anchor="middle">Proxies VNC ➔ Atlas</text>
 
-<text x="607" y="830" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-style="italic" fill="#475569" text-anchor="middle">Host Daemons: Server Monitor • System Updater</text>
+<text x="656" y="703" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11.5" fill="#334155" text-anchor="middle">🛠️ Platform &amp; Lab Services: Portainer • Homebrew Tap • Gerrit • Lab Services</text>
+
+<!-- Tier 2.C: Shared Persistence, Local Fabric & Host Daemons -->
+<polygon points="352.2,730.0 959.8,729.5 960.2,948.0 351.8,948.5" fill="#f8fafc" rx="10"/>
+<path d="M 352.0 730.0 Q 656.0 729.2 960.0 729.8" fill="none" stroke="#475569" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 960.0 729.8 Q 960.5 839.0 960.0 948.0" fill="none" stroke="#475569" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 960.0 948.0 Q 656.0 948.8 352.0 948.2" fill="none" stroke="#475569" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 352.0 948.2 Q 351.5 839.0 352.0 730.0" fill="none" stroke="#475569" stroke-width="1.8" stroke-linecap="round"/>
+<text x="368" y="752" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">🗄️ Host Daemons, Shared Persistence &amp; Local Fabric</text>
+
+<!-- Axis Host Daemons Strip (Top of Tier 2.C for clean Hub -> Agent routing) -->
+<rect x="366" y="762" width="580" height="42" rx="8" fill="#f1f5f9" stroke="#0284c7" stroke-width="1.3"/>
+<text x="656" y="780" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11.5" font-weight="bold" fill="#0f172a" text-anchor="middle">🛡️ Axis Host Daemons: NAL Security Hub (Central Hub, CVE/EoL Scanner &amp; Rollback)</text>
+<text x="656" y="797" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#475569" text-anchor="middle">📊 Server Monitor (Hardware Telemetry, Spike/Plunge Detection &amp; Multi-Channel Alerts)</text>
+
+<!-- Sub-Card C1: PostgreSQL -->
+<polygon points="366.0,816.0 648.0,815.5 648.0,936.0 366.0,936.5" fill="#ffffff" rx="8"/>
+<path d="M 366.0 816.0 Q 507.0 815.5 648.0 816.0" fill="none" stroke="#7c3aed" stroke-width="1.3"/>
+<path d="M 648.0 816.0 Q 648.5 876.0 648.0 936.0" fill="none" stroke="#7c3aed" stroke-width="1.3"/>
+<path d="M 648.0 936.0 Q 507.0 936.5 366.0 936.0" fill="none" stroke="#7c3aed" stroke-width="1.3"/>
+<path d="M 366.0 936.0 Q 365.5 876.0 366.0 816.0" fill="none" stroke="#7c3aed" stroke-width="1.3"/>
+<text x="507" y="840" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#6d28d9" text-anchor="middle">🗄️ PostgreSQL</text>
+<text x="507" y="862" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Shared Relational Database Server</text>
+<text x="507" y="884" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#7c3aed" text-anchor="middle">Auth, AI Gateway, Guacamole &amp; Hub</text>
+<text x="507" y="906" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Internal db_network Isolation</text>
+
+<!-- Sub-Card C2: Home Assistant + Technitium DNS -->
+<polygon points="664.0,816.0 946.0,815.5 946.0,936.0 664.0,936.5" fill="#ffffff" rx="8"/>
+<path d="M 664.0 816.0 Q 805.0 815.5 946.0 816.0" fill="none" stroke="#d97706" stroke-width="1.3"/>
+<path d="M 946.0 816.0 Q 946.5 876.0 946.0 936.0" fill="none" stroke="#d97706" stroke-width="1.3"/>
+<path d="M 946.0 936.0 Q 805.0 936.5 664.0 936.0" fill="none" stroke="#d97706" stroke-width="1.3"/>
+<path d="M 664.0 936.0 Q 663.5 876.0 664.0 816.0" fill="none" stroke="#d97706" stroke-width="1.3"/>
+<text x="805" y="840" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#92400e" text-anchor="middle">🏡 Home Assistant + Matter</text>
+<text x="805" y="862" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">IoT &amp; Matter Fabric Bridge</text>
+<text x="805" y="884" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#b45309" text-anchor="middle">Technitium Local DNS Server</text>
+<text x="805" y="906" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Host &amp; Local LAN Integration</text>
 
 <!-- ============================================================================== -->
 <!-- 3. TOP-RIGHT: PHYSICAL HOST 2 - APPLE MAC STUDIO (ATLAS) — DEDICATED LLM       -->
 <!-- ============================================================================== -->
-<text x="910" y="136" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="17" font-weight="bold" fill="#047857">3. Physical Host: Apple Mac Studio (Atlas) — Dedicated LLM Server</text>
+<text x="1142" y="134" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="17" font-weight="bold" fill="#047857">3. Physical Host: Apple Mac Studio (Atlas) — Dedicated LLM Server</text>
 
-<polygon points="900.5,147.2 1559.8,146.5 1560.2,500.0 899.8,500.5" fill="#f0fdf4" rx="14" filter="url(#cardShadow)"/>
-<path d="M 900.0 147.5 Q 1230.0 146.0 1560.0 147.0" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
-<path d="M 1560.0 147.0 Q 1561.0 323.5 1560.0 500.0" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
-<path d="M 1560.0 500.0 Q 1230.0 501.0 900.0 500.5" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
-<path d="M 900.0 500.5 Q 899.0 323.5 900.0 147.5" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
+<polygon points="1136.5,146.2 1767.8,145.5 1768.2,556.0 1135.8,556.5" fill="#f0fdf4" rx="14" filter="url(#cardShadow)"/>
+<path d="M 1136.0 146.5 Q 1452.0 145.0 1768.0 146.0" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1768.0 146.0 Q 1769.0 351.0 1768.0 556.0" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1768.0 556.0 Q 1452.0 557.0 1136.0 556.5" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1136.0 556.5 Q 1135.0 351.0 1136.0 146.5" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
 
 <!-- Host 2 Header Badge -->
-<rect x="915" y="160" width="630" height="34" rx="8" fill="#047857"/>
-<text x="1230" y="182" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">🍏 Apple Mac Studio: Atlas (M5 Max • 64GB RAM • 1TB Storage • Headless)</text>
+<rect x="1152" y="160" width="600" height="34" rx="8" fill="#047857"/>
+<text x="1452" y="182" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">🍏 Apple Mac Studio: Atlas (M5 Max • 64GB RAM • 1TB Storage • Headless)</text>
 
-<!-- Atlas Sub-Card A: Native Ollama Metal GPU Inference -->
-<polygon points="920.0,208.0 1220.0,207.5 1220.0,480.0 920.0,480.5" fill="#ffffff" rx="10"/>
-<path d="M 920.0 208.0 Q 1070.0 207.2 1220.0 207.8" fill="none" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 1220.0 207.8 Q 1220.5 344.0 1220.0 480.0" fill="none" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 1220.0 480.0 Q 1070.0 480.8 920.0 480.2" fill="none" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 920.0 480.2 Q 919.5 344.0 920.0 208.0" fill="none" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
+<!-- Atlas Sub-Card A: Bare-Metal oMLX Inference -->
+<polygon points="1152.0,206.0 1442.0,205.5 1442.0,486.0 1152.0,486.5" fill="#ffffff" rx="10"/>
+<path d="M 1152.0 206.0 Q 1297.0 205.2 1442.0 205.8" fill="none" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 1442.0 205.8 Q 1442.5 346.0 1442.0 486.0" fill="none" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 1442.0 486.0 Q 1297.0 486.8 1152.0 486.2" fill="none" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 1152.0 486.2 Q 1151.5 346.0 1152.0 206.0" fill="none" stroke="#059669" stroke-width="1.8" stroke-linecap="round"/>
 
-<text x="1070" y="238" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="15" font-weight="bold" fill="#047857" text-anchor="middle">🧠 Native Metal LLM Engine</text>
-<text x="1070" y="266" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#b45309" text-anchor="middle">⚡ Apple Silicon M5 Max GPU</text>
-<text x="1070" y="294" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#0f172a" text-anchor="middle">64GB High-Bandwidth Unified Memory</text>
-<text x="1070" y="322" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">Ollama / vLLM Inference Service</text>
-<text x="1070" y="348" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">High Token Throughput (Metal FP16)</text>
-<text x="1070" y="374" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Dedicated Model Weight Allocation</text>
-<text x="1070" y="405" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#047857" text-anchor="middle">24/7 Dedicated Background Daemon</text>
-<text x="1070" y="428" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Managed by macOS launchd</text>
-<text x="1070" y="458" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#059669" text-anchor="middle">Zero Virtualization / Container Overhead</text>
+<text x="1297" y="236" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="15" font-weight="bold" fill="#047857" text-anchor="middle">🧠 Bare-Metal oMLX Engine</text>
+<text x="1297" y="264" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#b45309" text-anchor="middle">⚡ Apple Silicon M5 Max GPU</text>
+<text x="1297" y="292" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#0f172a" text-anchor="middle">High-Bandwidth Unified Memory</text>
+<text x="1297" y="320" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11.5" fill="#334155" text-anchor="middle">Native Apple MLX Inference Service</text>
+<text x="1297" y="344" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Continuous Batching &amp; Prefix Cache</text>
+<text x="1297" y="368" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Dedicated Wired VRAM Allocation</text>
+<text x="1297" y="398" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#047857" text-anchor="middle">🔒 pfctl Ingress Firewall</text>
+<text x="1297" y="420" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Strictly Restricted to Axis Host</text>
+<text x="1297" y="444" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Managed by macOS launchd</text>
+<text x="1297" y="468" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#059669" text-anchor="middle">Zero Virtualization Overhead</text>
 
 <!-- Atlas Sub-Card B: Multi-User Remote Desktop (VNC) -->
-<polygon points="1245.0,208.0 1545.0,207.5 1545.0,480.0 1245.0,480.5" fill="#ffffff" rx="10"/>
-<path d="M 1245.0 208.0 Q 1395.0 207.2 1545.0 207.8" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 1545.0 207.8 Q 1545.5 344.0 1545.0 480.0" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 1545.0 480.0 Q 1395.0 480.8 1245.0 480.2" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 1245.0 480.2 Q 1244.5 344.0 1245.0 208.0" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
+<polygon points="1462.0,206.0 1752.0,205.5 1752.0,486.0 1462.0,486.5" fill="#ffffff" rx="10"/>
+<path d="M 1462.0 206.0 Q 1607.0 205.2 1752.0 205.8" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 1752.0 205.8 Q 1752.5 346.0 1752.0 486.0" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 1752.0 486.0 Q 1607.0 486.8 1462.0 486.2" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 1462.0 486.2 Q 1461.5 346.0 1462.0 206.0" fill="none" stroke="#0284c7" stroke-width="1.8" stroke-linecap="round"/>
 
-<text x="1395" y="238" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="15" font-weight="bold" fill="#0369a1" text-anchor="middle">🖥️ Multi-User Remote Desktop</text>
-<text x="1395" y="266" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#0284c7" text-anchor="middle">macOS Screen Sharing (VNC:5900)</text>
-<text x="1395" y="294" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#0f172a" text-anchor="middle">Multi-User Display Architecture</text>
-<text x="1395" y="322" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">• Independent Local User Accounts</text>
-<text x="1395" y="344" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">• Fast User Switching Sessions</text>
-<text x="1395" y="366" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">• Isolated User Workspaces</text>
-<text x="1395" y="398" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#15803d" text-anchor="middle">Non-Blocking Compute Execution</text>
-<text x="1395" y="420" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">GUI switches decoupled from background daemons</text>
-<text x="1395" y="458" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#0369a1" text-anchor="middle">Hardware Framebuffer Accelerated</text>
+<text x="1607" y="236" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="15" font-weight="bold" fill="#0369a1" text-anchor="middle">🖥️ Multi-User Remote Desktop</text>
+<text x="1607" y="264" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#0284c7" text-anchor="middle">macOS Screen Sharing (VNC)</text>
+<text x="1607" y="292" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#0f172a" text-anchor="middle">Multi-User Display Architecture</text>
+<text x="1607" y="320" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">• Independent Local User Accounts</text>
+<text x="1607" y="344" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">• Fast User Switching Sessions</text>
+<text x="1607" y="368" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">• Isolated User Workspaces</text>
+<text x="1607" y="398" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#15803d" text-anchor="middle">Non-Blocking Compute Execution</text>
+<text x="1607" y="420" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">GUI switches decoupled from daemons</text>
+<text x="1607" y="468" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#0369a1" text-anchor="middle">Hardware Framebuffer Accelerated</text>
+
+<!-- Atlas Host Daemons Strip -->
+<rect x="1152" y="498" width="600" height="44" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.2"/>
+<text x="1452" y="517" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11.5" font-weight="bold" fill="#047857" text-anchor="middle">🛡️ Atlas Host Daemons: NAL Security Hub Agent (Remote Node Scanner &amp; Updater)</text>
+<text x="1452" y="534" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">📊 Server Monitor (Apple Silicon Telemetry, Anomaly Detection &amp; Heartbeat)</text>
 
 <!-- ============================================================================== -->
 <!-- 4. BOTTOM-RIGHT: PHYSICAL HOST 3 - SYNOLOGY DS925+ NAS — CENTRAL PERSISTENCE    -->
 <!-- ============================================================================== -->
-<text x="910" y="522" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="17" font-weight="bold" fill="#7c3aed">4. Physical Host: Synology DS925+ NAS — Central Persistence</text>
+<text x="1142" y="582" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="17" font-weight="bold" fill="#7c3aed">4. Physical Host: Synology DS925+ NAS — Central Persistence</text>
 
-<polygon points="900.5,532.2 1559.8,531.5 1560.2,868.5 899.8,869.2" fill="#faf5ff" rx="14" filter="url(#cardShadow)"/>
-<path d="M 900.0 532.5 Q 1230.0 531.0 1560.0 532.0" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
-<path d="M 1560.0 532.0 Q 1561.0 700.5 1560.0 868.0" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
-<path d="M 1560.0 868.0 Q 1230.0 869.5 900.0 868.5" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
-<path d="M 900.0 868.5 Q 899.0 700.5 900.0 532.5" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
+<polygon points="1136.5,594.2 1767.8,593.5 1768.2,964.5 1135.8,965.2" fill="#faf5ff" rx="14" filter="url(#cardShadow)"/>
+<path d="M 1136.0 594.5 Q 1452.0 593.0 1768.0 594.0" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1768.0 594.0 Q 1769.0 779.0 1768.0 964.0" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1768.0 964.0 Q 1452.0 965.5 1136.0 964.5" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
+<path d="M 1136.0 964.5 Q 1135.0 779.0 1136.0 594.5" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/>
 
 <!-- Host 3 Header Badge -->
-<rect x="915" y="546" width="630" height="34" rx="8" fill="#7e22ce"/>
-<text x="1230" y="568" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">💾 Synology DS925+ NAS (AMD Ryzen V1500B • 4GB RAM • 32TB Btrfs RAID)</text>
+<rect x="1152" y="608" width="600" height="34" rx="8" fill="#7e22ce"/>
+<text x="1452" y="630" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">💾 Synology DS925+ NAS (AMD Ryzen V1500B • 4GB RAM • 32TB Btrfs RAID)</text>
 
 <!-- NAS Sub-Card A: Storage & Volume Persistence -->
-<polygon points="920.0,594.0 1220.0,593.5 1220.0,848.0 920.0,848.5" fill="#ffffff" rx="10"/>
-<path d="M 920.0 594.0 Q 1070.0 593.2 1220.0 593.8" fill="none" stroke="#9333ea" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 1220.0 593.8 Q 1220.5 721.0 1220.0 848.0" fill="none" stroke="#9333ea" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 1220.0 848.0 Q 1070.0 848.8 920.0 848.2" fill="none" stroke="#9333ea" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 920.0 848.2 Q 919.5 721.0 920.0 594.0" fill="none" stroke="#9333ea" stroke-width="1.8" stroke-linecap="round"/>
+<polygon points="1152.0,654.0 1442.0,653.5 1442.0,946.0 1152.0,946.5" fill="#ffffff" rx="10"/>
+<path d="M 1152.0 654.0 Q 1297.0 653.2 1442.0 653.8" fill="none" stroke="#9333ea" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 1442.0 653.8 Q 1442.5 800.0 1442.0 946.0" fill="none" stroke="#9333ea" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 1442.0 946.0 Q 1297.0 946.8 1152.0 946.2" fill="none" stroke="#9333ea" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 1152.0 946.2 Q 1151.5 800.0 1152.0 654.0" fill="none" stroke="#9333ea" stroke-width="1.8" stroke-linecap="round"/>
 
-<text x="1070" y="626" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="15" font-weight="bold" fill="#7e22ce" text-anchor="middle">📦 Central Volume Storage</text>
-<text x="1070" y="654" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#6b21a8" text-anchor="middle">32TB RAID Persistence</text>
-<text x="1070" y="684" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">NFS / Persistent Docker Volumes</text>
-<text x="1070" y="710" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Btrfs Automated Snapshots &amp; Scrutiny</text>
-<text x="1070" y="736" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Model Weights, Media &amp; Code Archives</text>
-<text x="1070" y="768" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#7e22ce" text-anchor="middle">1Gbps Dedicated Wired Infrastructure</text>
-<text x="1070" y="796" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Direct Gigabit Interconnect to Mac Mini (Axis)</text>
-<text x="1070" y="828" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#9333ea" text-anchor="middle">Persistent State Storage Anchor</text>
+<text x="1297" y="688" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="15" font-weight="bold" fill="#7e22ce" text-anchor="middle">📦 Central Volume Storage</text>
+<text x="1297" y="718" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#6b21a8" text-anchor="middle">32TB RAID Persistence</text>
+<text x="1297" y="748" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">Synology DSM &amp; NFS Storage</text>
+<text x="1297" y="776" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Btrfs Automated Snapshots &amp; Scrubbing</text>
+<text x="1297" y="804" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Model Weights, Media &amp; Code Archives</text>
+<text x="1297" y="842" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#7e22ce" text-anchor="middle">Dedicated Wired Gigabit Infrastructure</text>
+<text x="1297" y="870" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Direct LAN Interconnect to Axis</text>
+<text x="1297" y="918" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#9333ea" text-anchor="middle">Persistent State Storage Anchor</text>
 
 <!-- NAS Sub-Card B: Offsite Disaster Recovery -->
-<polygon points="1245.0,594.0 1545.0,593.5 1545.0,848.0 1245.0,848.5" fill="#ffffff" rx="10"/>
-<path d="M 1245.0 594.0 Q 1395.0 593.2 1545.0 593.8" fill="none" stroke="#e11d48" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 1545.0 593.8 Q 1545.5 721.0 1545.0 848.0" fill="none" stroke="#e11d48" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 1545.0 848.0 Q 1395.0 848.8 1245.0 848.2" fill="none" stroke="#e11d48" stroke-width="1.8" stroke-linecap="round"/>
-<path d="M 1245.0 848.2 Q 1244.5 721.0 1245.0 594.0" fill="none" stroke="#e11d48" stroke-width="1.8" stroke-linecap="round"/>
+<polygon points="1462.0,654.0 1752.0,653.5 1752.0,946.0 1462.0,946.5" fill="#ffffff" rx="10"/>
+<path d="M 1462.0 654.0 Q 1607.0 653.2 1752.0 653.8" fill="none" stroke="#e11d48" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 1752.0 653.8 Q 1752.5 800.0 1752.0 946.0" fill="none" stroke="#e11d48" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 1752.0 946.0 Q 1607.0 946.8 1462.0 946.2" fill="none" stroke="#e11d48" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 1462.0 946.2 Q 1461.5 800.0 1462.0 654.0" fill="none" stroke="#e11d48" stroke-width="1.8" stroke-linecap="round"/>
 
-<text x="1395" y="626" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="15" font-weight="bold" fill="#be123c" text-anchor="middle">☁️ Offsite Disaster Recovery</text>
-<text x="1395" y="654" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#9f1239" text-anchor="middle">Cloud Cold-Storage Sync</text>
-<text x="1395" y="684" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">Automated Rclone Encrypted Sync</text>
-<text x="1395" y="710" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Target: Backblaze B2 Object Bucket</text>
-<text x="1395" y="736" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Encrypted Volume Tarballs &amp; DB Dumps</text>
-<text x="1395" y="768" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#be123c" text-anchor="middle">1-Command Cold-Wipe Restoration</text>
-<text x="1395" y="796" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">./batch/restore-volumes.sh all</text>
-<text x="1395" y="828" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#e11d48" text-anchor="middle">Zero Data-Loss Guarantee</text>
+<text x="1607" y="688" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="15" font-weight="bold" fill="#be123c" text-anchor="middle">☁️ Offsite Disaster Recovery</text>
+<text x="1607" y="718" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#9f1239" text-anchor="middle">Cloud Cold-Storage Sync</text>
+<text x="1607" y="748" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" fill="#334155" text-anchor="middle">Automated Rclone Encrypted Sync</text>
+<text x="1607" y="776" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Target: Backblaze B2 Object Bucket</text>
+<text x="1607" y="804" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Encrypted Volume Tarballs &amp; DB Dumps</text>
+<text x="1607" y="842" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#be123c" text-anchor="middle">1-Command Cold-Wipe Restoration</text>
+<text x="1607" y="870" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" fill="#334155" text-anchor="middle">./batch/restore-volumes.sh all</text>
+<text x="1607" y="918" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10" font-style="italic" fill="#e11d48" text-anchor="middle">Zero Data-Loss Guarantee</text>
 
 <!-- ============================================================================== -->
-<!-- 5. INTER-HOST COMMUNICATION FLOW ARROWS                                        -->
+<!-- 5. INTER-HOST COMMUNICATION FLOW ARROWS (DEDICATED NON-OVERLAPPING CORRIDORS)  -->
 <!-- ============================================================================== -->
 
-<!-- Arrow 1: Public Web Clients -> Mac Mini Tunnel Ingress -->
-<path d="M 295.0 270.0 Q 315.0 270.0 335.0 270.0" fill="none" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round"/>
-<path d="M 323.0 264.0 L 335.0 270.0 L 323.0 276.0" fill="none" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<!-- Arrow 1A: Public Web Clients -> Axis Tunnel Ingress -->
+<path d="M 282.0 295.0 L 336.0 295.0" fill="none" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round"/>
+<path d="M 324.0 289.0 L 336.0 295.0 L 324.0 301.0" fill="none" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
 
-<!-- Arrow 2: Mac Mini (Open WebUI) -> Atlas (Ollama Engine) -->
-<path d="M 852.0 514.0 Q 876.0 514.0 892.0 460.0 Q 904.0 410.0 920.0 350.0" fill="none" stroke="#059669" stroke-width="2.5" stroke-dasharray="6,4" stroke-linecap="round"/>
-<path d="M 913.0 359.0 L 920.0 350.0 L 923.0 361.0" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-<rect x="765" y="475" width="225" height="22" rx="6" fill="#ffffff" fill-opacity="0.95" stroke="#059669" stroke-width="1.2"/>
-<text x="877" y="490" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#047857" text-anchor="middle">⚡ LAN: LLM Prompt (Port 11434)</text>
+<!-- Arrow 1B: Home LAN -> Axis Local Fabric -->
+<path d="M 282.0 876.0 L 336.0 876.0" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round"/>
+<path d="M 324.0 870.0 L 336.0 876.0 L 324.0 882.0" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
 
-<!-- Arrow 3: Mac Mini (Guacamole) -> Atlas (macOS Screen Sharing) -->
-<path d="M 598.0 514.0 Q 860.0 514.0 900.0 430.0 Q 908.0 405.0 920.0 380.0" fill="none" stroke="#4f46e5" stroke-width="2.2" stroke-dasharray="6,4" stroke-linecap="round"/>
-<path d="M 913.0 389.0 L 920.0 380.0 L 923.0 391.0" fill="none" stroke="#4f46e5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-<rect x="765" y="522" width="225" height="22" rx="6" fill="#ffffff" fill-opacity="0.95" stroke="#4f46e5" stroke-width="1.2"/>
-<text x="877" y="537" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#4338ca" text-anchor="middle">🖥️ LAN: VNC Desktop (Port 5900)</text>
+<!-- Arrow 2: Axis (AI Gateway) -> Atlas (oMLX Engine) -->
+<path d="M 946.0 455.0 C 1020.0 455.0 1070.0 335.0 1152.0 335.0" fill="none" stroke="#059669" stroke-width="2.5" stroke-dasharray="6,4" stroke-linecap="round"/>
+<path d="M 1140.0 329.0 L 1152.0 335.0 L 1140.0 341.0" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="982" y="372" width="148" height="38" rx="7" fill="#ffffff" stroke="#059669" stroke-width="1.3" filter="url(#cardShadow)"/>
+<text x="1056" y="388" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10.5" font-weight="bold" fill="#047857" text-anchor="middle">⚡ LAN: LLM Inference</text>
+<text x="1056" y="403" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="9.5" fill="#0f766e" text-anchor="middle">oMLX API (pfctl Axis-Only)</text>
 
-<!-- Arrow 4: Mac Mini (Database / Data) -> Synology NAS (Storage) -->
-<path d="M 852.0 742.0 Q 876.0 742.0 920.0 742.0" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round"/>
-<path d="M 908.0 736.0 L 920.0 742.0 L 908.0 748.0" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-<rect x="785" y="731" width="205" height="22" rx="6" fill="#ffffff" fill-opacity="0.95" stroke="#9333ea" stroke-width="1.2"/>
-<text x="887" y="746" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11" font-weight="bold" fill="#7e22ce" text-anchor="middle">💾 LAN: 1Gbps Volume Storage</text>
+<!-- Arrow 3: Axis (Guacamole) -> Atlas (macOS Screen Sharing) -->
+<path d="M 946.0 595.0 C 1015.0 595.0 1065.0 415.0 1152.0 415.0" fill="none" stroke="#4f46e5" stroke-width="2.2" stroke-dasharray="6,4" stroke-linecap="round"/>
+<path d="M 1140.0 409.0 L 1152.0 415.0 L 1140.0 421.0" fill="none" stroke="#4f46e5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="982" y="478" width="148" height="38" rx="7" fill="#ffffff" stroke="#4f46e5" stroke-width="1.3" filter="url(#cardShadow)"/>
+<text x="1056" y="494" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10.5" font-weight="bold" fill="#4338ca" text-anchor="middle">🖥️ LAN: Remote Desktop</text>
+<text x="1056" y="509" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="9.5" fill="#312e81" text-anchor="middle">macOS VNC Stream</text>
+
+<!-- Arrow 4: Axis (Security Hub) -> Atlas (Security Hub Agent) -->
+<path d="M 946.0 783.0 C 1035.0 783.0 1095.0 522.0 1152.0 522.0" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-dasharray="6,4" stroke-linecap="round"/>
+<path d="M 1140.0 516.0 L 1152.0 522.0 L 1140.0 528.0" fill="none" stroke="#0284c7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="982" y="626" width="148" height="38" rx="7" fill="#ffffff" stroke="#0284c7" stroke-width="1.3" filter="url(#cardShadow)"/>
+<text x="1056" y="642" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10.5" font-weight="bold" fill="#0369a1" text-anchor="middle">🛡️ LAN: Hub ➔ Agent</text>
+<text x="1056" y="657" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="9.5" fill="#334155" text-anchor="middle">Multi-Node Scan &amp; Update</text>
+
+<!-- Arrow 5: Axis -> Synology NAS (Storage & Backups) -->
+<path d="M 976.0 876.0 L 1152.0 876.0" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round"/>
+<path d="M 1140.0 870.0 L 1152.0 876.0 L 1140.0 882.0" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="982" y="857" width="148" height="38" rx="7" fill="#ffffff" stroke="#9333ea" stroke-width="1.3" filter="url(#cardShadow)"/>
+<text x="1056" y="873" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="10.5" font-weight="bold" fill="#7e22ce" text-anchor="middle">💾 LAN: NAS Storage</text>
+<text x="1056" y="888" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="9.5" fill="#6b21a8" text-anchor="middle">DSM, Archives &amp; Backups</text>
 
 <!-- ============================================================================== -->
 <!-- 6. BOTTOM SUMMARY FLOW BAR                                                     -->
 <!-- ============================================================================== -->
-<polygon points="40.2,886.0 1559.8,885.5 1560.2,945.0 39.8,945.5" fill="#ffffff" rx="10" filter="url(#cardShadow)"/>
-<path d="M 40.0 886.0 Q 799.5 885.0 1560.0 886.0" fill="none" stroke="#cbd5e1" stroke-width="1.5"/>
-<path d="M 1560.0 945.0 Q 799.5 946.0 40.0 945.0" fill="none" stroke="#cbd5e1" stroke-width="1.5"/>
+<polygon points="32.2,986.0 1767.8,985.5 1768.2,1048.0 31.8,1048.5" fill="#ffffff" rx="10" filter="url(#cardShadow)"/>
+<path d="M 32.0 986.0 Q 900.0 985.0 1768.0 986.0" fill="none" stroke="#cbd5e1" stroke-width="1.5"/>
+<path d="M 1768.0 1048.0 Q 900.0 1049.0 32.0 1048.0" fill="none" stroke="#cbd5e1" stroke-width="1.5"/>
 
-<text x="70" y="922" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="13" font-weight="bold" fill="#0f172a">DISTRIBUTED HARDWARE SEPARATION:</text>
+<text x="52" y="1022" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12.5" font-weight="bold" fill="#0f172a">DISTRIBUTED HARDWARE SEPARATION:</text>
 
-<circle cx="340" cy="918" r="6" fill="#0f172a"/>
-<text x="355" y="922" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#0f172a">Host 1: Apple Mac Mini Axis (Ingress Gateway, Docker Stacks &amp; Authentik SSO)</text>
+<circle cx="316" cy="1018" r="6" fill="#0f172a"/>
+<text x="330" y="1022" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11.5" font-weight="bold" fill="#0f172a">Host 1: Apple Mac Mini Axis (Ingress, Docker Control Plane &amp; Security Hub)</text>
 
-<circle cx="830" cy="918" r="6" fill="#047857"/>
-<text x="845" y="922" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#047857">Host 2: Apple Mac Studio Atlas (Physically Separate M5 Max LLM Inference Server)</text>
+<circle cx="836" cy="1018" r="6" fill="#047857"/>
+<text x="850" y="1022" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11.5" font-weight="bold" fill="#047857">Host 2: Apple Mac Studio Atlas (Bare-Metal M5 Max oMLX Server &amp; Remote Desktop)</text>
 
-<circle cx="1360" cy="918" r="6" fill="#7e22ce"/>
-<text x="1375" y="922" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="12" font-weight="bold" fill="#7e22ce">Host 3: Synology DS925+ NAS (Central 32TB Btrfs Storage)</text>
+<circle cx="1390" cy="1018" r="6" fill="#7e22ce"/>
+<text x="1404" y="1022" font-family="Chalkboard SE, Noteworthy, Comic Sans MS, cursive, sans-serif" font-size="11.5" font-weight="bold" fill="#7e22ce">Host 3: Synology DS925+ NAS (Central 32TB Btrfs Storage)</text>
 
 </svg>

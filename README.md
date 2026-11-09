@@ -69,22 +69,25 @@ Start, stop, or restart one or more services with:
 | VPN              | N/A | Wireguard VPN Proxy | Deprecated |
 | DDNS             | N/A | Cloudflare DDNS Daemon | Stable |
 | Tunnel           | N/A | Cloudflare Tunnel Daemon | Stable |
-| Proxy            | <ul><li>https://nginx.jaewook.dev</li><ul>   | Nginx web management console | Stable |
+| Proxy            | <ul><li>https://nginx.jaewook.dev</li></ul> | Nginx web management console | Stable |
 | Virt             | <ul><li>https://docker.jaewook.dev</li></ul> | Docker stack management console | Stable |
-| LLM              | <ul><li>https://llm.jaewook.dev</li><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM web service ([`services/llm`](./services/llm)) | Experimental |
-| Web Search       | N/A | Self-hosted SearXNG meta-search engine for Open WebUI ([`services/websearch`](./services/websearch)) | Stable |
+| AI Gateway       | <ul><li>https://aigateway.jaewook.dev</li></ul> | Centralized LiteLLM inference proxy, OpenAI/Anthropic protocol translator, and SSO API key portal ([`services/aigateway`](./services/aigateway)) | Stable |
+| LLM              | <ul><li>https://llm.jaewook.dev</li><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM web chat interface routed via AI Gateway & SearXNG ([`services/llm`](./services/llm)) | Experimental |
+| Web Search       | N/A | Self-hosted SearXNG meta-search engine tool for Open WebUI ([`services/websearch`](./services/websearch)) | Stable |
 | Remote Desktop   | <ul><li>https://remote.jaewook.dev</li></ul> | Apache Guacamole clientless remote desktop gateway for Atlas ([`services/remote`](./services/remote)) | Experimental |
-| Auth             | <ul><li>https://auth.jaewook.dev</li></ul> | Authenticate/Authorize + LDAP | Stable |
-| DB               | N/A | Shared PostgreSQL database server | Work in progress |
-| Homebrew NAL Tap | <ul><li>https://homebrew-nal.jaewook.dev</li></ul> | [Homebrew tap](https://github.com/Jaewoook/homebrew-nal) registry | Stable |
-| DNS              | <ul><li>https://dns.home.jaewook.me</li></ul> | Technitium DNS server for local network | Stable |
-| IoT             | <ul><li>https://ha.home.jaewook.me</li></ul> | Home Assistant + Matter Hub: bridges LG ThinQ and Xiaomi devices into SmartThings | Experimental |
-| Code Review      | | Gerrit code review system | Experimental |
+| Auth             | <ul><li>https://auth.jaewook.dev</li></ul> | Authenticate/Authorize (OIDC/Passkeys) + LDAP ([`services/auth`](./services/auth)) | Stable |
+| DB               | N/A | Shared PostgreSQL database server ([`services/db`](./services/db)) | Stable |
+| Storage          | <ul><li>https://storage.jaewook.dev</li></ul> | Synology DSM web console & central NAS persistence | Stable |
+| Homebrew NAL Tap | <ul><li>https://homebrew-nal.jaewook.dev</li></ul> | [Homebrew tap](https://github.com/Jaewoook/homebrew-nal) registry ([`services/homebrew-nal`](./services/homebrew-nal)) | Stable |
+| DNS              | <ul><li>https://dns.home.jaewook.me</li></ul> | Technitium DNS server for local network ([`services/dns`](./services/dns)) | Stable |
+| IoT              | <ul><li>https://ha.home.jaewook.me</li></ul> | Home Assistant + Matter Hub: bridges LG ThinQ and Xiaomi devices into SmartThings ([`services/iot`](./services/iot)) | Experimental |
+| Code Review      | <ul><li>https://code-review.home.jaewook.me</li></ul> | Gerrit code review system ([`services/code-review`](./services/code-review)) | Experimental |
 | Docker Registry  | | Private docker image registry | Planned |
 
+**Lab Services:** User-facing project services are served through the NAL ingress gateway (`cloudflare-tunnel` → `nginx-proxy`) as hosted workloads, separate from core system components.
+
 Future work: Technitium (DNS) supports OIDC SSO login for its web console,
-which could integrate with the authentik (Auth) instance once it's actually
-live/configured — not implemented yet.
+which can be integrated with the Authentik (Auth) instance — not implemented yet.
 
 ## Networks
 
@@ -93,13 +96,13 @@ live/configured — not implemented yet.
 | Name              | Description                                        | Status  |
 | ----------------- | -------------------------------------------------- | :-----: |
 | nginx_network     | Nginx uses this network to proxy other services    | Stable  |
-| db_network        | Shared network for services to reach the DB server | Work in progress |
+| db_network        | Shared network for services to reach the DB server | Stable  |
 | ~~nextcloud-aio~~ | ~~All of the Nextcloud services use this network~~ | Deleted |
 
 `nginx_network` is created with a fixed subnet (`172.22.0.0/16`) and gateway
 (`172.22.0.1`), with dynamically-assigned addresses restricted to the
 `172.22.1.0/24` range. Services that pin a static IP (e.g. nginx-proxy,
-portainer, authentik, ollama, aigateway, websearch) use `172.22.0.0/24`, so they never collide with an
+portainer, authentik, aigateway, websearch) use `172.22.0.0/24`, so they never collide with an
 auto-assigned one.
 
 ## Volumes and data
@@ -111,9 +114,10 @@ Bind mount is not used for security reason. All data are stored in docker volume
 | Name                    | Description              | Status  |
 | ----------------------- | ------------------------ | :-----: |
 | nginx_proxy_data        | Nginx configuration data | Stable  |
-| nginx_proxy_letsencrypt | Nginx SSL/TLS data       | Staable |
-| nal_main_db             | Shared PostgreSQL data (all databases/roles) | Work in progress |
-| nal_dns_config          | Technitium DNS Server configuration/zone data | Work in progress |
+| nginx_proxy_letsencrypt | Nginx SSL/TLS data       | Stable  |
+| nal_main_db             | Shared PostgreSQL data (all databases/roles) | Stable  |
+| nal_dns_config          | Technitium DNS Server configuration/zone data | Stable  |
+| git-volume              | Gerrit Git repository data | Experimental |
 | nal_ha_config           | Home Assistant config (incl. LG ThinQ / Xiaomi credentials) | Experimental |
 | nal_matter_hub_data     | Matter Hub bridge pairing/state data | Experimental |
 
@@ -145,22 +149,27 @@ data → `./manage-services.sh start all`.
 
 ## Daemons (Host-Level Background Services)
 
-Unlike Docker services running inside the container virtualization layer, daemons run natively on the physical Mac mini (Axis) host to monitor hardware, OS metrics, and external reachability directly.
+Unlike Docker services running inside the container virtualization layer, daemons run natively on the physical macOS hosts (**Axis** and **Atlas**) for bare-metal Apple Silicon GPU acceleration, hardware telemetry, and multi-node security management.
 
 | Daemon | Path | Description | Management |
 | :--- | :--- | :--- | :--- |
-| **Server Monitor** | [`daemons/server-monitor`](./daemons/server-monitor) | Real-time CPU spike & drop anomaly detection, host health telemetry, dead-man's-switch aliveness heartbeat, and multi-channel alerting (Telegram, Discord, Slack, Email, Webhook). | macOS `launchd` / CLI |
-| **Security Hub** | [`daemons/security-hub`](./daemons/security-hub) | Unified Docker & Homebrew outdated image/package checker, CVE vulnerability & LTS/EoL scanner, SMTP email alerter, and SSO/Passkey web dashboard with one-click updates, task logs, and 60s Dead-Man's Rollback. | macOS `launchd` / CLI |
-| **Ollama** | [`daemons/ollama`](./daemons/ollama) | Native host-level LLM inference server utilizing Apple Silicon M2 Metal GPU acceleration. | macOS `launchd` / CLI |
+| **Server Monitor** | [`daemons/server-monitor`](./daemons/server-monitor) | Real-time CPU spike & plunge drop anomaly detection, host health telemetry (Axis & M5 Max Atlas), dead-man's-switch aliveness heartbeat, and multi-channel alerting (Telegram, Discord, Slack, Email, Webhook). | macOS `launchd` / CLI |
+| **Security Hub** | [`daemons/security-hub`](./daemons/security-hub) | Multi-node Hub (`https://securityhub.jaewook.dev` on Axis) & LAN Agent (Atlas) for unified Docker/Homebrew/daemon outdated checks, CVE & LTS/EoL scanning, SMTP alerts, Authentik SSO/Passkey dashboard, 60s Dead-Man's Rollback, and automated Git Bot commits. | macOS `launchd` / CLI |
+| **oMLX** | [`daemons/omlx`](./daemons/omlx) | Native bare-metal Apple Silicon MLX inference server on **Atlas** (M5 Max GPU, 56GB wired VRAM limit) with continuous batching, prefix caching, and `pfctl` ingress firewall restricted to Axis. | macOS `launchd` / CLI |
 
 **Quick Commands:**
 ```sh
-# Manage Ollama host daemon lifecycle
-./daemons/ollama/service.sh status     # Check status, PID, port reachability, models
-./daemons/ollama/service.sh start      # Start background daemon
-./daemons/ollama/service.sh stop       # Stop background daemon
-./daemons/ollama/service.sh restart    # Restart background daemon
-./daemons/ollama/service.sh logs       # Tail daemon logs
+# Manage oMLX host daemon lifecycle on Atlas
+./daemons/omlx/service.sh status     # Check status, PID, port reachability, models
+./daemons/omlx/service.sh start      # Start background daemon
+./daemons/omlx/service.sh stop       # Stop background daemon
+./daemons/omlx/service.sh restart    # Restart background daemon
+./daemons/omlx/service.sh logs       # Tail daemon logs
+
+# Run a one-off Security Hub scan or start Hub / remote LAN Agent
+./daemons/security-hub/security-hub scan
+./daemons/security-hub/security-hub run
+./daemons/security-hub/security-hub agent -name <node-name> -token "<shared-lan-secret>"
 
 # One-off system health inspection
 ./daemons/server-monitor/server-monitor check
@@ -168,7 +177,7 @@ Unlike Docker services running inside the container virtualization layer, daemon
 # Test notification channel (e.g. Telegram)
 ./daemons/server-monitor/server-monitor test-alert -channel telegram
 
-# Manage background service lifecycle
+# Manage Server Monitor background service lifecycle
 ./daemons/server-monitor/server-monitor service status    # Check status, PID, uptime, memory
 ./daemons/server-monitor/server-monitor service start     # Start background daemon
 ./daemons/server-monitor/server-monitor service stop      # Stop background daemon
