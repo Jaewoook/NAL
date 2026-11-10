@@ -3,6 +3,7 @@ let currentNodeFilter = 'all';
 let dashboardData = null;
 let pendingUpdateReq = null;
 let activeEventSource = null;
+let activeScanEventSource = null;
 
 async function initApp() {
   const res = await fetch('/api/auth/session');
@@ -59,10 +60,25 @@ async function loadDashboard() {
     return initApp();
   }
   dashboardData = await res.json();
+  renderPendingNodesBanner();
   renderNodeBar();
   renderSummary();
   renderItemsTable();
   renderTaskList();
+}
+
+function renderPendingNodesBanner() {
+  const bannerContainer = document.getElementById('pending-nodes-container');
+  const bannerCount = document.getElementById('pending-nodes-count');
+  if (!bannerContainer) return;
+  const nodes = (dashboardData && dashboardData.nodes) || [];
+  const pending = nodes.filter(n => n.status === 'pending');
+  if (pending.length > 0) {
+    bannerContainer.style.display = 'inline-flex';
+    if (bannerCount) bannerCount.textContent = pending.length;
+  } else {
+    bannerContainer.style.display = 'none';
+  }
 }
 
 function getFilteredItems() {
@@ -83,8 +99,9 @@ function renderNodeBar() {
   const container = document.getElementById('node-pills-container');
   if (!container) return;
   const nodes = (dashboardData && dashboardData.nodes) || [{name: (dashboardData && dashboardData.hub_node) || 'local', role: 'hub', online: true}];
-  let html = `<button class="node-pill ${currentNodeFilter === 'all' ? 'active' : ''}" onclick='selectNodeFilter("all")'>All Nodes (${nodes.length})</button>`;
-  nodes.forEach(n => {
+  const approvedNodes = nodes.filter(n => !n.status || n.status === 'approved');
+  let html = `<button class="node-pill ${currentNodeFilter === 'all' ? 'active' : ''}" onclick='selectNodeFilter("all")'>All Nodes (${approvedNodes.length})</button>`;
+  approvedNodes.forEach(n => {
     const dot = n.online ? 'green' : 'amber';
     const roleTag = n.role === 'hub' ? 'Hub' : 'Agent';
     const title = n.last_error ? `Offline: ${n.last_error}` : (n.url || 'Local Host');
@@ -344,28 +361,175 @@ async function rollbackService(nodeName, serviceName) {
 }
 
 function openNodesModal() {
+  const resBox = document.getElementById('test-node-result');
+  if (resBox) {
+    resBox.style.display = 'none';
+    resBox.innerHTML = '';
+  }
   renderNodesModalList();
   document.getElementById('modal-nodes').style.display = 'flex';
 }
 
 function closeNodesModal() {
+  const resBox = document.getElementById('test-node-result');
+  if (resBox) {
+    resBox.style.display = 'none';
+    resBox.innerHTML = '';
+  }
   document.getElementById('modal-nodes').style.display = 'none';
 }
 
 function renderNodesModalList() {
   const box = document.getElementById('nodes-modal-list');
+  const pendingSection = document.getElementById('pending-nodes-section');
+  const pendingBox = document.getElementById('pending-nodes-list');
   const nodes = (dashboardData && dashboardData.nodes) || [];
-  box.innerHTML = nodes.map(n => `
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border);">
-      <div>
-        <span class="dot ${n.online ? 'green' : 'amber'}"></span>
-        <strong>${escapeHtml(n.name)}</strong>
-        <span class="badge skip" style="margin-left:6px;">${escapeHtml(n.role)}</span>
-        <div class="svc-sub">${escapeHtml(n.url || 'Local Hub Host')} ${n.last_error ? '· ' + escapeHtml(n.last_error) : ''}</div>
+
+  const pendingNodes = nodes.filter(n => n.status === 'pending');
+  if (pendingSection && pendingBox) {
+    if (pendingNodes.length > 0) {
+      pendingSection.style.display = 'block';
+      const countEl = document.getElementById('modal-pending-count');
+      if (countEl) countEl.textContent = pendingNodes.length;
+      pendingBox.innerHTML = pendingNodes.map(n => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);">
+          <div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span class="dot amber"></span>
+              <strong>${escapeHtml(n.name)}</strong>
+              <span class="badge warn" style="font-size:10px; padding:1px 6px;">PENDING</span>
+              ${n.os_version ? `<span class="badge skip" style="font-size:10px; padding:1px 6px;">${escapeHtml(n.os_version)}</span>` : ''}
+            </div>
+            <div class="svc-sub" style="margin-top:2px;">${escapeHtml(n.url || 'LAN Node')}</div>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <button class="btn btn-primary" onclick='approveNode("${escapeHtml(n.name)}")'>Approve</button>
+            <button class="btn btn-danger" onclick='rejectNode("${escapeHtml(n.name)}")'>Dismiss</button>
+          </div>
+        </div>
+      `).join('');
+    } else {
+      pendingSection.style.display = 'none';
+      pendingBox.innerHTML = '';
+    }
+  }
+
+  const activeNodes = nodes.filter(n => n.status !== 'pending');
+  if (box) {
+    box.innerHTML = activeNodes.map(n => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border);">
+        <div>
+          <span class="dot ${n.online ? 'green' : 'amber'}"></span>
+          <strong>${escapeHtml(n.name)}</strong>
+          <span class="badge skip" style="margin-left:6px;">${escapeHtml(n.role)}</span>
+          ${n.os_version ? `<span class="badge skip" style="margin-left:4px; font-size:10px;">${escapeHtml(n.os_version)}</span>` : ''}
+          <div class="svc-sub">${escapeHtml(n.url || 'Local Hub Host')} ${n.last_error ? '· ' + escapeHtml(n.last_error) : ''}</div>
+        </div>
+        ${n.role !== 'hub' ? `<button class="btn btn-danger" onclick='deleteRemoteNode("${escapeHtml(n.name)}")'>Remove</button>` : ''}
       </div>
-      ${n.role !== 'hub' ? `<button class="btn btn-danger" onclick='deleteRemoteNode("${escapeHtml(n.name)}")'>Remove</button>` : ''}
-    </div>
-  `).join('');
+    `).join('');
+  }
+}
+
+async function approveNode(name) {
+  const res = await fetch(`/api/nodes/approve?name=${encodeURIComponent(name)}`, {method: 'POST'});
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert(`Failed to approve node: ${data.error || res.statusText}`);
+    return;
+  }
+  await loadDashboard();
+  renderNodesModalList();
+}
+
+async function rejectNode(name) {
+  if (!confirm(`Dismiss registration for "${name}"?`)) return;
+  const res = await fetch(`/api/nodes/reject?name=${encodeURIComponent(name)}`, {method: 'POST'});
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert(`Failed to dismiss node: ${data.error || res.statusText}`);
+    return;
+  }
+  await loadDashboard();
+  renderNodesModalList();
+}
+
+async function testRemoteNodeConnection() {
+  const nameInp = document.getElementById('inp-node-name');
+  const urlInp = document.getElementById('inp-node-url');
+  const tokenInp = document.getElementById('inp-node-token');
+  const resBox = document.getElementById('test-node-result');
+  const btn = document.getElementById('btn-test-node');
+
+  const url = urlInp ? urlInp.value.trim() : '';
+  const token = tokenInp ? tokenInp.value.trim() : '';
+
+  if (!url) {
+    if (resBox) {
+      resBox.style.display = 'block';
+      resBox.innerHTML = `<div class="badge crit" style="width:100%; justify-content:flex-start; padding:8px 12px;">⚠ Please provide the LAN Agent URL to test.</div>`;
+    }
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⚡ Testing...';
+  }
+  if (resBox) {
+    resBox.style.display = 'block';
+    resBox.innerHTML = `<div class="badge warn" style="width:100%; justify-content:flex-start; padding:8px 12px;">Connecting to ${escapeHtml(url)}...</div>`;
+  }
+
+  try {
+    const res = await fetch('/api/nodes/test', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url, token})
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const osVer = data.os_version || (data.info && data.info.os_version) || 'Unknown OS';
+      const latency = data.latency_ms !== undefined ? `${data.latency_ms}ms` : '';
+      if (resBox) {
+        resBox.style.display = 'block';
+        resBox.innerHTML = `
+          <div class="badge ok" style="width:100%; justify-content:flex-start; padding:8px 12px; gap:8px;">
+            <span>✓ Connected!</span>
+            ${latency ? `<span>(${escapeHtml(latency)})</span>` : ''}
+            <span>OS: ${escapeHtml(osVer)}</span>
+          </div>
+        `;
+      }
+      // Auto-fill device name if empty
+      if (nameInp && !nameInp.value.trim() && data.info && data.info.name) {
+        nameInp.value = data.info.name;
+      }
+    } else {
+      if (resBox) {
+        resBox.style.display = 'block';
+        resBox.innerHTML = `
+          <div class="badge crit" style="width:100%; justify-content:flex-start; padding:8px 12px;">
+            ✖ Connection failed: ${escapeHtml(data.error || 'Agent unreachable')}
+          </div>
+        `;
+      }
+    }
+  } catch (err) {
+    if (resBox) {
+      resBox.style.display = 'block';
+      resBox.innerHTML = `
+        <div class="badge crit" style="width:100%; justify-content:flex-start; padding:8px 12px;">
+          ✖ Error: ${escapeHtml(err.message)}
+        </div>
+      `;
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '⚡ Test Connection';
+    }
+  }
 }
 
 async function saveRemoteNode() {
@@ -384,6 +548,11 @@ async function saveRemoteNode() {
   document.getElementById('inp-node-name').value = '';
   document.getElementById('inp-node-url').value = '';
   document.getElementById('inp-node-token').value = '';
+  const resBox = document.getElementById('test-node-result');
+  if (resBox) {
+    resBox.style.display = 'none';
+    resBox.innerHTML = '';
+  }
   await loadDashboard();
   renderNodesModalList();
 }
@@ -414,14 +583,99 @@ async function unskipItem(targetType, targetName) {
 
 async function triggerScan() {
   const btn = document.getElementById('btn-scan-now');
-  btn.textContent = '⟳ Scanning...';
-  btn.disabled = true;
+  const progressBox = document.getElementById('scan-progress-box');
+  const progressText = document.getElementById('scan-progress-text');
+
+  if (btn) {
+    btn.textContent = '⟳ Scanning...';
+    btn.disabled = true;
+  }
+  if (progressBox) progressBox.style.display = 'inline-flex';
+  if (progressText) progressText.textContent = 'Initializing scan...';
+
   try {
-    await fetch('/api/scan', {method: 'POST'});
-    await loadDashboard();
-  } finally {
-    btn.textContent = '↻ Scan Now';
-    btn.disabled = false;
+    const res = await fetch('/api/scan', {method: 'POST'});
+    const data = await res.json().catch(() => ({}));
+
+    let taskId = data.task_id;
+    if (res.status === 409) {
+      if (progressText) progressText.textContent = 'Scan in progress; attaching to stream...';
+    } else if (!res.ok) {
+      alert(`Scan failed: ${data.error || res.statusText}`);
+      if (btn) {
+        btn.textContent = '↻ Scan Now';
+        btn.disabled = false;
+      }
+      if (progressBox) progressBox.style.display = 'none';
+      return;
+    }
+
+    if (!taskId) {
+      if (btn) {
+        btn.textContent = '↻ Scan Now';
+        btn.disabled = false;
+      }
+      if (progressBox) progressBox.style.display = 'none';
+      await loadDashboard();
+      return;
+    }
+
+    if (activeScanEventSource) {
+      activeScanEventSource.close();
+    }
+
+    activeScanEventSource = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/stream`);
+
+    activeScanEventSource.onmessage = (e) => {
+      try {
+        const parsed = JSON.parse(e.data);
+        if (parsed.line && progressText) {
+          progressText.textContent = parsed.line;
+        }
+      } catch (_) {
+        if (e.data && progressText) {
+          progressText.textContent = e.data;
+        }
+      }
+    };
+
+    activeScanEventSource.addEventListener('done', async () => {
+      if (activeScanEventSource) {
+        activeScanEventSource.close();
+        activeScanEventSource = null;
+      }
+      if (progressBox) progressBox.style.display = 'none';
+      if (progressText) progressText.textContent = '';
+      if (btn) {
+        btn.textContent = '↻ Scan Now';
+        btn.disabled = false;
+      }
+      await loadDashboard();
+    });
+
+    activeScanEventSource.onerror = () => {
+      if (activeScanEventSource && activeScanEventSource.readyState === EventSource.CLOSED) {
+        return;
+      }
+      if (activeScanEventSource) {
+        activeScanEventSource.close();
+        activeScanEventSource = null;
+      }
+      if (progressBox) progressBox.style.display = 'none';
+      if (progressText) progressText.textContent = '';
+      if (btn) {
+        btn.textContent = '↻ Scan Now';
+        btn.disabled = false;
+      }
+      loadDashboard();
+    };
+  } catch (err) {
+    alert(`Scan error: ${err.message}`);
+    if (btn) {
+      btn.textContent = '↻ Scan Now';
+      btn.disabled = false;
+    }
+    if (progressBox) progressBox.style.display = 'none';
   }
 }
 

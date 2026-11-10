@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NAL Security Hub</title>
   <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .btn-secondary { background: #334155; color: #f8fafc; border: 1px solid #475569; }
+    .btn-secondary:hover:not(:disabled) { background: #475569; color: #fff; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  </style>
 </head>
 <body>
   <header>
@@ -13,7 +18,17 @@
       <span>Security Hub</span>
     </div>
     <div class="header-right" id="header-actions" style="display:none;">
+      <div id="pending-nodes-container" style="display:none;">
+        <button id="pending-nodes-banner" class="btn badge warn" onclick="openNodesModal()" style="cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+          ⚠️ <span id="pending-nodes-count">0</span> Pending Node(s)
+        </button>
+      </div>
       <button class="btn btn-ghost" onclick="switchTab('logs')">▸ Task Logs</button>
+      <div id="scan-progress-box" style="display:none; align-items:center;">
+        <span id="scan-progress-pill" class="badge warn" style="font-family:ui-monospace,monospace; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          ⟳ <span id="scan-progress-text">Scanning...</span>
+        </span>
+      </div>
       <button class="btn btn-primary" id="btn-scan-now" onclick="triggerScan()">↻ Scan Now</button>
       
       <!-- User Dropdown (placed at the far right) -->
@@ -179,12 +194,22 @@
 
     <!-- MANAGE NODES MODAL -->
     <div id="modal-nodes" class="modal-backdrop" style="display:none;">
-      <div class="card-box modal-card">
+      <div class="card-box modal-card" style="max-height:90vh; overflow-y:auto;">
         <h3>Manage Compute Nodes (Hub &amp; LAN Agents)</h3>
         <p class="muted" style="margin: 8px 0 14px;">
           Register LAN servers running <code>./security-hub agent</code>. Uninstalled or stopped components (such as Docker) are ignored automatically.
         </p>
 
+        <!-- PENDING AGENT REGISTRATIONS -->
+        <div id="pending-nodes-section" style="display:none; margin-bottom: 14px;">
+          <div style="font-weight:700; font-size:12px; color:var(--warn); text-transform:uppercase; margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+            <span>⚠️ Pending Agent Registrations</span>
+            <span class="badge warn" id="modal-pending-count" style="font-size:11px; padding:1px 6px;">0</span>
+          </div>
+          <div id="pending-nodes-list" class="modal-options"></div>
+        </div>
+
+        <div style="font-weight:700; font-size:12px; color:var(--muted); text-transform:uppercase; margin-bottom:6px;">Registered Compute Nodes</div>
         <div id="nodes-modal-list" class="modal-options" style="margin-bottom: 14px;"></div>
 
         <div class="modal-options">
@@ -194,8 +219,10 @@
           <input id="inp-node-token" class="text-input" type="password" placeholder="Shared X-NAL-Node-Token Secret" />
           <div style="display:flex; gap:8px; margin-top:4px;">
             <button class="btn btn-primary" onclick="saveRemoteNode()">+ Add / Save Node</button>
+            <button id="btn-test-node" class="btn btn-secondary" onclick="testRemoteNodeConnection()">⚡ Test Connection</button>
             <button class="btn btn-ghost" onclick="closeNodesModal()">Close</button>
           </div>
+          <div id="test-node-result" style="display:none; margin-top:8px;"></div>
         </div>
       </div>
     </div>

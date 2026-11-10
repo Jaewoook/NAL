@@ -845,3 +845,86 @@ func TestServer_AsyncScanAndConcurrencyMutex(t *testing.T) {
 	}
 }
 
+func TestWebAssets_PendingNodesAndScanProgress(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Database.DataDir = filepath.Join(root, "data")
+	store, err := db.NewSpoolStore(cfg.Database.DataDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authMgr, err := auth.NewManager(cfg.Auth, filepath.Join(cfg.Database.DataDir, "auth_state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(cfg, store, nil, nil, authMgr, nil)
+	h := srv.Handler()
+
+	// 1. Verify index.html via direct embed and via HTTP server
+	indexBytes, err := staticEmbedFS.ReadFile("static/index.html")
+	if err != nil {
+		t.Fatalf("failed to read embedded index.html: %v", err)
+	}
+	indexHTML := string(indexBytes)
+
+	reqIndex := httptest.NewRequest(http.MethodGet, "/", nil)
+	wIndex := httptest.NewRecorder()
+	h.ServeHTTP(wIndex, reqIndex)
+	if wIndex.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /, got %d", wIndex.Code)
+	}
+
+	for _, elem := range []string{
+		"btn-test-node",
+		"pending-nodes-banner",
+		"scan-progress-pill",
+		"pending-nodes-container",
+		"scan-progress-box",
+		"test-node-result",
+		"pending-nodes-section",
+		"pending-nodes-list",
+	} {
+		if !strings.Contains(indexHTML, elem) {
+			t.Errorf("expected embedded index.html to contain element %q", elem)
+		}
+		if !strings.Contains(wIndex.Body.String(), elem) {
+			t.Errorf("expected served /index.html to contain element %q", elem)
+		}
+	}
+
+	// 2. Verify app.js via direct embed and via HTTP server
+	appBytes, err := staticEmbedFS.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatalf("failed to read embedded app.js: %v", err)
+	}
+	appJS := string(appBytes)
+
+	reqApp := httptest.NewRequest(http.MethodGet, "/app.js", nil)
+	wApp := httptest.NewRecorder()
+	h.ServeHTTP(wApp, reqApp)
+	if wApp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /app.js, got %d", wApp.Code)
+	}
+
+	for _, token := range []string{
+		"testRemoteNodeConnection",
+		"approveNode",
+		"rejectNode",
+		"triggerScan",
+		"renderPendingNodesBanner",
+		"renderNodesModalList",
+		"/api/nodes/approve",
+		"/api/nodes/reject",
+		"/api/nodes/test",
+		"/api/tasks/",
+		"EventSource",
+	} {
+		if !strings.Contains(appJS, token) {
+			t.Errorf("expected embedded app.js to contain %q", token)
+		}
+		if !strings.Contains(wApp.Body.String(), token) {
+			t.Errorf("expected served /app.js to contain %q", token)
+		}
+	}
+}
+
