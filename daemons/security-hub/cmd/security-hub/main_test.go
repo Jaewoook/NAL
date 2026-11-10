@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -57,5 +58,45 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "agent_token") {
 		t.Fatalf("expected error mentioning agent_token, got: %s", out.String())
+	}
+
+	// Verify agent service unknown returns error code
+	out.Reset()
+	if code := runCLI([]string{"agent", "service", "unknown"}, &out); code != 1 {
+		t.Fatalf("expected exit code 1 for agent service unknown, got %d", code)
+	}
+	if !strings.Contains(out.String(), "Unknown agent service action") {
+		t.Fatalf("expected unknown action message, got: %s", out.String())
+	}
+
+	// Verify agent service without action returns error code
+	out.Reset()
+	if code := runCLI([]string{"agent", "service"}, &out); code != 1 {
+		t.Fatalf("expected exit code 1 for bare agent service, got %d", code)
+	}
+
+	// Verify agent service install with -path works cleanly
+	agentPlistPath := filepath.Join(tmpDir, "me.jaewook.nal.security-hub-agent.plist")
+	out.Reset()
+	code = runCLI([]string{"agent", "service", "install", "-path", agentPlistPath, "-token", "sec123", "-hub", "http://hub.lan:10311"}, &out)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 for agent service install, got %d (%s)", code, out.String())
+	}
+	content, err := os.ReadFile(agentPlistPath)
+	if err != nil {
+		t.Fatalf("failed to read installed agent plist: %v", err)
+	}
+	if !strings.Contains(string(content), "me.jaewook.nal.security-hub-agent") || !strings.Contains(string(content), "sec123") {
+		t.Fatalf("agent plist missing expected content: %s", string(content))
+	}
+
+	// Verify agent service status runs cleanly
+	out.Reset()
+	code = runCLI([]string{"agent", "service", "status"}, &out)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 for agent service status, got %d (%s)", code, out.String())
+	}
+	if !strings.Contains(out.String(), "Agent service") {
+		t.Fatalf("expected agent service status in output, got: %s", out.String())
 	}
 }

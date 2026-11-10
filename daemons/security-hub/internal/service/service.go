@@ -10,9 +10,43 @@ import (
 
 const LaunchdLabel = "me.jaewook.nal.security-hub"
 
+const (
+	AgentLaunchdLabel = "me.jaewook.nal.security-hub-agent"
+	AgentSystemdUnit  = "security-hub-agent.service"
+)
+
 func DefaultPlistPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "Library", "LaunchAgents", LaunchdLabel+".plist")
+}
+
+func DefaultAgentPlistPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "Library", "LaunchAgents", AgentLaunchdLabel+".plist")
+}
+
+func DefaultAgentSystemdPath() string {
+	if os.Geteuid() == 0 {
+		return filepath.Join("/etc", "systemd", "system", AgentSystemdUnit)
+	}
+	if isDirWritable("/etc/systemd/system") {
+		return filepath.Join("/etc", "systemd", "system", AgentSystemdUnit)
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "systemd", "user", AgentSystemdUnit)
+}
+
+func isDirWritable(dir string) bool {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	tmpFile := filepath.Join(dir, fmt.Sprintf(".perm_test_%d", os.Getpid()))
+	if err := os.WriteFile(tmpFile, []byte(""), 0644); err != nil {
+		return false
+	}
+	_ = os.Remove(tmpFile)
+	return true
 }
 
 func GenerateLaunchdPlist(binaryPath, workingDir string) string {
