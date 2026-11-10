@@ -175,12 +175,12 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(s.buildNodesOverview(ctx))
 	case http.MethodPost:
 		var req models.NodeInfo
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.URL) == "" {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.URL) == "" {
 			http.Error(w, `{"error":"name and url are required"}`, http.StatusBadRequest)
 			return
 		}
 		req.Name = strings.TrimSpace(req.Name)
-		req.URL = strings.TrimRight(strings.TrimSpace(req.URL), "/")
+		req.URL = config.NormalizeURL(req.URL)
 		hubName := ""
 		if s.cfg != nil && s.cfg.NodeName != "" {
 			hubName = s.cfg.NodeName
@@ -232,7 +232,7 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req nodeAnnounceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json"})
 		return
@@ -251,7 +251,7 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Name = strings.TrimSpace(req.Name)
-	req.URL = strings.TrimRight(strings.TrimSpace(req.URL), "/")
+	req.URL = config.NormalizeURL(req.URL)
 	if req.Name == "" || req.URL == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "name and url required"})
@@ -406,7 +406,7 @@ func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req nodeTestRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(nodeTestResponse{
 			OK:    false,
@@ -415,10 +415,7 @@ func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetURL := strings.TrimRight(strings.TrimSpace(req.URL), "/")
-	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
-		targetURL = "http://" + targetURL
-	}
+	targetURL := config.NormalizeURL(req.URL)
 	parsedURL, pErr := url.Parse(targetURL)
 	if pErr != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
 		w.WriteHeader(http.StatusOK)
@@ -444,8 +441,12 @@ func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if req.Token != "" {
-		httpReq.Header.Set("X-NAL-Node-Token", req.Token)
+	tok := req.Token
+	if tok == "" && s.cfg != nil {
+		tok = s.cfg.AgentToken
+	}
+	if tok != "" {
+		httpReq.Header.Set("X-NAL-Node-Token", tok)
 	}
 
 	probeClient := &http.Client{

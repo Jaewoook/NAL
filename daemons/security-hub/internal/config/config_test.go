@@ -126,3 +126,25 @@ func TestHubAndAgentAdvertiseURLConfig(t *testing.T) {
 		t.Fatalf("expected loaded AgentAdvertiseURL 'http://agent-yaml.lan:10247', got %q", loaded.AgentAdvertiseURL)
 	}
 }
+
+func TestNormalizeURL(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},
+		{"   ", ""},
+		{"192.168.1.100:10311", "http://192.168.1.100:10311"},
+		{"192.168.1.100:10311/", "http://192.168.1.100:10311"},
+		{"http://192.168.1.100:10311///", "http://192.168.1.100:10311"},
+		{"https://agent.corp.internal:10247", "https://agent.corp.internal:10247"},
+		{"agent.corp.internal:10247/", "http://agent.corp.internal:10247"},
+		{"  http://localhost:8080/  ", "http://localhost:8080"},
+	}
+	for _, tc := range cases {
+		got := NormalizeURL(tc.input)
+		if got != tc.expected {
+			t.Errorf("NormalizeURL(%q) = %q; want %q", tc.input, got, tc.expected)
+		}
+	}
+}

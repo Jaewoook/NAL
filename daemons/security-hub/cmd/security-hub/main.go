@@ -247,7 +247,7 @@ func runCLI(args []string, out io.Writer) int {
 				return 1
 			}
 			nodeName := strings.TrimSpace(rest[1])
-			nodeURL := strings.TrimRight(strings.TrimSpace(rest[2]), "/")
+			nodeURL := config.NormalizeURL(rest[2])
 			hubName := cfg.NodeName
 			if hubName == "" {
 				hubName = config.DefaultNodeName()
@@ -499,13 +499,13 @@ func runAgentServiceCLI(args []string, cfg *config.Config, out io.Writer) int {
 		if tok == "" {
 			tok = cfg.AgentToken
 		}
-		hub := *hubFlag
+		hub := config.NormalizeURL(*hubFlag)
 		if hub == "" {
-			hub = cfg.HubURL
+			hub = config.NormalizeURL(cfg.HubURL)
 		}
-		adv := *advFlag
+		adv := config.NormalizeURL(*advFlag)
 		if adv == "" {
-			adv = cfg.AgentAdvertiseURL
+			adv = config.NormalizeURL(cfg.AgentAdvertiseURL)
 		}
 
 		exe, _ := os.Executable()

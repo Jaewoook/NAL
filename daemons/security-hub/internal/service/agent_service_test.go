@@ -206,4 +206,28 @@ func TestAgentService_SystemdWorkingDirectoryQuoting(t *testing.T) {
 	}
 }
 
+func TestAgentService_SystemdBackslashQuoting(t *testing.T) {
+	opts := service.AgentServiceOptions{
+		BinaryPath: `C:\Program Files\SecurityHub\security-hub.exe`,
+		Token:      `secret\token`,
+	}
+	unit := service.GenerateAgentSystemdUnit(opts)
+	if !strings.Contains(unit, `-token "secret\\token"`) {
+		t.Fatalf("expected backslash to be quoted and escaped in systemd unit, got:\n%s", unit)
+	}
+}
+
+func TestHubLaunchdPlist_XMLEntityEscaping(t *testing.T) {
+	plist := service.GenerateLaunchdPlist("/usr/local/bin/hub & <app>", "/var/lib/hub & dir")
+	if strings.Contains(plist, "/usr/local/bin/hub & <app>") {
+		t.Fatalf("expected unescaped & and < to be absent from Hub plist, got:\n%s", plist)
+	}
+	if !strings.Contains(plist, "/usr/local/bin/hub &amp; &lt;app&gt;") {
+		t.Fatalf("expected XML entity escaped binary path, got:\n%s", plist)
+	}
+	if !strings.Contains(plist, "/var/lib/hub &amp; dir") {
+		t.Fatalf("expected XML entity escaped working dir, got:\n%s", plist)
+	}
+}
+
 

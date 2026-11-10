@@ -65,6 +65,18 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 		t.Fatalf("expected exit code 0 for node remove, got %d (%s)", code, out.String())
 	}
 
+	// Verify CLI node add with un-schemed URL normalizes to http://
+	out.Reset()
+	if code := runCLI([]string{"node", "add", "SchemelessNode", "192.168.1.188:10247", "-token", "sec"}, &out); code != 0 {
+		t.Fatalf("expected exit code 0 for schemeless node add, got %d (%s)", code, out.String())
+	}
+	out.Reset()
+	if code := runCLI([]string{"node", "list"}, &out); code != 0 || !strings.Contains(out.String(), "http://192.168.1.188:10247") {
+		t.Fatalf("expected http://192.168.1.188:10247 in node list output, got code=%d out=%s", code, out.String())
+	}
+	out.Reset()
+	_ = runCLI([]string{"node", "remove", "SchemelessNode"}, &out)
+
 	// Verify agent requires token
 	out.Reset()
 	if code := runCLI([]string{"agent", "-hub", "http://hub.lan:10311", "-advertise-url", "http://192.168.1.100:10247"}, &out); code != 1 {

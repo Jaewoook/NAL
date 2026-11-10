@@ -50,6 +50,8 @@ func isDirWritable(dir string) bool {
 }
 
 func GenerateLaunchdPlist(binaryPath, workingDir string) string {
+	escapedBin := escapeXML(binaryPath)
+	escapedDir := escapeXML(workingDir)
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -78,7 +80,7 @@ func GenerateLaunchdPlist(binaryPath, workingDir string) string {
     </dict>
 </dict>
 </plist>
-`, LaunchdLabel, binaryPath, workingDir, workingDir, workingDir)
+`, LaunchdLabel, escapedBin, escapedDir, escapedDir, escapedDir)
 }
 
 func InstallPlist(destPath, binaryPath, workingDir string) error {

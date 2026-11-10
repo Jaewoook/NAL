@@ -1225,5 +1225,90 @@ func TestServer_AgentTokenPreHashedAndTrailingSlashNormalization(t *testing.T) {
 	}
 }
 
+func TestNodeTest_TokenFallbackAndSchemeNormalization(t *testing.T) {
+	srv, sessionCookie, _, _ := setupTestHubServer(t)
+	h := srv.Handler()
+
+	var receivedToken string
+	agentSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/agent/info" {
+			receivedToken = r.Header.Get("X-NAL-Node-Token")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"node":       "test-agent",
+				"version":    "1.0.0",
+				"os_version": "darwin/arm64",
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer agentSrv.Close()
+
+	// 1. Without token in test request: falls back to cfg.AgentToken ("shared-cluster-token")
+	// 2. URL provided without scheme: should normalize to http://
+	rawTarget := strings.TrimPrefix(agentSrv.URL, "http://")
+	testBody, _ := json.Marshal(map[string]string{
+		"url": rawTarget,
+	})
+	testReq := httptest.NewRequest(http.MethodPost, "/api/nodes/test", bytes.NewReader(testBody))
+	testReq.AddCookie(sessionCookie)
+	testW := httptest.NewRecorder()
+	h.ServeHTTP(testW, testReq)
+
+	if testW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", testW.Code, testW.Body.String())
+	}
+	var res map[string]any
+	_ = json.Unmarshal(testW.Body.Bytes(), &res)
+	if res["ok"] != true {
+		t.Fatalf("expected ok=true for normalized test url, got %+v", res)
+	}
+	if receivedToken != "shared-cluster-token" {
+		t.Fatalf("expected fallback token 'shared-cluster-token', got %q", receivedToken)
+	}
+}
+
+func TestNodeAnnounce_BodyLimitAndSchemeNormalization(t *testing.T) {
+	cfg := &config.Config{
+		NodeName:   "HubCentral",
+		AgentToken: "cluster-secret",
+	}
+	store, _ := db.NewSpoolStore(t.TempDir(), nil)
+	authMgr, _ := auth.NewManager(cfg.Auth, "")
+
+	srv := NewServer(cfg, store, nil, nil, authMgr, nil)
+	h := srv.Handler()
+
+	// 1. Scheme normalization on announce URL
+	body, _ := json.Marshal(map[string]string{
+		"name":  "NoSchemeAgent",
+		"url":   "192.168.1.180:10247",
+		"token": "cluster-secret",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/nodes/announce", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	node, err := store.GetNode(context.Background(), "NoSchemeAgent")
+	if err != nil {
+		t.Fatalf("GetNode failed: %v", err)
+	}
+	if node.URL != "http://192.168.1.180:10247" {
+		t.Errorf("expected normalized http scheme, got %q", node.URL)
+	}
+
+	// 2. Body limit protection on /api/nodes/announce: > 1MB should be rejected
+	largeBody := bytes.Repeat([]byte("a"), (1<<20)+1024)
+	largeReq := httptest.NewRequest(http.MethodPost, "/api/nodes/announce", bytes.NewReader(largeBody))
+	largeW := httptest.NewRecorder()
+	h.ServeHTTP(largeW, largeReq)
+	if largeW.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 Bad Request for body exceeding 1MB limit, got %d", largeW.Code)
+	}
+}
+
 
 

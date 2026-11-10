@@ -29,12 +29,8 @@ type announcePayload struct {
 // ResolveAgentAdvertiseURL returns cfg.AgentAdvertiseURL if set,
 // or formats "http://<detected-ip-or-host>:<port>".
 func ResolveAgentAdvertiseURL(cfg *config.Config) string {
-	if cfg != nil && cfg.AgentAdvertiseURL != "" {
-		adv := strings.TrimSpace(cfg.AgentAdvertiseURL)
-		if !strings.HasPrefix(adv, "http://") && !strings.HasPrefix(adv, "https://") {
-			adv = "http://" + adv
-		}
-		return strings.TrimRight(adv, "/")
+	if cfg != nil && strings.TrimSpace(cfg.AgentAdvertiseURL) != "" {
+		return config.NormalizeURL(cfg.AgentAdvertiseURL)
 	}
 
 	port := 10247
@@ -63,7 +59,7 @@ func ResolveAgentNodeName(cfg *config.Config) string {
 // IsVirtualInterface returns true if the network interface name matches known virtual/bridge patterns.
 func IsVirtualInterface(name string) bool {
 	lower := strings.ToLower(name)
-	prefixes := []string{"docker", "br-", "veth", "virbr", "cni", "tailscale", "tun", "tap", "flannel", "vmnet"}
+	prefixes := []string{"docker", "br-", "br0", "br1", "bridge", "veth", "virbr", "cni", "tailscale", "tun", "utun", "tap", "flannel", "vmnet", "awdl", "llw"}
 	for _, p := range prefixes {
 		if strings.HasPrefix(lower, p) {
 			return true
@@ -73,14 +69,15 @@ func IsVirtualInterface(name string) bool {
 }
 
 func getOutboundIPToHost(hubURL string) string {
+	hubURL = config.NormalizeURL(hubURL)
 	u, err := url.Parse(hubURL)
 	if err == nil && u.Host != "" {
 		host := u.Host
-		if !strings.Contains(host, ":") {
+		if _, _, err := net.SplitHostPort(host); err != nil {
 			if u.Scheme == "https" {
-				host = host + ":443"
+				host = net.JoinHostPort(host, "443")
 			} else {
-				host = host + ":80"
+				host = net.JoinHostPort(host, "80")
 			}
 		}
 		conn, err := net.DialTimeout("udp", host, 2*time.Second)
@@ -159,6 +156,7 @@ func getOutboundIP() string {
 }
 
 func sendAnnouncement(ctx context.Context, client *http.Client, hubURL string, payload announcePayload) error {
+	hubURL = config.NormalizeURL(hubURL)
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal announcement payload: %w", err)

@@ -54,6 +54,12 @@ function closeBrokenLinkageModal() {
   if (modal) modal.style.display = 'none';
 }
 
+function openBrokenLinkageModalByIndex(idx) {
+  const item = (window.currentRenderedItems || [])[idx];
+  if (!item) return;
+  openBrokenLinkageModal(item.name, item.linkage_details || 'Missing shared library dependency');
+}
+
 async function loadDashboard() {
   const res = await fetch('/api/dashboard');
   if (res.status === 401) {
@@ -208,6 +214,8 @@ function renderItemsTable() {
     return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
   });
 
+  window.currentRenderedItems = items;
+
   items.forEach((item, idx) => {
     const nodeName = item.node || (dashboardData && dashboardData.hub_node) || 'local';
     const tr = document.createElement('tr');
@@ -218,12 +226,12 @@ function renderItemsTable() {
     if (item.broken_linkage && (item.crit_count > 0 || item.high_count > 0)) {
       secHtml = `
         <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
-          <button class="badge crit badge-btn" onclick='openBrokenLinkageModal(${JSON.stringify(item.name)}, ${JSON.stringify(item.linkage_details || "Broken dylib dependency")})'>⚠ Broken Linkage (Details)</button>
+          <button class="badge crit badge-btn" onclick='openBrokenLinkageModalByIndex(${idx})'>⚠ Broken Linkage (Details)</button>
           <span class="badge crit">● ${item.crit_count} Crit / ${item.high_count} High</span>
         </div>
       `;
     } else if (item.broken_linkage) {
-      secHtml = `<button class="badge crit badge-btn" onclick='openBrokenLinkageModal(${JSON.stringify(item.name)}, ${JSON.stringify(item.linkage_details || "Broken dylib dependency")})' title="Click to view broken linkage details">⚠ Broken Linkage (Details)</button>`;
+      secHtml = `<button class="badge crit badge-btn" onclick='openBrokenLinkageModalByIndex(${idx})' title="Click to view broken linkage details">⚠ Broken Linkage (Details)</button>`;
     } else if (item.crit_count > 0 || item.high_count > 0) {
       const firstId = item.vulnerabilities?.[0]?.id || 'CVE';
       secHtml = `<span class="badge crit">● ${item.crit_count} Crit / ${item.high_count} High (${escapeHtml(firstId)})</span>`;
@@ -265,15 +273,15 @@ function renderItemsTable() {
     if (item.target_type === 'docker' || item.target_type === 'brew' || (item.target_type === 'daemon' && item.name === 'ollama')) {
       const btnClass = (item.crit_count > 0 || item.broken_linkage) ? 'btn-danger' : 'btn-primary';
       const btnLabel = item.broken_linkage ? 'Upgrade & Fix' : 'Update';
-      actionsHtml += `<button class="btn ${btnClass}" onclick='openUpdateModal(${JSON.stringify(item)}, "${selectId}")'>${btnLabel}</button>`;
+      actionsHtml += `<button class="btn ${btnClass}" onclick='openUpdateModalByIndex(${idx}, "${selectId}")'>${btnLabel}</button>`;
       if (item.skipped) {
         actionsHtml += `<span class="badge skip">Skipped ${escapeHtml(item.skipped_version)}</span>`;
-        actionsHtml += `<button class="btn btn-ghost" onclick='unskipItem("${item.target_type}", "${item.name}")'>Unskip</button>`;
+        actionsHtml += `<button class="btn btn-ghost" onclick='unskipItem("${encodeNodeArg(item.target_type)}", "${encodeNodeArg(item.name)}")'>Unskip</button>`;
       } else if (item.outdated) {
-        actionsHtml += `<button class="btn btn-ghost" onclick='skipItem("${item.target_type}", "${item.name}", "${selectId}")'>Skip</button>`;
+        actionsHtml += `<button class="btn btn-ghost" onclick='skipItem("${encodeNodeArg(item.target_type)}", "${encodeNodeArg(item.name)}", "${selectId}")'>Skip</button>`;
       }
       if (item.has_rollback) {
-        actionsHtml += `<button class="btn btn-ghost" onclick='rollbackService("${encodeNodeArg(nodeName)}", "${item.name}")'>Rollback (${escapeHtml(item.rollback_version)})</button>`;
+        actionsHtml += `<button class="btn btn-ghost" onclick='rollbackService("${encodeNodeArg(nodeName)}", "${encodeNodeArg(item.name)}")'>Rollback (${escapeHtml(item.rollback_version)})</button>`;
       }
     }
     if (item.release_notes_url) {
@@ -307,6 +315,12 @@ function renderItemsTable() {
     `;
     tbody.appendChild(tr);
   });
+}
+
+function openUpdateModalByIndex(idx, selectId) {
+  const item = (window.currentRenderedItems || [])[idx];
+  if (!item) return;
+  openUpdateModal(item, selectId);
 }
 
 function openUpdateModal(item, selectId) {
@@ -354,8 +368,9 @@ async function confirmAndStartUpdate() {
   }
 }
 
-async function rollbackService(encodedNodeName, serviceName) {
+async function rollbackService(encodedNodeName, encodedServiceName) {
   const nodeName = decodeURIComponent(encodedNodeName || '');
+  const serviceName = decodeURIComponent(encodedServiceName || '');
   if (!confirm(`Roll back ${serviceName} on ${nodeName} to its previous snapshot version and digest?`)) return;
   const res = await fetch('/api/rollback', {
     method: 'POST',
@@ -573,11 +588,16 @@ async function saveRemoteNode() {
     alert('Please provide both the device name and the LAN Agent URL.');
     return;
   }
-  await fetch('/api/nodes', {
+  const res = await fetch('/api/nodes', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({name, url, token})
   });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert(`Failed to save node: ${data.error || res.statusText}`);
+    return;
+  }
   document.getElementById('inp-node-name').value = '';
   document.getElementById('inp-node-url').value = '';
   document.getElementById('inp-node-token').value = '';
@@ -599,7 +619,9 @@ async function deleteRemoteNode(encodedName) {
   renderNodesModalList();
 }
 
-async function skipItem(targetType, targetName, selectId) {
+async function skipItem(encodedTargetType, encodedTargetName, selectId) {
+  const targetType = decodeURIComponent(encodedTargetType || '');
+  const targetName = decodeURIComponent(encodedTargetName || '');
   const sel = document.getElementById(selectId);
   const ver = sel ? sel.value : '';
   await fetch('/api/skip', {
@@ -610,7 +632,9 @@ async function skipItem(targetType, targetName, selectId) {
   await loadDashboard();
 }
 
-async function unskipItem(targetType, targetName) {
+async function unskipItem(encodedTargetType, encodedTargetName) {
+  const targetType = decodeURIComponent(encodedTargetType || '');
+  const targetName = decodeURIComponent(encodedTargetName || '');
   await fetch(`/api/skip?target_type=${encodeURIComponent(targetType)}&target_name=${encodeURIComponent(targetName)}`, {method: 'DELETE'});
   await loadDashboard();
 }

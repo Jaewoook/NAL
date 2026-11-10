@@ -126,18 +126,28 @@ func (o *Orchestrator) ScanLocalNode(ctx context.Context) ([]models.ManagedItem,
 		nodeName = config.DefaultNodeName()
 	}
 	var localItems []models.ManagedItem
-	if dockerItems, err := o.dockerScanner.ScanDockerServices(ctx); err == nil {
-		localItems = append(localItems, dockerItems...)
+	if o.dockerScanner != nil {
+		if dockerItems, err := o.dockerScanner.ScanDockerServices(ctx); err == nil {
+			localItems = append(localItems, dockerItems...)
+		}
 	}
-	if brewItems, err := o.brewScanner.ScanBrew(ctx); err == nil {
-		localItems = append(localItems, brewItems...)
+	if o.brewScanner != nil {
+		if brewItems, err := o.brewScanner.ScanBrew(ctx); err == nil {
+			localItems = append(localItems, brewItems...)
+		}
 	}
-	if daemonItems, err := o.daemonScanner.ScanDaemonsAndOS(ctx); err == nil {
-		localItems = append(localItems, daemonItems...)
+	if o.daemonScanner != nil {
+		if daemonItems, err := o.daemonScanner.ScanDaemonsAndOS(ctx); err == nil {
+			localItems = append(localItems, daemonItems...)
+		}
 	}
 
-	_ = o.vulnScanner.CheckVulnerabilities(ctx, localItems)
-	_ = o.eolChecker.CheckEoL(ctx, localItems, time.Now().UTC(), o.cfg.Scanner.EoLWarningDays)
+	if o.vulnScanner != nil {
+		_ = o.vulnScanner.CheckVulnerabilities(ctx, localItems)
+	}
+	if o.eolChecker != nil && o.cfg != nil {
+		_ = o.eolChecker.CheckEoL(ctx, localItems, time.Now().UTC(), o.cfg.Scanner.EoLWarningDays)
+	}
 
 	for i := range localItems {
 		localItems[i].Node = nodeName
@@ -151,8 +161,12 @@ func (o *Orchestrator) fetchRemoteAgentScan(ctx context.Context, node models.Nod
 	if err != nil {
 		return nil, err
 	}
-	if node.Token != "" {
-		req.Header.Set("X-NAL-Node-Token", node.Token)
+	tok := node.Token
+	if tok == "" && o.cfg != nil {
+		tok = o.cfg.AgentToken
+	}
+	if tok != "" {
+		req.Header.Set("X-NAL-Node-Token", tok)
 	}
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
@@ -180,7 +194,20 @@ func (o *Orchestrator) RunFullScan(ctx context.Context) (*models.ScanResult, err
 }
 
 func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (*models.ScanResult, error) {
-	hubName := o.cfg.NodeName
+	if ctx.Err() != nil {
+		if o.store != nil && taskID != "" {
+			abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer abortCancel()
+			_, _ = o.store.AppendTaskLog(abortCtx, taskID, "error", fmt.Sprintf("Scan aborted: %v", ctx.Err()))
+			_ = o.store.FinishTask(abortCtx, taskID, "failed", ctx.Err().Error())
+		}
+		return nil, ctx.Err()
+	}
+
+	hubName := ""
+	if o.cfg != nil {
+		hubName = o.cfg.NodeName
+	}
 	if hubName == "" {
 		hubName = config.DefaultNodeName()
 	}
@@ -319,6 +346,16 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 	totalCVEs := 0
 	for _, it := range res.Items {
 		totalCVEs += len(it.Vulnerabilities)
+	}
+
+	if ctx.Err() != nil {
+		if o.store != nil && taskID != "" {
+			abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer abortCancel()
+			_, _ = o.store.AppendTaskLog(abortCtx, taskID, "error", fmt.Sprintf("Scan aborted: %v", ctx.Err()))
+			_ = o.store.FinishTask(abortCtx, taskID, "failed", ctx.Err().Error())
+		}
+		return nil, ctx.Err()
 	}
 
 	if o.store != nil {

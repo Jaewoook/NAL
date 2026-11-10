@@ -206,7 +206,7 @@ WantedBy=multi-user.target
 // It also escapes $ as $$ to prevent systemd from treating it as an environment variable reference.
 func quoteSystemdArg(s string) string {
 	escaped := strings.ReplaceAll(s, "$", "$$")
-	if escaped == "" || strings.ContainsAny(escaped, " \t\n\r\"'") {
+	if escaped == "" || strings.ContainsAny(escaped, " \t\n\r\"'\\") {
 		escaped = strings.ReplaceAll(escaped, `\`, `\\`)
 		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
 		return `"` + escaped + `"`

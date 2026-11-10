@@ -343,3 +343,15 @@ func getEnv(keys ...string) string {
 	}
 	return ""
 }
+
+// NormalizeURL trims whitespace, trailing slashes, and ensures an http:// or https:// scheme is present.
+func NormalizeURL(raw string) string {
+	s := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if s == "" {
+		return ""
+	}
+	if !strings.HasPrefix(s, "http://") && !strings.HasPrefix(s, "https://") {
+		s = "http://" + s
+	}
+	return s
+}
