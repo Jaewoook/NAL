@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jaewoook/security-hub/internal/models"
 )
@@ -20,6 +21,7 @@ type fakePGBackend struct {
 	snapshots    map[string]models.RollbackSnapshot
 	skipped      map[string]string
 	alerts       map[string]string
+	nodes        map[string]models.NodeInfo
 	onUpsertTask func(task models.Task)
 }
 
@@ -31,6 +33,7 @@ func newFakePGBackend() *fakePGBackend {
 		snapshots: make(map[string]models.RollbackSnapshot),
 		skipped:   make(map[string]string),
 		alerts:    make(map[string]string),
+		nodes:     make(map[string]models.NodeInfo),
 	}
 }
 
@@ -112,6 +115,26 @@ func (f *fakePGBackend) UpsertSentAlert(ctx context.Context, fingerprint, alertT
 		return errPostgresDown
 	}
 	f.alerts[fingerprint] = alertType
+	return nil
+}
+
+func (f *fakePGBackend) UpsertNode(ctx context.Context, node models.NodeInfo) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.online {
+		return errPostgresDown
+	}
+	f.nodes[node.Name] = node
+	return nil
+}
+
+func (f *fakePGBackend) DeleteNode(ctx context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.online {
+		return errPostgresDown
+	}
+	delete(f.nodes, name)
 	return nil
 }
 
@@ -229,6 +252,46 @@ func TestPostgresBackend_BatchedLogsAndBase64SafeEncoding(t *testing.T) {
 	}
 	if !strings.Contains(executedSQL[1], "convert_from(decode(") {
 		t.Fatalf("expected base64-decoded safe SQL in batch insert, got: %s", executedSQL[1])
+	}
+}
+
+func TestPostgresBackend_NodeUpsertAndDelete(t *testing.T) {
+	var executedSQL []string
+	pg := NewPostgresBackend("postgresql", "security_hub_db", "security_hub", func(name string, args ...string) ([]byte, error) {
+		if len(args) > 0 {
+			executedSQL = append(executedSQL, args[len(args)-1])
+		}
+		return []byte("ok"), nil
+	})
+
+	err := pg.UpsertNode(context.Background(), models.NodeInfo{
+		Name:       "Atlas",
+		URL:        "http://192.168.1.50:10247",
+		Token:      "secret-token",
+		Role:       "agent",
+		Status:     models.NodeStatusPending,
+		Online:     true,
+		LastSeenAt: time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC),
+		LastError:  "",
+		OSVersion:  "darwin/arm64",
+	})
+	if err != nil {
+		t.Fatalf("UpsertNode failed: %v", err)
+	}
+
+	err = pg.DeleteNode(context.Background(), "Atlas")
+	if err != nil {
+		t.Fatalf("DeleteNode failed: %v", err)
+	}
+
+	if len(executedSQL) != 3 {
+		t.Fatalf("expected 3 SQL executions, got %d", len(executedSQL))
+	}
+	if !strings.Contains(executedSQL[1], "INSERT INTO nodes") || !strings.Contains(executedSQL[1], "'pending'") {
+		t.Fatalf("expected node upsert SQL with pending status, got: %s", executedSQL[1])
+	}
+	if !strings.Contains(executedSQL[2], "DELETE FROM nodes WHERE name = 'Atlas'") {
+		t.Fatalf("expected node delete SQL, got: %s", executedSQL[2])
 	}
 }
 
@@ -379,6 +442,145 @@ func TestSpoolStore_StartupReconcilesOrphanedRunningTasks(t *testing.T) {
 		t.Fatalf("expected error message to mention daemon restart, got %q", reconciled.ErrorMsg)
 	}
 }
+
+func TestSpoolStore_PendingApprovalAndDynamicOffline(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewSpoolStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Upsert a node with Status: models.NodeStatusPending
+	node := models.NodeInfo{
+		Name:       "Atlas",
+		URL:        "http://192.168.1.50:10247",
+		Token:      "secret-token",
+		Role:       "agent",
+		Status:     models.NodeStatusPending,
+		Online:     true,
+		LastSeenAt: time.Now().UTC(),
+	}
+	if err := store.UpsertNode(ctx, node); err != nil {
+		t.Fatalf("UpsertNode failed: %v", err)
+	}
+
+	// 2. List nodes and assert status is preserved
+	nodes, err := store.ListNodes(ctx)
+	if err != nil {
+		t.Fatalf("ListNodes failed: %v", err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("expected 1 node, got %d", len(nodes))
+	}
+	if nodes[0].Status != models.NodeStatusPending {
+		t.Fatalf("expected status %q, got %q", models.NodeStatusPending, nodes[0].Status)
+	}
+
+	// 3. Call ApproveNode("Atlas") and assert status transitions to models.NodeStatusApproved
+	if err := store.ApproveNode(ctx, "Atlas"); err != nil {
+		t.Fatalf("ApproveNode failed: %v", err)
+	}
+	n, err := store.GetNode(ctx, "Atlas")
+	if err != nil {
+		t.Fatalf("GetNode failed: %v", err)
+	}
+	if n.Status != models.NodeStatusApproved {
+		t.Fatalf("expected status %q after ApproveNode, got %q", models.NodeStatusApproved, n.Status)
+	}
+
+	// 4. Call RejectNode("Atlas") and assert node status transitions to models.NodeStatusRejected
+	if err := store.RejectNode(ctx, "Atlas"); err != nil {
+		t.Fatalf("RejectNode failed: %v", err)
+	}
+	n, err = store.GetNode(ctx, "Atlas")
+	if err != nil {
+		t.Fatalf("GetNode failed: %v", err)
+	}
+	if n.Status != models.NodeStatusRejected {
+		t.Fatalf("expected status %q after RejectNode, got %q", models.NodeStatusRejected, n.Status)
+	}
+
+	// 5. Upsert an approved agent with LastSeenAt: time.Now().Add(-5 * time.Minute)
+	// and assert ListNodes() reports Online: false
+	staleNode := models.NodeInfo{
+		Name:       "StaleAgent",
+		URL:        "http://192.168.1.51:10247",
+		Role:       "agent",
+		Status:     models.NodeStatusApproved,
+		Online:     true,
+		LastSeenAt: time.Now().UTC().Add(-5 * time.Minute),
+	}
+	if err := store.UpsertNode(ctx, staleNode); err != nil {
+		t.Fatalf("UpsertNode staleNode failed: %v", err)
+	}
+
+	nodes, err = store.ListNodes(ctx)
+	if err != nil {
+		t.Fatalf("ListNodes failed: %v", err)
+	}
+	var foundStale bool
+	for _, item := range nodes {
+		if item.Name == "StaleAgent" {
+			foundStale = true
+			if item.Online {
+				t.Fatalf("expected StaleAgent Online to be false, got true")
+			}
+		}
+	}
+	if !foundStale {
+		t.Fatalf("expected to find StaleAgent in ListNodes")
+	}
+
+	// Verify that a freshly seen agent (< 3 minutes) remains Online: true
+	freshNode := models.NodeInfo{
+		Name:       "FreshAgent",
+		URL:        "http://192.168.1.52:10247",
+		Role:       "agent",
+		Status:     models.NodeStatusApproved,
+		Online:     true,
+		LastSeenAt: time.Now().UTC().Add(-1 * time.Minute),
+	}
+	if err := store.UpsertNode(ctx, freshNode); err != nil {
+		t.Fatalf("UpsertNode freshNode failed: %v", err)
+	}
+	nodes, err = store.ListNodes(ctx)
+	if err != nil {
+		t.Fatalf("ListNodes failed: %v", err)
+	}
+	for _, item := range nodes {
+		if item.Name == "FreshAgent" {
+			if !item.Online {
+				t.Fatalf("expected FreshAgent Online to be true, got false")
+			}
+		}
+	}
+
+	// Verify node with unspecified status defaults to approved
+	defaultNode := models.NodeInfo{
+		Name: "DefaultNode",
+		URL:  "http://192.168.1.53:10247",
+		Role: "agent",
+	}
+	if err := store.UpsertNode(ctx, defaultNode); err != nil {
+		t.Fatalf("UpsertNode defaultNode failed: %v", err)
+	}
+	dn, err := store.GetNode(ctx, "DefaultNode")
+	if err != nil {
+		t.Fatalf("GetNode defaultNode failed: %v", err)
+	}
+	if dn.Status != models.NodeStatusApproved {
+		t.Fatalf("expected DefaultNode status %q, got %q", models.NodeStatusApproved, dn.Status)
+	}
+
+	// Non-existent node errors
+	if err := store.ApproveNode(ctx, "NonExistent"); err == nil {
+		t.Fatalf("expected error approving non-existent node")
+	}
+	if err := store.RejectNode(ctx, "NonExistent"); err == nil {
+		t.Fatalf("expected error rejecting non-existent node")
+	}
+}
+
 
 
 
