@@ -199,6 +199,8 @@ func runCLI(args []string, out io.Writer) int {
 		hostFlag := fs.String("host", "", "Bind host (default 0.0.0.0)")
 		portFlag := fs.Int("port", 0, "Agent bind port (overrides config.yml web.port; default 10247)")
 		tokenFlag := fs.String("token", "", "Shared X-NAL-Node-Token secret")
+		hubFlag := fs.String("hub", "", "Security Hub URL (e.g. http://hub.lan:10311)")
+		advFlag := fs.String("advertise-url", "", "Advertise URL for this agent reachable by the hub")
 		_ = fs.Parse(rest)
 		if *nameFlag != "" {
 			cfg.NodeName = *nameFlag
@@ -215,6 +217,12 @@ func runCLI(args []string, out io.Writer) int {
 		}
 		if *tokenFlag != "" {
 			cfg.AgentToken = *tokenFlag
+		}
+		if *hubFlag != "" {
+			cfg.HubURL = *hubFlag
+		}
+		if *advFlag != "" {
+			cfg.AgentAdvertiseURL = *advFlag
 		}
 		return runAgentDaemon(cfg, out)
 
@@ -373,6 +381,17 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	if cfg.HubURL != "" {
+		errCh := service.StartAnnouncer(ctx, cfg, nil)
+		go func() {
+			for err := range errCh {
+				if err != nil {
+					fmt.Fprintf(out, "[Agent Announcer] Warning: %v\n", err)
+				}
+			}
+		}()
+	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Web.Host, cfg.Web.Port)
 	httpSrv := &http.Server{

@@ -49,4 +49,13 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	if code := runCLI([]string{"node", "remove", "Atlas"}, &out); code != 0 {
 		t.Fatalf("expected exit code 0 for node remove, got %d (%s)", code, out.String())
 	}
+
+	// Verify agent requires token
+	out.Reset()
+	if code := runCLI([]string{"agent", "-hub", "http://hub.lan:10311", "-advertise-url", "http://192.168.1.100:10247"}, &out); code != 1 {
+		t.Fatalf("expected exit code 1 when token missing, got %d", code)
+	}
+	if !strings.Contains(out.String(), "agent_token") {
+		t.Fatalf("expected error mentioning agent_token, got: %s", out.String())
+	}
 }
