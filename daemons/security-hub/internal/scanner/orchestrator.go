@@ -121,7 +121,10 @@ func ApplySkippedAndSummarize(items []models.ManagedItem, skipped map[string]str
 }
 
 func (o *Orchestrator) ScanLocalNode(ctx context.Context) ([]models.ManagedItem, error) {
-	nodeName := o.cfg.NodeName
+	nodeName := ""
+	if o.cfg != nil {
+		nodeName = o.cfg.NodeName
+	}
 	if nodeName == "" {
 		nodeName = config.DefaultNodeName()
 	}

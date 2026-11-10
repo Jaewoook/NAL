@@ -104,7 +104,7 @@ func (m *Manager) RunUpdateSync(ctx context.Context, taskID string, req UpdateRe
 	if m.cfg != nil && m.cfg.NodeName != "" {
 		localNode = m.cfg.NodeName
 	}
-	if req.Node != "" && req.Node != localNode {
+	if req.Node != "" && !strings.EqualFold(req.Node, "local") && !strings.EqualFold(req.Node, localNode) {
 		return m.forwardUpdateToAgent(ctx, taskID, req)
 	}
 	if req.TargetType == string(models.TargetBrew) || (req.TargetType == string(models.TargetDaemon) && req.TargetName == "ollama") {
@@ -138,8 +138,12 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 		return err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if nodeInfo.Token != "" {
-		httpReq.Header.Set("X-NAL-Node-Token", nodeInfo.Token)
+	tok := nodeInfo.Token
+	if tok == "" && m.cfg != nil {
+		tok = m.cfg.AgentToken
+	}
+	if tok != "" {
+		httpReq.Header.Set("X-NAL-Node-Token", tok)
 	}
 	resp, err := m.httpClient.Do(httpReq)
 	if err != nil {
@@ -424,7 +428,7 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 	if m.cfg != nil && m.cfg.NodeName != "" {
 		localNode = m.cfg.NodeName
 	}
-	if nodeName != "" && nodeName != localNode {
+	if nodeName != "" && !strings.EqualFold(nodeName, "local") && !strings.EqualFold(nodeName, localNode) {
 		nodeInfo, err := m.store.GetNode(ctx, nodeName)
 		if err != nil {
 			return nil, err
@@ -456,8 +460,12 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 			return task, err
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
-		if nodeInfo.Token != "" {
-			httpReq.Header.Set("X-NAL-Node-Token", nodeInfo.Token)
+		tok := nodeInfo.Token
+		if tok == "" && m.cfg != nil {
+			tok = m.cfg.AgentToken
+		}
+		if tok != "" {
+			httpReq.Header.Set("X-NAL-Node-Token", tok)
 		}
 		resp, err := m.httpClient.Do(httpReq)
 		if err != nil {

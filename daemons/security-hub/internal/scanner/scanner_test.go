@@ -509,6 +509,17 @@ func TestOrchestrator_RunFullScanWithTask_ContextCancelled(t *testing.T) {
 	}
 }
 
+func TestOrchestrator_ScanLocalNode_NilCfg(t *testing.T) {
+	orch := &Orchestrator{}
+	items, err := orch.ScanLocalNode(context.Background())
+	if err != nil {
+		t.Fatalf("expected nil error on nil cfg, got: %v", err)
+	}
+	if items != nil && len(items) != 0 {
+		t.Fatalf("expected 0 items on nil scanners, got %d", len(items))
+	}
+}
+
 
 
 
