@@ -7,12 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jaewoook/security-hub/internal/auth"
@@ -35,9 +35,6 @@ type Server struct {
 	authMgr    *auth.Manager
 	alerter    *notifier.Alerter
 	httpClient *http.Client
-
-	scanMu         sync.Mutex
-	activeScanTask string
 }
 
 func NewServer(cfg *config.Config, store db.Store, orch *scanner.Orchestrator, updMgr *updater.Manager, authMgr *auth.Manager, alerter *notifier.Alerter) *Server {
@@ -245,6 +242,19 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hubName := ""
+	if s.cfg != nil && s.cfg.NodeName != "" {
+		hubName = s.cfg.NodeName
+	}
+	if hubName == "" {
+		hubName = config.DefaultNodeName()
+	}
+	if strings.EqualFold(req.Name, hubName) {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "agent node name conflicts with hub node name"})
+		return
+	}
+
 	ctx := r.Context()
 	existing, err := s.store.GetNode(ctx, req.Name)
 	if err == nil && existing != nil {
@@ -404,13 +414,21 @@ func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
 		httpReq.Header.Set("X-NAL-Node-Token", req.Token)
 	}
 
-	client := s.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: 3 * time.Second}
+	probeClient := &http.Client{
+		Timeout: 3 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	if s.httpClient != nil {
+		probeClient.Transport = s.httpClient.Transport
+		if s.httpClient.Timeout > 0 {
+			probeClient.Timeout = s.httpClient.Timeout
+		}
 	}
 
 	start := time.Now()
-	resp, err := client.Do(httpReq)
+	resp, err := probeClient.Do(httpReq)
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -442,7 +460,7 @@ func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var info models.NodeInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&info); err != nil {
 		_ = json.NewEncoder(w).Encode(nodeTestResponse{
 			OK:    false,
 			Error: fmt.Sprintf("invalid agent response: %v", err),
@@ -625,22 +643,18 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.scanMu.Lock()
-	if s.activeScanTask != "" {
-		activeID := s.activeScanTask
-		s.scanMu.Unlock()
+	if s.orch == nil {
+		http.Error(w, `{"error":"orchestrator not configured"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if scanning, activeID := s.orch.IsScanning(); scanning {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"error":   "scan already running",
 			"task_id": activeID,
 		})
-		return
-	}
-
-	if s.orch == nil {
-		s.scanMu.Unlock()
-		http.Error(w, `{"error":"orchestrator not configured"}`, http.StatusInternalServerError)
 		return
 	}
 
@@ -664,7 +678,6 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			Status:      "running",
 		})
 		if err != nil {
-			s.scanMu.Unlock()
 			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
 			return
 		}
@@ -673,15 +686,22 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		taskID = fmt.Sprintf("task_%d", time.Now().UnixNano())
 	}
 
-	s.activeScanTask = taskID
-	s.scanMu.Unlock()
+	started, activeID := s.orch.StartScan(taskID)
+	if !started {
+		if s.store != nil {
+			_ = s.store.FinishTask(r.Context(), taskID, "aborted", "scan already running")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error":   "scan already running",
+			"task_id": activeID,
+		})
+		return
+	}
 
 	go func(tid string) {
-		defer func() {
-			s.scanMu.Lock()
-			s.activeScanTask = ""
-			s.scanMu.Unlock()
-		}()
+		defer s.orch.FinishScan()
 
 		scan, err := s.orch.RunFullScanWithTask(context.Background(), tid)
 		if err != nil {

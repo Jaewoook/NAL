@@ -97,6 +97,7 @@ func NewSpoolStore(dataDir string, pg Backend) (*SpoolStore, error) {
 			Nodes:       make(map[string]models.NodeInfo),
 		},
 	}
+	dirty := false
 	if raw, err := os.ReadFile(s.statePath); err == nil {
 		_ = json.Unmarshal(raw, &s.state)
 		if s.state.Tasks == nil {
@@ -124,11 +125,11 @@ func NewSpoolStore(dataDir string, pg Backend) (*SpoolStore, error) {
 			if n.Status == "" {
 				n.Status = models.NodeStatusApproved
 				s.state.Nodes[name] = n
+				dirty = true
 			}
 		}
 	}
 	// Reconcile orphaned running tasks upon daemon startup
-	dirty := false
 	now := time.Now().UTC()
 	for id, t := range s.state.Tasks {
 		if t.Status == "running" {

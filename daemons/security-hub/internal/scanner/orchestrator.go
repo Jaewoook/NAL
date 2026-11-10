@@ -23,6 +23,9 @@ type Orchestrator struct {
 	daemonScanner *DaemonScanner
 	vulnScanner   *VulnScanner
 	eolChecker    *EoLChecker
+
+	scanMu       sync.Mutex
+	activeTaskID string
 }
 
 func NewOrchestrator(cfg *config.Config, store db.Store, runner CommandRunner, httpClient *http.Client) *Orchestrator {
@@ -43,6 +46,37 @@ func NewOrchestrator(cfg *config.Config, store db.Store, runner CommandRunner, h
 		vulnScanner:   NewVulnScanner(cfg.Scanner.OSVAPIURL, httpClient, runner),
 		eolChecker:    NewEoLChecker(cfg.Scanner.EoLAPIURL, httpClient),
 	}
+}
+
+// IsScanning reports whether a scan is currently running and returns the active task ID if so.
+func (o *Orchestrator) IsScanning() (bool, string) {
+	o.scanMu.Lock()
+	defer o.scanMu.Unlock()
+	return o.activeTaskID != "", o.activeTaskID
+}
+
+// StartScan attempts to acquire the scan mutex for taskID.
+// If another scan is already running, it returns false and the active task ID.
+// If acquired, it records the active task ID (defaulting to a timestamped string if empty)
+// and returns true, "".
+func (o *Orchestrator) StartScan(taskID string) (bool, string) {
+	o.scanMu.Lock()
+	defer o.scanMu.Unlock()
+	if o.activeTaskID != "" {
+		return false, o.activeTaskID
+	}
+	if taskID == "" {
+		taskID = fmt.Sprintf("scan_%d", time.Now().UnixNano())
+	}
+	o.activeTaskID = taskID
+	return true, ""
+}
+
+// FinishScan releases the active scan lock.
+func (o *Orchestrator) FinishScan() {
+	o.scanMu.Lock()
+	defer o.scanMu.Unlock()
+	o.activeTaskID = ""
 }
 
 func ApplySkippedAndSummarize(items []models.ManagedItem, skipped map[string]string) *models.ScanResult {
@@ -159,6 +193,11 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 			Status:      "running",
 		}); err == nil {
 			taskID = t.ID
+			o.scanMu.Lock()
+			if strings.HasPrefix(o.activeTaskID, "scan_") {
+				o.activeTaskID = taskID
+			}
+			o.scanMu.Unlock()
 		}
 	}
 

@@ -381,5 +381,45 @@ func TestDockerScanner_GracefullyIgnoresStoppedOrMissingDocker(t *testing.T) {
 	}
 }
 
+func TestOrchestrator_ScanMutex(t *testing.T) {
+	orch := &Orchestrator{}
+
+	scanning, active := orch.IsScanning()
+	if scanning || active != "" {
+		t.Fatalf("expected idle orchestrator, got scanning=%v active=%q", scanning, active)
+	}
+
+	started, active := orch.StartScan("task-123")
+	if !started || active != "" {
+		t.Fatalf("expected successful StartScan, got started=%v active=%q", started, active)
+	}
+
+	scanning, active = orch.IsScanning()
+	if !scanning || active != "task-123" {
+		t.Fatalf("expected scanning=true active=task-123, got scanning=%v active=%q", scanning, active)
+	}
+
+	// Attempt second scan while active
+	started2, active2 := orch.StartScan("task-456")
+	if started2 || active2 != "task-123" {
+		t.Fatalf("expected second StartScan to fail with active task-123, got started=%v active=%q", started2, active2)
+	}
+
+	orch.FinishScan()
+
+	scanning, active = orch.IsScanning()
+	if scanning || active != "" {
+		t.Fatalf("expected idle orchestrator after FinishScan, got scanning=%v active=%q", scanning, active)
+	}
+
+	// Default task ID when taskID == ""
+	started3, _ := orch.StartScan("")
+	if !started3 || !strings.HasPrefix(orch.activeTaskID, "scan_") {
+		t.Fatalf("expected default scan_ task ID, got started=%v activeTaskID=%q", started3, orch.activeTaskID)
+	}
+	orch.FinishScan()
+}
+
+
 
 

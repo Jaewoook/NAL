@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -927,4 +928,180 @@ func TestWebAssets_PendingNodesAndScanProgress(t *testing.T) {
 		}
 	}
 }
+
+func TestNodeAnnounce_RejectsHubNodeNameConflict(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.NodeName = "Axis"
+	cfg.AgentToken = "secret-token-123"
+
+	store, err := db.NewSpoolStore(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authMgr, err := auth.NewManager(cfg.Auth, filepath.Join(root, "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(cfg, store, nil, nil, authMgr, nil)
+	h := srv.Handler()
+
+	// 1. Conflict with exact hub node name
+	body1 := `{"name":"Axis","url":"http://192.168.1.50:10247","token":"secret-token-123"}`
+	req1 := httptest.NewRequest(http.MethodPost, "/api/nodes/announce", strings.NewReader(body1))
+	w1 := httptest.NewRecorder()
+	h.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for exact hub node name conflict, got %d: %s", w1.Code, w1.Body.String())
+	}
+	if !strings.Contains(w1.Body.String(), "agent node name conflicts with hub node name") {
+		t.Fatalf("unexpected error response: %s", w1.Body.String())
+	}
+
+	// 2. Conflict with case-insensitive hub node name
+	body2 := `{"name":"axis","url":"http://192.168.1.50:10247","token":"secret-token-123"}`
+	req2 := httptest.NewRequest(http.MethodPost, "/api/nodes/announce", strings.NewReader(body2))
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for case-insensitive hub node name conflict, got %d: %s", w2.Code, w2.Body.String())
+	}
+	if !strings.Contains(w2.Body.String(), "agent node name conflicts with hub node name") {
+		t.Fatalf("unexpected error response: %s", w2.Body.String())
+	}
+
+	// 3. Different name succeeds with 200 OK
+	body3 := `{"name":"Atlas","url":"http://192.168.1.50:10247","token":"secret-token-123"}`
+	req3 := httptest.NewRequest(http.MethodPost, "/api/nodes/announce", strings.NewReader(body3))
+	w3 := httptest.NewRecorder()
+	h.ServeHTTP(w3, req3)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("expected 200 for non-conflicting node announcement, got %d: %s", w3.Code, w3.Body.String())
+	}
+}
+
+func TestNodeTest_ProbeClientSafety_NoRedirectAndLimitReader(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.NodeName = "Axis"
+
+	store, err := db.NewSpoolStore(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authMgr, err := auth.NewManager(cfg.Auth, filepath.Join(root, "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(cfg, store, nil, nil, authMgr, nil)
+
+	tok, err := authMgr.GenerateBreakGlassToken(5 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginW := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(loginW, httptest.NewRequest(http.MethodGet, "/api/auth/token-login?token="+tok, nil))
+	sessionCookie := loginW.Result().Cookies()[0]
+
+	// 1. Redirect safety: target server returns a redirect (HTTP 302)
+	redirectReceived := false
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirectReceived = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer redirectTarget.Close()
+
+	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirectTarget.URL, http.StatusFound)
+	}))
+	defer agentServer.Close()
+
+	srv.SetHTTPClient(agentServer.Client())
+
+	reqBody := fmt.Sprintf(`{"url":%q,"token":"secret"}`, agentServer.URL)
+	testReq := httptest.NewRequest(http.MethodPost, "/api/nodes/test", strings.NewReader(reqBody))
+	testReq.AddCookie(sessionCookie)
+	testW := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(testW, testReq)
+
+	if redirectReceived {
+		t.Fatal("probe client followed redirect, leaking probe token or request to redirect target!")
+	}
+	var testResp struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal(testW.Body.Bytes(), &testResp)
+	if testResp.OK {
+		t.Fatal("expected test to report error due to redirect 302, got OK=true")
+	}
+	if !strings.Contains(testResp.Error, "HTTP 302") {
+		t.Fatalf("expected error to mention HTTP 302, got %q", testResp.Error)
+	}
+}
+
+func TestOrchestrator_ScheduledAndManualScanCoordination(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.NodeName = "Axis"
+
+	store, err := db.NewSpoolStore(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authMgr, err := auth.NewManager(cfg.Auth, filepath.Join(root, "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	orch := scanner.NewOrchestrator(cfg, store, nil, nil)
+	srv := NewServer(cfg, store, orch, nil, authMgr, nil)
+
+	tok, err := authMgr.GenerateBreakGlassToken(5 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginW := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(loginW, httptest.NewRequest(http.MethodGet, "/api/auth/token-login?token="+tok, nil))
+	sessionCookie := loginW.Result().Cookies()[0]
+
+	// Simulate background daemon starting a scheduled scan
+	started, _ := orch.StartScan("scheduled_task_99")
+	if !started {
+		t.Fatal("failed to start simulated scheduled scan")
+	}
+
+	// Manual scan request from UI should receive HTTP 409 Conflict with the active task ID
+	req := httptest.NewRequest(http.MethodPost, "/api/scan", nil)
+	req.AddCookie(sessionCookie)
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected HTTP 409 Conflict while scheduled scan is active, got %d: %s", w.Code, w.Body.String())
+	}
+	var conflictResp struct {
+		Error  string `json:"error"`
+		TaskID string `json:"task_id"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &conflictResp)
+	if conflictResp.Error != "scan already running" {
+		t.Fatalf("expected error 'scan already running', got %q", conflictResp.Error)
+	}
+	if conflictResp.TaskID != "scheduled_task_99" {
+		t.Fatalf("expected task_id 'scheduled_task_99', got %q", conflictResp.TaskID)
+	}
+
+	// Finish the scheduled scan
+	orch.FinishScan()
+
+	// Now manual scan should succeed
+	req2 := httptest.NewRequest(http.MethodPost, "/api/scan", nil)
+	req2.AddCookie(sessionCookie)
+	w2 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w2, req2)
+	if w2.Code != http.StatusAccepted {
+		t.Fatalf("expected HTTP 202 after scheduled scan finished, got %d: %s", w2.Code, w2.Body.String())
+	}
+}
+
 

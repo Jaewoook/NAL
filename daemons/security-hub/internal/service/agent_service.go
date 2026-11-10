@@ -24,6 +24,7 @@ type AgentServiceOptions struct {
 	AdvertiseURL string
 	CustomPath   string
 	User         string
+	IsUser       bool
 }
 
 // AgentServiceManager provides method-based dispatch for agent daemon service operations.
@@ -180,7 +181,11 @@ RestartSec=5s
 Environment=PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 
 [Install]
+{{- if .IsUser }}
+WantedBy=default.target
+{{- else }}
 WantedBy=multi-user.target
+{{- end }}
 `
 
 // quoteSystemdArg wraps an argument in double quotes and escapes backslashes and double quotes
@@ -208,11 +213,13 @@ func GenerateAgentSystemdUnit(opts AgentServiceOptions) string {
 		WorkingDir string
 		User       string
 		Args       []string
+		IsUser     bool
 	}{
 		BinaryPath: quoteSystemdArg(opts.BinaryPath),
 		WorkingDir: opts.WorkingDir,
 		User:       opts.User,
 		Args:       quotedArgs,
+		IsUser:     opts.IsUser,
 	}
 
 	tmpl := template.Must(template.New("agent-systemd").Parse(agentSystemdTemplate))
@@ -239,6 +246,9 @@ func InstallAgent(opts AgentServiceOptions) error {
 		if targetOS == "darwin" || strings.HasSuffix(opts.CustomPath, ".plist") {
 			content = GenerateAgentLaunchdPlist(opts)
 		} else {
+			if strings.Contains(opts.CustomPath, ".config/systemd/user") || strings.Contains(opts.CustomPath, "/user/") {
+				opts.IsUser = true
+			}
 			content = GenerateAgentSystemdUnit(opts)
 		}
 		return os.WriteFile(opts.CustomPath, []byte(content), 0644)
@@ -258,11 +268,12 @@ func InstallAgent(opts AgentServiceOptions) error {
 		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 			return err
 		}
+		isUser := strings.Contains(destPath, ".config/systemd/user")
+		opts.IsUser = isUser
 		content := GenerateAgentSystemdUnit(opts)
 		if err := os.WriteFile(destPath, []byte(content), 0644); err != nil {
 			return err
 		}
-		isUser := strings.Contains(destPath, ".config/systemd/user")
 		sysArgs := []string{"systemctl"}
 		if isUser {
 			sysArgs = append(sysArgs, "--user")

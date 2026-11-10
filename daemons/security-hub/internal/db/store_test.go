@@ -3,6 +3,8 @@ package db
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -580,6 +582,49 @@ func TestSpoolStore_PendingApprovalAndDynamicOffline(t *testing.T) {
 		t.Fatalf("expected error rejecting non-existent node")
 	}
 }
+
+func TestSpoolStore_LegacyNodesDefaultToApprovedAndPersistOnStartup(t *testing.T) {
+	dir := t.TempDir()
+	stateFile := filepath.Join(dir, "spool_state.json")
+
+	// Pre-create a spool_state.json with a legacy node that has no status, and NO running tasks
+	rawJSON := `{
+		"next_task_num": 1,
+		"tasks": {},
+		"nodes": {
+			"LegacyNode": {
+				"name": "LegacyNode",
+				"url": "http://192.168.1.99:10247",
+				"role": "agent",
+				"status": ""
+			}
+		}
+	}`
+	if err := os.WriteFile(stateFile, []byte(rawJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Starting SpoolStore should reconcile legacy node to approved AND persist to disk
+	store, err := NewSpoolStore(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	node, err := store.GetNode(context.Background(), "LegacyNode")
+	if err != nil || node.Status != models.NodeStatusApproved {
+		t.Fatalf("expected LegacyNode to be approved in memory, got %+v, err=%v", node, err)
+	}
+
+	// Verify file on disk was persisted with approved status
+	diskBytes, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(diskBytes), `"approved"`) {
+		t.Fatalf("expected spool_state.json on disk to be saved with status 'approved', got:\n%s", string(diskBytes))
+	}
+}
+
 
 
 

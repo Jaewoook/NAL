@@ -324,9 +324,18 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 
 	// Background Security, Outdated, Brew & EoL Scanner
 	go func() {
-		if res, err := orch.RunFullScan(ctx); err == nil {
-			_, _ = alerter.NotifyScanFindings(ctx, res)
+		runScheduledScan := func() {
+			started, _ := orch.StartScan("")
+			if !started {
+				return
+			}
+			defer orch.FinishScan()
+			if res, err := orch.RunFullScan(ctx); err == nil {
+				_, _ = alerter.NotifyScanFindings(ctx, res)
+			}
 		}
+
+		runScheduledScan()
 		interval := time.Duration(cfg.Scanner.IntervalHours) * time.Hour
 		if interval <= 0 {
 			interval = 6 * time.Hour
@@ -338,9 +347,7 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if res, err := orch.RunFullScan(ctx); err == nil {
-					_, _ = alerter.NotifyScanFindings(ctx, res)
-				}
+				runScheduledScan()
 			}
 		}
 	}()
@@ -373,6 +380,7 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 		fmt.Fprintln(out, "Error: agent_token (or -token / SECURITY_HUB_AGENT_TOKEN) is required in agent mode")
 		return 1
 	}
+	cfg.NodeName = service.ResolveAgentNodeName(cfg)
 	store, err := db.NewSpoolStore(cfg.Database.DataDir, nil)
 	if err != nil {
 		fmt.Fprintf(out, "Failed to initialize agent spool store: %v\n", err)

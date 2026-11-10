@@ -132,3 +132,27 @@ func TestAgentService_SystemdWhitespaceQuoting(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentService_SystemdUserVsSystemTarget(t *testing.T) {
+	optsSystem := service.AgentServiceOptions{
+		BinaryPath: "/usr/local/bin/security-hub",
+		IsUser:     false,
+	}
+	unitSystem := service.GenerateAgentSystemdUnit(optsSystem)
+	if !strings.Contains(unitSystem, "WantedBy=multi-user.target") {
+		t.Fatalf("expected system unit to have WantedBy=multi-user.target, got:\n%s", unitSystem)
+	}
+
+	optsUser := service.AgentServiceOptions{
+		BinaryPath: "/usr/local/bin/security-hub",
+		IsUser:     true,
+	}
+	unitUser := service.GenerateAgentSystemdUnit(optsUser)
+	if !strings.Contains(unitUser, "WantedBy=default.target") {
+		t.Fatalf("expected user unit to have WantedBy=default.target, got:\n%s", unitUser)
+	}
+	if strings.Contains(unitUser, "WantedBy=multi-user.target") {
+		t.Fatalf("did not expect user unit to have WantedBy=multi-user.target, got:\n%s", unitUser)
+	}
+}
+
