@@ -5,10 +5,12 @@ import (
 	"crypto/subtle"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -25,12 +27,13 @@ import (
 var staticEmbedFS embed.FS
 
 type Server struct {
-	cfg     *config.Config
-	store   db.Store
-	orch    *scanner.Orchestrator
-	updMgr  *updater.Manager
-	authMgr *auth.Manager
-	alerter *notifier.Alerter
+	cfg        *config.Config
+	store      db.Store
+	orch       *scanner.Orchestrator
+	updMgr     *updater.Manager
+	authMgr    *auth.Manager
+	alerter    *notifier.Alerter
+	httpClient *http.Client
 }
 
 func NewServer(cfg *config.Config, store db.Store, orch *scanner.Orchestrator, updMgr *updater.Manager, authMgr *auth.Manager, alerter *notifier.Alerter) *Server {
@@ -42,6 +45,10 @@ func NewServer(cfg *config.Config, store db.Store, orch *scanner.Orchestrator, u
 		authMgr: authMgr,
 		alerter: alerter,
 	}
+}
+
+func (s *Server) SetHTTPClient(client *http.Client) {
+	s.httpClient = client
 }
 
 func (s *Server) Handler() http.Handler {
@@ -58,9 +65,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/auth/passkey/login/begin", s.authMgr.BeginPasskeyLogin)
 	mux.HandleFunc("/api/auth/passkey/login/finish", s.authMgr.FinishPasskeyLogin)
 
+	// Agent announcement (authenticated via AgentToken in payload)
+	mux.HandleFunc("/api/nodes/announce", s.handleNodeAnnounce)
+
 	// Protected API endpoints
 	mux.HandleFunc("/api/dashboard", s.authMgr.RequireAuth(s.handleDashboard))
 	mux.HandleFunc("/api/nodes", s.authMgr.RequireAuth(s.handleNodes))
+	mux.HandleFunc("/api/nodes/approve", s.authMgr.RequireAuth(s.handleNodeApprove))
+	mux.HandleFunc("/api/nodes/reject", s.authMgr.RequireAuth(s.handleNodeReject))
+	mux.HandleFunc("/api/nodes/test", s.authMgr.RequireAuth(s.handleNodeTest))
 	mux.HandleFunc("/api/scan", s.authMgr.RequireAuth(s.handleScan))
 	mux.HandleFunc("/api/update", s.authMgr.RequireAuth(s.handleUpdate))
 	mux.HandleFunc("/api/rollback", s.authMgr.RequireAuth(s.handleRollback))
@@ -132,6 +145,7 @@ func (s *Server) buildNodesOverview(ctx context.Context) []models.NodeInfo {
 		{
 			Name:       hubName,
 			Role:       "hub",
+			Status:     models.NodeStatusApproved,
 			Online:     true,
 			LastSeenAt: time.Now().UTC(),
 		},
@@ -188,6 +202,258 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type nodeAnnounceRequest struct {
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	Token     string `json:"token"`
+	OSVersion string `json:"os_version"`
+}
+
+func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req nodeAnnounceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json"})
+		return
+	}
+
+	expected := ""
+	if s.cfg != nil {
+		expected = s.cfg.AgentToken
+	}
+	if expected == "" || subtle.ConstantTimeCompare([]byte(req.Token), []byte(expected)) != 1 {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	req.Name = strings.TrimSpace(req.Name)
+	req.URL = strings.TrimSpace(req.URL)
+	if req.Name == "" || req.URL == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "name and url required"})
+		return
+	}
+
+	ctx := r.Context()
+	existing, err := s.store.GetNode(ctx, req.Name)
+	if err == nil && existing != nil {
+		if existing.Status == models.NodeStatusRejected {
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "node rejected"})
+			return
+		}
+
+		existing.URL = req.URL
+		existing.Online = true
+		existing.LastSeenAt = time.Now().UTC()
+		if req.OSVersion != "" {
+			existing.OSVersion = req.OSVersion
+		}
+		if req.Token != "" {
+			existing.Token = req.Token
+		}
+		_ = s.store.UpsertNode(ctx, *existing)
+
+		status := string(existing.Status)
+		if status == "" {
+			status = string(models.NodeStatusApproved)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": status})
+		return
+	}
+
+	newNode := models.NodeInfo{
+		Name:       req.Name,
+		URL:        req.URL,
+		Token:      req.Token,
+		Role:       "agent",
+		Status:     models.NodeStatusPending,
+		Online:     true,
+		LastSeenAt: time.Now().UTC(),
+		OSVersion:  req.OSVersion,
+	}
+	if err := s.store.UpsertNode(ctx, newNode); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "pending"})
+}
+
+func (s *Server) handleNodeApprove(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		var req struct {
+			Name string `json:"name"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		name = strings.TrimSpace(req.Name)
+	}
+	if name == "" {
+		http.Error(w, `{"error":"name parameter required"}`, http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	if err := s.store.ApproveNode(ctx, name); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status": "approved",
+		"name":   name,
+		"nodes":  s.buildNodesOverview(ctx),
+	})
+}
+
+func (s *Server) handleNodeReject(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		var req struct {
+			Name string `json:"name"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		name = strings.TrimSpace(req.Name)
+	}
+	if name == "" {
+		http.Error(w, `{"error":"name parameter required"}`, http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	if err := s.store.RejectNode(ctx, name); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status": "rejected",
+		"name":   name,
+		"nodes":  s.buildNodesOverview(ctx),
+	})
+}
+
+type nodeTestRequest struct {
+	URL   string `json:"url"`
+	Token string `json:"token"`
+}
+
+type nodeTestResponse struct {
+	OK        bool             `json:"ok"`
+	LatencyMs int64            `json:"latency_ms,omitempty"`
+	OSVersion string           `json:"os_version,omitempty"`
+	Info      *models.NodeInfo `json:"info,omitempty"`
+	Error     string           `json:"error,omitempty"`
+}
+
+func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req nodeTestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(nodeTestResponse{
+			OK:    false,
+			Error: "url is required",
+		})
+		return
+	}
+
+	targetURL := strings.TrimRight(strings.TrimSpace(req.URL), "/")
+	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
+		targetURL = "http://" + targetURL
+	}
+	endpoint := targetURL + "/api/agent/info"
+
+	testCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	httpReq, err := http.NewRequestWithContext(testCtx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(nodeTestResponse{
+			OK:    false,
+			Error: err.Error(),
+		})
+		return
+	}
+	if req.Token != "" {
+		httpReq.Header.Set("X-NAL-Node-Token", req.Token)
+	}
+
+	client := s.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 3 * time.Second}
+	}
+
+	start := time.Now()
+	resp, err := client.Do(httpReq)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		errMsg := err.Error()
+		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(errMsg, "deadline exceeded") {
+			errMsg = "connection timed out"
+		}
+		_ = json.NewEncoder(w).Encode(nodeTestResponse{
+			OK:    false,
+			Error: errMsg,
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		_ = json.NewEncoder(w).Encode(nodeTestResponse{
+			OK:    false,
+			Error: "invalid token",
+		})
+		return
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = json.NewEncoder(w).Encode(nodeTestResponse{
+			OK:    false,
+			Error: fmt.Sprintf("agent returned HTTP %d", resp.StatusCode),
+		})
+		return
+	}
+
+	var info models.NodeInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		_ = json.NewEncoder(w).Encode(nodeTestResponse{
+			OK:    false,
+			Error: fmt.Sprintf("invalid agent response: %v", err),
+		})
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(nodeTestResponse{
+		OK:        true,
+		LatencyMs: elapsed.Milliseconds(),
+		OSVersion: info.OSVersion,
+		Info:      &info,
+	})
+}
+
 func (s *Server) requireAgentToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		expected := ""
@@ -216,6 +482,7 @@ func (s *Server) handleAgentInfo(w http.ResponseWriter, r *http.Request) {
 		Role:       "agent",
 		Online:     true,
 		LastSeenAt: time.Now().UTC(),
+		OSVersion:  runtime.GOOS + "/" + runtime.GOARCH,
 	})
 }
 

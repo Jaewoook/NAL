@@ -169,6 +169,7 @@ func (o *Orchestrator) RunFullScan(ctx context.Context) (*models.ScanResult, err
 		{
 			Name:       hubName,
 			Role:       "hub",
+			Status:     models.NodeStatusApproved,
 			Online:     true,
 			LastSeenAt: time.Now().UTC(),
 		},
@@ -178,18 +179,23 @@ func (o *Orchestrator) RunFullScan(ctx context.Context) (*models.ScanResult, err
 		prevScan, _ := o.store.LoadLatestScanResult(ctx)
 		remoteNodes, _ := o.store.ListNodes(ctx)
 
+		var approvedRemoteNodes []models.NodeInfo
+		for _, rn := range remoteNodes {
+			if rn.Name == hubName || rn.Status != models.NodeStatusApproved {
+				continue
+			}
+			approvedRemoteNodes = append(approvedRemoteNodes, rn)
+		}
+
 		type nodeScanResult struct {
 			node  models.NodeInfo
 			items []models.ManagedItem
 			err   error
 		}
 		var wg sync.WaitGroup
-		results := make([]nodeScanResult, len(remoteNodes))
+		results := make([]nodeScanResult, len(approvedRemoteNodes))
 
-		for i, rn := range remoteNodes {
-			if rn.Name == hubName {
-				continue
-			}
+		for i, rn := range approvedRemoteNodes {
 			wg.Add(1)
 			go func(idx int, node models.NodeInfo) {
 				defer wg.Done()
