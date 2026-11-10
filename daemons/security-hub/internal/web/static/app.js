@@ -3,6 +3,7 @@ let currentNodeFilter = 'all';
 let dashboardData = null;
 let pendingUpdateReq = null;
 let activeEventSource = null;
+let activeScanEventSource = null;
 
 async function initApp() {
   const res = await fetch('/api/auth/session');
@@ -53,16 +54,37 @@ function closeBrokenLinkageModal() {
   if (modal) modal.style.display = 'none';
 }
 
+function openBrokenLinkageModalByIndex(idx) {
+  const item = (window.currentRenderedItems || [])[idx];
+  if (!item) return;
+  openBrokenLinkageModal(item.name, item.linkage_details || 'Missing shared library dependency');
+}
+
 async function loadDashboard() {
   const res = await fetch('/api/dashboard');
   if (res.status === 401) {
     return initApp();
   }
   dashboardData = await res.json();
+  renderPendingNodesBanner();
   renderNodeBar();
   renderSummary();
   renderItemsTable();
   renderTaskList();
+}
+
+function renderPendingNodesBanner() {
+  const bannerContainer = document.getElementById('pending-nodes-container');
+  const bannerCount = document.getElementById('pending-nodes-count');
+  if (!bannerContainer) return;
+  const nodes = (dashboardData && dashboardData.nodes) || [];
+  const pending = nodes.filter(n => n.status === 'pending');
+  if (pending.length > 0) {
+    bannerContainer.style.display = 'inline-flex';
+    if (bannerCount) bannerCount.textContent = pending.length;
+  } else {
+    bannerContainer.style.display = 'none';
+  }
 }
 
 function getFilteredItems() {
@@ -72,6 +94,9 @@ function getFilteredItems() {
 }
 
 function selectNodeFilter(nodeName) {
+  if (nodeName && nodeName !== 'all') {
+    nodeName = decodeURIComponent(nodeName);
+  }
   currentNodeFilter = nodeName;
   renderNodeBar();
   renderSummary();
@@ -79,17 +104,22 @@ function selectNodeFilter(nodeName) {
   renderTaskList();
 }
 
+function encodeNodeArg(name) {
+  return encodeURIComponent(name || '').replace(/'/g, '%27');
+}
+
 function renderNodeBar() {
   const container = document.getElementById('node-pills-container');
   if (!container) return;
   const nodes = (dashboardData && dashboardData.nodes) || [{name: (dashboardData && dashboardData.hub_node) || 'local', role: 'hub', online: true}];
-  let html = `<button class="node-pill ${currentNodeFilter === 'all' ? 'active' : ''}" onclick='selectNodeFilter("all")'>All Nodes (${nodes.length})</button>`;
-  nodes.forEach(n => {
+  const approvedNodes = nodes.filter(n => !n.status || n.status === 'approved');
+  let html = `<button class="node-pill ${currentNodeFilter === 'all' ? 'active' : ''}" onclick='selectNodeFilter("all")'>All Nodes (${approvedNodes.length})</button>`;
+  approvedNodes.forEach(n => {
     const dot = n.online ? 'green' : 'amber';
     const roleTag = n.role === 'hub' ? 'Hub' : 'Agent';
     const title = n.last_error ? `Offline: ${n.last_error}` : (n.url || 'Local Host');
     html += `
-      <button class="node-pill ${currentNodeFilter === n.name ? 'active' : ''}" title="${escapeHtml(title)}" onclick='selectNodeFilter("${escapeHtml(n.name)}")'>
+      <button class="node-pill ${currentNodeFilter === n.name ? 'active' : ''}" title="${escapeHtml(title)}" onclick='selectNodeFilter("${encodeNodeArg(n.name)}")'>
         <span class="dot ${dot}"></span>
         <span>${escapeHtml(n.name)}</span>
         <span class="node-role">${roleTag}</span>
@@ -184,6 +214,8 @@ function renderItemsTable() {
     return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
   });
 
+  window.currentRenderedItems = items;
+
   items.forEach((item, idx) => {
     const nodeName = item.node || (dashboardData && dashboardData.hub_node) || 'local';
     const tr = document.createElement('tr');
@@ -194,12 +226,12 @@ function renderItemsTable() {
     if (item.broken_linkage && (item.crit_count > 0 || item.high_count > 0)) {
       secHtml = `
         <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
-          <button class="badge crit badge-btn" onclick='openBrokenLinkageModal(${JSON.stringify(item.name)}, ${JSON.stringify(item.linkage_details || "Broken dylib dependency")})'>⚠ Broken Linkage (Details)</button>
+          <button class="badge crit badge-btn" onclick='openBrokenLinkageModalByIndex(${idx})'>⚠ Broken Linkage (Details)</button>
           <span class="badge crit">● ${item.crit_count} Crit / ${item.high_count} High</span>
         </div>
       `;
     } else if (item.broken_linkage) {
-      secHtml = `<button class="badge crit badge-btn" onclick='openBrokenLinkageModal(${JSON.stringify(item.name)}, ${JSON.stringify(item.linkage_details || "Broken dylib dependency")})' title="Click to view broken linkage details">⚠ Broken Linkage (Details)</button>`;
+      secHtml = `<button class="badge crit badge-btn" onclick='openBrokenLinkageModalByIndex(${idx})' title="Click to view broken linkage details">⚠ Broken Linkage (Details)</button>`;
     } else if (item.crit_count > 0 || item.high_count > 0) {
       const firstId = item.vulnerabilities?.[0]?.id || 'CVE';
       secHtml = `<span class="badge crit">● ${item.crit_count} Crit / ${item.high_count} High (${escapeHtml(firstId)})</span>`;
@@ -241,15 +273,15 @@ function renderItemsTable() {
     if (item.target_type === 'docker' || item.target_type === 'brew' || (item.target_type === 'daemon' && item.name === 'ollama')) {
       const btnClass = (item.crit_count > 0 || item.broken_linkage) ? 'btn-danger' : 'btn-primary';
       const btnLabel = item.broken_linkage ? 'Upgrade & Fix' : 'Update';
-      actionsHtml += `<button class="btn ${btnClass}" onclick='openUpdateModal(${JSON.stringify(item)}, "${selectId}")'>${btnLabel}</button>`;
+      actionsHtml += `<button class="btn ${btnClass}" onclick='openUpdateModalByIndex(${idx}, "${selectId}")'>${btnLabel}</button>`;
       if (item.skipped) {
         actionsHtml += `<span class="badge skip">Skipped ${escapeHtml(item.skipped_version)}</span>`;
-        actionsHtml += `<button class="btn btn-ghost" onclick='unskipItem("${item.target_type}", "${item.name}")'>Unskip</button>`;
+        actionsHtml += `<button class="btn btn-ghost" onclick='unskipItem("${encodeNodeArg(item.target_type)}", "${encodeNodeArg(item.name)}")'>Unskip</button>`;
       } else if (item.outdated) {
-        actionsHtml += `<button class="btn btn-ghost" onclick='skipItem("${item.target_type}", "${item.name}", "${selectId}")'>Skip</button>`;
+        actionsHtml += `<button class="btn btn-ghost" onclick='skipItem("${encodeNodeArg(item.target_type)}", "${encodeNodeArg(item.name)}", "${selectId}")'>Skip</button>`;
       }
       if (item.has_rollback) {
-        actionsHtml += `<button class="btn btn-ghost" onclick='rollbackService("${escapeHtml(nodeName)}", "${item.name}")'>Rollback (${escapeHtml(item.rollback_version)})</button>`;
+        actionsHtml += `<button class="btn btn-ghost" onclick='rollbackService("${encodeNodeArg(nodeName)}", "${encodeNodeArg(item.name)}")'>Rollback (${escapeHtml(item.rollback_version)})</button>`;
       }
     }
     if (item.release_notes_url) {
@@ -283,6 +315,12 @@ function renderItemsTable() {
     `;
     tbody.appendChild(tr);
   });
+}
+
+function openUpdateModalByIndex(idx, selectId) {
+  const item = (window.currentRenderedItems || [])[idx];
+  if (!item) return;
+  openUpdateModal(item, selectId);
 }
 
 function openUpdateModal(item, selectId) {
@@ -330,7 +368,9 @@ async function confirmAndStartUpdate() {
   }
 }
 
-async function rollbackService(nodeName, serviceName) {
+async function rollbackService(encodedNodeName, encodedServiceName) {
+  const nodeName = decodeURIComponent(encodedNodeName || '');
+  const serviceName = decodeURIComponent(encodedServiceName || '');
   if (!confirm(`Roll back ${serviceName} on ${nodeName} to its previous snapshot version and digest?`)) return;
   const res = await fetch('/api/rollback', {
     method: 'POST',
@@ -344,28 +384,200 @@ async function rollbackService(nodeName, serviceName) {
 }
 
 function openNodesModal() {
+  const resBox = document.getElementById('test-node-result');
+  if (resBox) {
+    resBox.style.display = 'none';
+    resBox.innerHTML = '';
+  }
   renderNodesModalList();
   document.getElementById('modal-nodes').style.display = 'flex';
 }
 
 function closeNodesModal() {
+  const resBox = document.getElementById('test-node-result');
+  if (resBox) {
+    resBox.style.display = 'none';
+    resBox.innerHTML = '';
+  }
   document.getElementById('modal-nodes').style.display = 'none';
 }
 
 function renderNodesModalList() {
   const box = document.getElementById('nodes-modal-list');
+  const pendingSection = document.getElementById('pending-nodes-section');
+  const pendingBox = document.getElementById('pending-nodes-list');
   const nodes = (dashboardData && dashboardData.nodes) || [];
-  box.innerHTML = nodes.map(n => `
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border);">
-      <div>
-        <span class="dot ${n.online ? 'green' : 'amber'}"></span>
-        <strong>${escapeHtml(n.name)}</strong>
-        <span class="badge skip" style="margin-left:6px;">${escapeHtml(n.role)}</span>
-        <div class="svc-sub">${escapeHtml(n.url || 'Local Hub Host')} ${n.last_error ? '· ' + escapeHtml(n.last_error) : ''}</div>
+
+  const pendingNodes = nodes.filter(n => n.status === 'pending');
+  if (pendingSection && pendingBox) {
+    if (pendingNodes.length > 0) {
+      pendingSection.style.display = 'block';
+      const countEl = document.getElementById('modal-pending-count');
+      if (countEl) countEl.textContent = pendingNodes.length;
+      pendingBox.innerHTML = pendingNodes.map(n => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);">
+          <div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span class="dot amber"></span>
+              <strong>${escapeHtml(n.name)}</strong>
+              <span class="badge warn" style="font-size:10px; padding:1px 6px;">PENDING</span>
+              ${n.os_version ? `<span class="badge skip" style="font-size:10px; padding:1px 6px;">${escapeHtml(n.os_version)}</span>` : ''}
+            </div>
+            <div class="svc-sub" style="margin-top:2px;">${escapeHtml(n.url || 'LAN Node')}</div>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <button class="btn btn-primary" onclick='approveNode("${encodeNodeArg(n.name)}")'>Approve</button>
+            <button class="btn btn-danger" onclick='rejectNode("${encodeNodeArg(n.name)}")'>Dismiss</button>
+          </div>
+        </div>
+      `).join('');
+    } else {
+      pendingSection.style.display = 'none';
+      pendingBox.innerHTML = '';
+    }
+  }
+
+  const activeNodes = nodes.filter(n => !n.status || n.status === 'approved');
+  const rejectedNodes = nodes.filter(n => n.status === 'rejected');
+  if (box) {
+    const activeHtml = activeNodes.map(n => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border);">
+        <div>
+          <span class="dot ${n.online ? 'green' : 'amber'}"></span>
+          <strong>${escapeHtml(n.name)}</strong>
+          <span class="badge skip" style="margin-left:6px;">${escapeHtml(n.role)}</span>
+          ${n.os_version ? `<span class="badge skip" style="margin-left:4px; font-size:10px;">${escapeHtml(n.os_version)}</span>` : ''}
+          <div class="svc-sub">${escapeHtml(n.url || 'Local Hub Host')} ${n.last_error ? '· ' + escapeHtml(n.last_error) : ''}</div>
+        </div>
+        ${n.role !== 'hub' ? `<button class="btn btn-danger" onclick='deleteRemoteNode("${encodeNodeArg(n.name)}")'>Remove</button>` : ''}
       </div>
-      ${n.role !== 'hub' ? `<button class="btn btn-danger" onclick='deleteRemoteNode("${escapeHtml(n.name)}")'>Remove</button>` : ''}
-    </div>
-  `).join('');
+    `).join('');
+
+    const rejectedHtml = rejectedNodes.length > 0 ? `
+      <div style="margin-top:14px; padding-top:8px; border-top:1px dashed var(--border);">
+        <div style="font-size:11px; font-weight:600; color:var(--text-dim); text-transform:uppercase; margin-bottom:6px;">Dismissed Nodes (${rejectedNodes.length})</div>
+        ${rejectedNodes.map(n => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); opacity:0.8;">
+            <div>
+              <span class="dot red"></span>
+              <strong>${escapeHtml(n.name)}</strong>
+              <span class="badge warn" style="margin-left:6px; font-size:10px; padding:1px 5px;">REJECTED</span>
+              <div class="svc-sub">${escapeHtml(n.url || 'LAN Node')}</div>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-primary" style="padding:2px 8px; font-size:11px;" onclick='approveNode("${encodeNodeArg(n.name)}")'>Re-Approve</button>
+              <button class="btn btn-danger" style="padding:2px 8px; font-size:11px;" onclick='deleteRemoteNode("${encodeNodeArg(n.name)}")'>Remove</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    box.innerHTML = activeHtml + rejectedHtml;
+  }
+}
+
+async function approveNode(encodedName) {
+  const name = decodeURIComponent(encodedName || '');
+  const res = await fetch(`/api/nodes/approve?name=${encodeURIComponent(name)}`, {method: 'POST'});
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert(`Failed to approve node: ${data.error || res.statusText}`);
+    return;
+  }
+  await loadDashboard();
+  renderNodesModalList();
+}
+
+async function rejectNode(encodedName) {
+  const name = decodeURIComponent(encodedName || '');
+  if (!confirm(`Dismiss registration for "${name}"?`)) return;
+  const res = await fetch(`/api/nodes/reject?name=${encodeURIComponent(name)}`, {method: 'POST'});
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert(`Failed to dismiss node: ${data.error || res.statusText}`);
+    return;
+  }
+  await loadDashboard();
+  renderNodesModalList();
+}
+
+async function testRemoteNodeConnection() {
+  const nameInp = document.getElementById('inp-node-name');
+  const urlInp = document.getElementById('inp-node-url');
+  const tokenInp = document.getElementById('inp-node-token');
+  const resBox = document.getElementById('test-node-result');
+  const btn = document.getElementById('btn-test-node');
+
+  const url = urlInp ? urlInp.value.trim() : '';
+  const token = tokenInp ? tokenInp.value.trim() : '';
+
+  if (!url) {
+    if (resBox) {
+      resBox.style.display = 'block';
+      resBox.innerHTML = `<div class="badge crit" style="width:100%; justify-content:flex-start; padding:8px 12px;">⚠ Please provide the LAN Agent URL to test.</div>`;
+    }
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⚡ Testing...';
+  }
+  if (resBox) {
+    resBox.style.display = 'block';
+    resBox.innerHTML = `<div class="badge warn" style="width:100%; justify-content:flex-start; padding:8px 12px;">Connecting to ${escapeHtml(url)}...</div>`;
+  }
+
+  try {
+    const res = await fetch('/api/nodes/test', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url, token})
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const osVer = data.os_version || (data.info && data.info.os_version) || 'Unknown OS';
+      const latency = data.latency_ms !== undefined ? `${data.latency_ms}ms` : '';
+      if (resBox) {
+        resBox.style.display = 'block';
+        resBox.innerHTML = `
+          <div class="badge ok" style="width:100%; justify-content:flex-start; padding:8px 12px; gap:8px;">
+            <span>✓ Connected!</span>
+            ${latency ? `<span>(${escapeHtml(latency)})</span>` : ''}
+            <span>OS: ${escapeHtml(osVer)}</span>
+          </div>
+        `;
+      }
+      // Auto-fill device name if empty
+      if (nameInp && !nameInp.value.trim() && data.info && data.info.name) {
+        nameInp.value = data.info.name;
+      }
+    } else {
+      if (resBox) {
+        resBox.style.display = 'block';
+        resBox.innerHTML = `
+          <div class="badge crit" style="width:100%; justify-content:flex-start; padding:8px 12px;">
+            ✖ Connection failed: ${escapeHtml(data.error || 'Agent unreachable')}
+          </div>
+        `;
+      }
+    }
+  } catch (err) {
+    if (resBox) {
+      resBox.style.display = 'block';
+      resBox.innerHTML = `
+        <div class="badge crit" style="width:100%; justify-content:flex-start; padding:8px 12px;">
+          ✖ Error: ${escapeHtml(err.message)}
+        </div>
+      `;
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '⚡ Test Connection';
+    }
+  }
 }
 
 async function saveRemoteNode() {
@@ -376,19 +588,30 @@ async function saveRemoteNode() {
     alert('Please provide both the device name and the LAN Agent URL.');
     return;
   }
-  await fetch('/api/nodes', {
+  const res = await fetch('/api/nodes', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({name, url, token})
   });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert(`Failed to save node: ${data.error || res.statusText}`);
+    return;
+  }
   document.getElementById('inp-node-name').value = '';
   document.getElementById('inp-node-url').value = '';
   document.getElementById('inp-node-token').value = '';
+  const resBox = document.getElementById('test-node-result');
+  if (resBox) {
+    resBox.style.display = 'none';
+    resBox.innerHTML = '';
+  }
   await loadDashboard();
   renderNodesModalList();
 }
 
-async function deleteRemoteNode(name) {
+async function deleteRemoteNode(encodedName) {
+  const name = decodeURIComponent(encodedName || '');
   if (!confirm(`Remove compute node "${name}" from the registry?`)) return;
   await fetch(`/api/nodes?name=${encodeURIComponent(name)}`, {method: 'DELETE'});
   if (currentNodeFilter === name) currentNodeFilter = 'all';
@@ -396,7 +619,9 @@ async function deleteRemoteNode(name) {
   renderNodesModalList();
 }
 
-async function skipItem(targetType, targetName, selectId) {
+async function skipItem(encodedTargetType, encodedTargetName, selectId) {
+  const targetType = decodeURIComponent(encodedTargetType || '');
+  const targetName = decodeURIComponent(encodedTargetName || '');
   const sel = document.getElementById(selectId);
   const ver = sel ? sel.value : '';
   await fetch('/api/skip', {
@@ -407,21 +632,105 @@ async function skipItem(targetType, targetName, selectId) {
   await loadDashboard();
 }
 
-async function unskipItem(targetType, targetName) {
+async function unskipItem(encodedTargetType, encodedTargetName) {
+  const targetType = decodeURIComponent(encodedTargetType || '');
+  const targetName = decodeURIComponent(encodedTargetName || '');
   await fetch(`/api/skip?target_type=${encodeURIComponent(targetType)}&target_name=${encodeURIComponent(targetName)}`, {method: 'DELETE'});
   await loadDashboard();
 }
 
 async function triggerScan() {
   const btn = document.getElementById('btn-scan-now');
-  btn.textContent = '⟳ Scanning...';
-  btn.disabled = true;
+  const progressBox = document.getElementById('scan-progress-box');
+  const progressText = document.getElementById('scan-progress-text');
+
+  if (btn) {
+    btn.textContent = '⟳ Scanning...';
+    btn.disabled = true;
+  }
+  if (progressBox) progressBox.style.display = 'inline-flex';
+  if (progressText) progressText.textContent = 'Initializing scan...';
+
   try {
-    await fetch('/api/scan', {method: 'POST'});
-    await loadDashboard();
-  } finally {
-    btn.textContent = '↻ Scan Now';
-    btn.disabled = false;
+    const res = await fetch('/api/scan', {method: 'POST'});
+    const data = await res.json().catch(() => ({}));
+
+    let taskId = data.task_id;
+    if (res.status === 409) {
+      if (progressText) progressText.textContent = 'Scan in progress; attaching to stream...';
+    } else if (!res.ok) {
+      alert(`Scan failed: ${data.error || res.statusText}`);
+      if (btn) {
+        btn.textContent = '↻ Scan Now';
+        btn.disabled = false;
+      }
+      if (progressBox) progressBox.style.display = 'none';
+      return;
+    }
+
+    if (!taskId) {
+      if (btn) {
+        btn.textContent = '↻ Scan Now';
+        btn.disabled = false;
+      }
+      if (progressBox) progressBox.style.display = 'none';
+      await loadDashboard();
+      return;
+    }
+
+    if (activeScanEventSource) {
+      activeScanEventSource.close();
+    }
+
+    activeScanEventSource = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/stream`);
+
+    activeScanEventSource.onmessage = (e) => {
+      try {
+        const parsed = JSON.parse(e.data);
+        if (parsed.line && progressText) {
+          progressText.textContent = parsed.line;
+        }
+      } catch (_) {
+        if (e.data && progressText) {
+          progressText.textContent = e.data;
+        }
+      }
+    };
+
+    activeScanEventSource.addEventListener('done', async () => {
+      if (activeScanEventSource) {
+        activeScanEventSource.close();
+        activeScanEventSource = null;
+      }
+      if (progressBox) progressBox.style.display = 'none';
+      if (progressText) progressText.textContent = '';
+      if (btn) {
+        btn.textContent = '↻ Scan Now';
+        btn.disabled = false;
+      }
+      await loadDashboard();
+    });
+
+    activeScanEventSource.onerror = () => {
+      if (activeScanEventSource) {
+        activeScanEventSource.close();
+        activeScanEventSource = null;
+      }
+      if (progressBox) progressBox.style.display = 'none';
+      if (progressText) progressText.textContent = '';
+      if (btn) {
+        btn.textContent = '↻ Scan Now';
+        btn.disabled = false;
+      }
+      loadDashboard();
+    };
+  } catch (err) {
+    alert(`Scan error: ${err.message}`);
+    if (btn) {
+      btn.textContent = '↻ Scan Now';
+      btn.disabled = false;
+    }
+    if (progressBox) progressBox.style.display = 'none';
   }
 }
 

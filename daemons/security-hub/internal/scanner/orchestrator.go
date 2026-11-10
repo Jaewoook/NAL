@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -23,6 +24,9 @@ type Orchestrator struct {
 	daemonScanner *DaemonScanner
 	vulnScanner   *VulnScanner
 	eolChecker    *EoLChecker
+
+	scanMu       sync.Mutex
+	activeTaskID string
 }
 
 func NewOrchestrator(cfg *config.Config, store db.Store, runner CommandRunner, httpClient *http.Client) *Orchestrator {
@@ -43,6 +47,37 @@ func NewOrchestrator(cfg *config.Config, store db.Store, runner CommandRunner, h
 		vulnScanner:   NewVulnScanner(cfg.Scanner.OSVAPIURL, httpClient, runner),
 		eolChecker:    NewEoLChecker(cfg.Scanner.EoLAPIURL, httpClient),
 	}
+}
+
+// IsScanning reports whether a scan is currently running and returns the active task ID if so.
+func (o *Orchestrator) IsScanning() (bool, string) {
+	o.scanMu.Lock()
+	defer o.scanMu.Unlock()
+	return o.activeTaskID != "", o.activeTaskID
+}
+
+// StartScan attempts to acquire the scan mutex for taskID.
+// If another scan is already running, it returns false and the active task ID.
+// If acquired, it records the active task ID (defaulting to a timestamped string if empty)
+// and returns true, "".
+func (o *Orchestrator) StartScan(taskID string) (bool, string) {
+	o.scanMu.Lock()
+	defer o.scanMu.Unlock()
+	if o.activeTaskID != "" {
+		return false, o.activeTaskID
+	}
+	if taskID == "" {
+		taskID = fmt.Sprintf("scan_%d", time.Now().UnixNano())
+	}
+	o.activeTaskID = taskID
+	return true, ""
+}
+
+// FinishScan releases the active scan lock.
+func (o *Orchestrator) FinishScan() {
+	o.scanMu.Lock()
+	defer o.scanMu.Unlock()
+	o.activeTaskID = ""
 }
 
 func ApplySkippedAndSummarize(items []models.ManagedItem, skipped map[string]string) *models.ScanResult {
@@ -86,23 +121,36 @@ func ApplySkippedAndSummarize(items []models.ManagedItem, skipped map[string]str
 }
 
 func (o *Orchestrator) ScanLocalNode(ctx context.Context) ([]models.ManagedItem, error) {
-	nodeName := o.cfg.NodeName
+	nodeName := ""
+	if o.cfg != nil {
+		nodeName = o.cfg.NodeName
+	}
 	if nodeName == "" {
 		nodeName = config.DefaultNodeName()
 	}
 	var localItems []models.ManagedItem
-	if dockerItems, err := o.dockerScanner.ScanDockerServices(ctx); err == nil {
-		localItems = append(localItems, dockerItems...)
+	if o.dockerScanner != nil {
+		if dockerItems, err := o.dockerScanner.ScanDockerServices(ctx); err == nil {
+			localItems = append(localItems, dockerItems...)
+		}
 	}
-	if brewItems, err := o.brewScanner.ScanBrew(ctx); err == nil {
-		localItems = append(localItems, brewItems...)
+	if o.brewScanner != nil {
+		if brewItems, err := o.brewScanner.ScanBrew(ctx); err == nil {
+			localItems = append(localItems, brewItems...)
+		}
 	}
-	if daemonItems, err := o.daemonScanner.ScanDaemonsAndOS(ctx); err == nil {
-		localItems = append(localItems, daemonItems...)
+	if o.daemonScanner != nil {
+		if daemonItems, err := o.daemonScanner.ScanDaemonsAndOS(ctx); err == nil {
+			localItems = append(localItems, daemonItems...)
+		}
 	}
 
-	_ = o.vulnScanner.CheckVulnerabilities(ctx, localItems)
-	_ = o.eolChecker.CheckEoL(ctx, localItems, time.Now().UTC(), o.cfg.Scanner.EoLWarningDays)
+	if o.vulnScanner != nil {
+		_ = o.vulnScanner.CheckVulnerabilities(ctx, localItems)
+	}
+	if o.eolChecker != nil && o.cfg != nil {
+		_ = o.eolChecker.CheckEoL(ctx, localItems, time.Now().UTC(), o.cfg.Scanner.EoLWarningDays)
+	}
 
 	for i := range localItems {
 		localItems[i].Node = nodeName
@@ -116,8 +164,12 @@ func (o *Orchestrator) fetchRemoteAgentScan(ctx context.Context, node models.Nod
 	if err != nil {
 		return nil, err
 	}
-	if node.Token != "" {
-		req.Header.Set("X-NAL-Node-Token", node.Token)
+	tok := node.Token
+	if tok == "" && o.cfg != nil {
+		tok = o.cfg.AgentToken
+	}
+	if tok != "" {
+		req.Header.Set("X-NAL-Node-Token", tok)
 	}
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
@@ -131,7 +183,7 @@ func (o *Orchestrator) fetchRemoteAgentScan(ctx context.Context, node models.Nod
 		Node  string               `json:"node"`
 		Items []models.ManagedItem `json:"items"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(&payload); err != nil {
 		return nil, err
 	}
 	for i := range payload.Items {
@@ -141,34 +193,60 @@ func (o *Orchestrator) fetchRemoteAgentScan(ctx context.Context, node models.Nod
 }
 
 func (o *Orchestrator) RunFullScan(ctx context.Context) (*models.ScanResult, error) {
-	hubName := o.cfg.NodeName
+	return o.RunFullScanWithTask(ctx, "")
+}
+
+func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (*models.ScanResult, error) {
+	if ctx.Err() != nil {
+		if o.store != nil && taskID != "" {
+			abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer abortCancel()
+			_, _ = o.store.AppendTaskLog(abortCtx, taskID, "error", fmt.Sprintf("Scan aborted: %v", ctx.Err()))
+			_ = o.store.FinishTask(abortCtx, taskID, "failed", ctx.Err().Error())
+		}
+		return nil, ctx.Err()
+	}
+
+	hubName := ""
+	if o.cfg != nil {
+		hubName = o.cfg.NodeName
+	}
 	if hubName == "" {
 		hubName = config.DefaultNodeName()
 	}
-	var taskID string
-	if o.store != nil {
+	if taskID == "" && o.store != nil {
 		if t, err := o.store.CreateTask(ctx, &models.Task{
 			Node:        hubName,
 			TaskType:    "security_scan",
 			TargetType:  "system",
 			TargetName:  "all",
 			TriggeredBy: "scanner",
+			Status:      "running",
 		}); err == nil {
 			taskID = t.ID
-			_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("Starting full multi-node NAL scan on Hub (%s)...", hubName))
+			o.scanMu.Lock()
+			if strings.HasPrefix(o.activeTaskID, "scan_") {
+				o.activeTaskID = taskID
+			}
+			o.scanMu.Unlock()
 		}
+	}
+
+	if taskID != "" && o.store != nil {
+		_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("Starting full scan on Hub (%s)...", hubName))
 	}
 
 	localItems, _ := o.ScanLocalNode(ctx)
 	allItems := append([]models.ManagedItem(nil), localItems...)
 	if taskID != "" && o.store != nil {
-		_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[%s] Scanned %d local components", hubName, len(localItems)))
+		_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[Hub] Scanned %d local components...", len(localItems)))
 	}
 
 	nodesList := []models.NodeInfo{
 		{
 			Name:       hubName,
 			Role:       "hub",
+			Status:     models.NodeStatusApproved,
 			Online:     true,
 			LastSeenAt: time.Now().UTC(),
 		},
@@ -178,17 +256,25 @@ func (o *Orchestrator) RunFullScan(ctx context.Context) (*models.ScanResult, err
 		prevScan, _ := o.store.LoadLatestScanResult(ctx)
 		remoteNodes, _ := o.store.ListNodes(ctx)
 
+		var approvedRemoteNodes []models.NodeInfo
+		for _, rn := range remoteNodes {
+			if rn.Name == hubName || rn.Status != models.NodeStatusApproved {
+				continue
+			}
+			approvedRemoteNodes = append(approvedRemoteNodes, rn)
+		}
+
 		type nodeScanResult struct {
 			node  models.NodeInfo
 			items []models.ManagedItem
 			err   error
 		}
 		var wg sync.WaitGroup
-		results := make([]nodeScanResult, len(remoteNodes))
+		results := make([]nodeScanResult, len(approvedRemoteNodes))
 
-		for i, rn := range remoteNodes {
-			if rn.Name == hubName {
-				continue
+		for i, rn := range approvedRemoteNodes {
+			if taskID != "" && o.store != nil {
+				_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[%s] Querying remote agent (%s)...", rn.Name, rn.URL))
 			}
 			wg.Add(1)
 			go func(idx int, node models.NodeInfo) {
@@ -227,13 +313,17 @@ func (o *Orchestrator) RunFullScan(ctx context.Context) (*models.ScanResult, err
 				_ = o.store.UpsertNode(ctx, rn)
 				allItems = append(allItems, res.items...)
 				if taskID != "" {
-					_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[%s] Scanned %d remote agent components", rn.Name, len(res.items)))
+					_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[%s] Scanned %d remote components...", rn.Name, len(res.items)))
 				}
 			}
 			rnCopy := rn
 			rnCopy.Token = ""
 			nodesList = append(nodesList, rnCopy)
 		}
+	}
+
+	if taskID != "" && o.store != nil {
+		_, _ = o.store.AppendTaskLog(ctx, taskID, "info", "Analyzing CVEs against vulnerability feeds...")
 	}
 
 	skipped := make(map[string]string)
@@ -256,11 +346,25 @@ func (o *Orchestrator) RunFullScan(ctx context.Context) (*models.ScanResult, err
 	res := ApplySkippedAndSummarize(allItems, skipped)
 	res.Nodes = nodesList
 
+	totalCVEs := 0
+	for _, it := range res.Items {
+		totalCVEs += len(it.Vulnerabilities)
+	}
+
+	if ctx.Err() != nil {
+		if o.store != nil && taskID != "" {
+			abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer abortCancel()
+			_, _ = o.store.AppendTaskLog(abortCtx, taskID, "error", fmt.Sprintf("Scan aborted: %v", ctx.Err()))
+			_ = o.store.FinishTask(abortCtx, taskID, "failed", ctx.Err().Error())
+		}
+		return nil, ctx.Err()
+	}
+
 	if o.store != nil {
 		_ = o.store.SaveScanResult(ctx, res)
 		if taskID != "" {
-			_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("Scan complete across %d node(s): %d critical CVEs, %d high CVEs, %d EoL warnings, %d outdated, %d broken brew",
-				len(nodesList), res.TotalCritCVEs, res.TotalHighCVEs, res.TotalEoLIssues, res.TotalOutdated, res.TotalBrokenBrew))
+			_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("Scan complete: %d items scanned, %d CVEs found.", len(res.Items), totalCVEs))
 			_ = o.store.FinishTask(ctx, taskID, "succeeded", "")
 		}
 	}

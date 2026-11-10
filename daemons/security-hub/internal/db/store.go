@@ -21,6 +21,8 @@ type Backend interface {
 	UpsertSkippedVersion(ctx context.Context, targetType, targetName, version, actor string) error
 	DeleteSkippedVersion(ctx context.Context, targetType, targetName string) error
 	UpsertSentAlert(ctx context.Context, fingerprint, alertType string) error
+	UpsertNode(ctx context.Context, node models.NodeInfo) error
+	DeleteNode(ctx context.Context, name string) error
 }
 
 type Store interface {
@@ -43,6 +45,8 @@ type Store interface {
 	RemoveNode(ctx context.Context, name string) error
 	GetNode(ctx context.Context, name string) (*models.NodeInfo, error)
 	ListNodes(ctx context.Context) ([]models.NodeInfo, error)
+	ApproveNode(ctx context.Context, name string) error
+	RejectNode(ctx context.Context, name string) error
 	SaveScanResult(ctx context.Context, scan *models.ScanResult) error
 	LoadLatestScanResult(ctx context.Context) (*models.ScanResult, error)
 	FlushPending(ctx context.Context) error
@@ -93,6 +97,7 @@ func NewSpoolStore(dataDir string, pg Backend) (*SpoolStore, error) {
 			Nodes:       make(map[string]models.NodeInfo),
 		},
 	}
+	dirty := false
 	if raw, err := os.ReadFile(s.statePath); err == nil {
 		_ = json.Unmarshal(raw, &s.state)
 		if s.state.Tasks == nil {
@@ -116,9 +121,15 @@ func NewSpoolStore(dataDir string, pg Backend) (*SpoolStore, error) {
 		if s.state.Nodes == nil {
 			s.state.Nodes = make(map[string]models.NodeInfo)
 		}
+		for name, n := range s.state.Nodes {
+			if n.Status == "" {
+				n.Status = models.NodeStatusApproved
+				s.state.Nodes[name] = n
+				dirty = true
+			}
+		}
 	}
 	// Reconcile orphaned running tasks upon daemon startup
-	dirty := false
 	now := time.Now().UTC()
 	for id, t := range s.state.Tasks {
 		if t.Status == "running" {
@@ -440,12 +451,34 @@ func (s *SpoolStore) UpsertNode(ctx context.Context, node models.NodeInfo) error
 		node.Role = "agent"
 	}
 	s.mu.Lock()
-	if existing, ok := s.state.Nodes[node.Name]; ok && node.Token == "" {
-		node.Token = existing.Token
+	if existing, ok := s.state.Nodes[node.Name]; ok {
+		if node.Token == "" {
+			node.Token = existing.Token
+		}
+		if node.Status == "" {
+			node.Status = existing.Status
+		}
+		if node.OSVersion == "" {
+			node.OSVersion = existing.OSVersion
+		}
+		wasZeroSeen := node.LastSeenAt.IsZero()
+		if wasZeroSeen {
+			node.LastSeenAt = existing.LastSeenAt
+		}
+		if !node.Online && node.LastError == "" && wasZeroSeen && !existing.LastSeenAt.IsZero() && time.Since(existing.LastSeenAt) <= 3*time.Minute {
+			node.Online = existing.Online
+		}
+	}
+	if node.Status == "" {
+		node.Status = models.NodeStatusApproved
 	}
 	s.state.Nodes[node.Name] = node
 	err := s.saveStateLocked()
 	s.mu.Unlock()
+
+	if s.pg != nil {
+		_ = s.pg.UpsertNode(ctx, node)
+	}
 	return err
 }
 
@@ -454,6 +487,46 @@ func (s *SpoolStore) RemoveNode(ctx context.Context, name string) error {
 	delete(s.state.Nodes, name)
 	err := s.saveStateLocked()
 	s.mu.Unlock()
+
+	if s.pg != nil {
+		_ = s.pg.DeleteNode(ctx, name)
+	}
+	return err
+}
+
+func (s *SpoolStore) ApproveNode(ctx context.Context, name string) error {
+	s.mu.Lock()
+	n, ok := s.state.Nodes[name]
+	if !ok {
+		s.mu.Unlock()
+		return fmt.Errorf("node %q not found", name)
+	}
+	n.Status = models.NodeStatusApproved
+	s.state.Nodes[name] = n
+	err := s.saveStateLocked()
+	s.mu.Unlock()
+
+	if s.pg != nil {
+		_ = s.pg.UpsertNode(ctx, n)
+	}
+	return err
+}
+
+func (s *SpoolStore) RejectNode(ctx context.Context, name string) error {
+	s.mu.Lock()
+	n, ok := s.state.Nodes[name]
+	if !ok {
+		s.mu.Unlock()
+		return fmt.Errorf("node %q not found", name)
+	}
+	n.Status = models.NodeStatusRejected
+	s.state.Nodes[name] = n
+	err := s.saveStateLocked()
+	s.mu.Unlock()
+
+	if s.pg != nil {
+		_ = s.pg.UpsertNode(ctx, n)
+	}
 	return err
 }
 
@@ -464,6 +537,9 @@ func (s *SpoolStore) GetNode(ctx context.Context, name string) (*models.NodeInfo
 	if !ok {
 		return nil, fmt.Errorf("node %q not found", name)
 	}
+	if n.Role == "agent" && (n.LastSeenAt.IsZero() || time.Since(n.LastSeenAt) > 3*time.Minute) {
+		n.Online = false
+	}
 	return &n, nil
 }
 
@@ -472,6 +548,9 @@ func (s *SpoolStore) ListNodes(ctx context.Context) ([]models.NodeInfo, error) {
 	defer s.mu.RUnlock()
 	var list []models.NodeInfo
 	for _, n := range s.state.Nodes {
+		if n.Role == "agent" && (n.LastSeenAt.IsZero() || time.Since(n.LastSeenAt) > 3*time.Minute) {
+			n.Online = false
+		}
 		list = append(list, n)
 	}
 	sort.Slice(list, func(i, j int) bool {
@@ -578,6 +657,10 @@ func (s *SpoolStore) FlushPending(ctx context.Context) error {
 	for k, v := range s.state.Alerts {
 		alerts[k] = v
 	}
+	nodes := make([]models.NodeInfo, 0, len(s.state.Nodes))
+	for _, n := range s.state.Nodes {
+		nodes = append(nodes, n)
+	}
 	s.mu.RUnlock()
 
 	for _, snap := range snaps {
@@ -599,6 +682,12 @@ func (s *SpoolStore) FlushPending(ctx context.Context) error {
 
 	for fp, at := range alerts {
 		if err := s.pg.UpsertSentAlert(ctx, fp, at); err != nil {
+			return err
+		}
+	}
+
+	for _, n := range nodes {
+		if err := s.pg.UpsertNode(ctx, n); err != nil {
 			return err
 		}
 	}

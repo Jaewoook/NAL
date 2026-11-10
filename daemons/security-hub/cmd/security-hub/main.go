@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -194,11 +195,16 @@ func runCLI(args []string, out io.Writer) int {
 		return runDaemon(cfg, out)
 
 	case "agent":
+		if len(rest) > 0 && rest[0] == "service" {
+			return runAgentServiceCLI(rest[1:], cfg, out)
+		}
 		fs := flag.NewFlagSet("agent", flag.ContinueOnError)
 		nameFlag := fs.String("name", "", "Node name (defaults to system hostname)")
 		hostFlag := fs.String("host", "", "Bind host (default 0.0.0.0)")
 		portFlag := fs.Int("port", 0, "Agent bind port (overrides config.yml web.port; default 10247)")
 		tokenFlag := fs.String("token", "", "Shared X-NAL-Node-Token secret")
+		hubFlag := fs.String("hub", "", "Security Hub URL (e.g. http://hub.lan:10311)")
+		advFlag := fs.String("advertise-url", "", "Advertise URL for this agent reachable by the hub")
 		_ = fs.Parse(rest)
 		if *nameFlag != "" {
 			cfg.NodeName = *nameFlag
@@ -215,6 +221,12 @@ func runCLI(args []string, out io.Writer) int {
 		}
 		if *tokenFlag != "" {
 			cfg.AgentToken = *tokenFlag
+		}
+		if *hubFlag != "" {
+			cfg.HubURL = *hubFlag
+		}
+		if *advFlag != "" {
+			cfg.AgentAdvertiseURL = *advFlag
 		}
 		return runAgentDaemon(cfg, out)
 
@@ -234,8 +246,16 @@ func runCLI(args []string, out io.Writer) int {
 				fmt.Fprintln(out, "Usage: security-hub node add <Name> <URL> [-token <secret>]")
 				return 1
 			}
-			nodeName := rest[1]
-			nodeURL := rest[2]
+			nodeName := strings.TrimSpace(rest[1])
+			nodeURL := config.NormalizeURL(rest[2])
+			hubName := cfg.NodeName
+			if hubName == "" {
+				hubName = config.DefaultNodeName()
+			}
+			if strings.EqualFold(nodeName, hubName) {
+				fmt.Fprintf(out, "Error: agent node name %q conflicts with hub node name\n", nodeName)
+				return 1
+			}
 			fs := flag.NewFlagSet("node add", flag.ContinueOnError)
 			tokFlag := fs.String("token", cfg.AgentToken, "Shared X-NAL-Node-Token secret")
 			_ = fs.Parse(rest[3:])
@@ -312,9 +332,42 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 
 	// Background Security, Outdated, Brew & EoL Scanner
 	go func() {
-		if res, err := orch.RunFullScan(ctx); err == nil {
-			_, _ = alerter.NotifyScanFindings(ctx, res)
+		runScheduledScan := func() {
+			hubName := cfg.NodeName
+			if hubName == "" {
+				hubName = config.DefaultNodeName()
+			}
+			var taskID string
+			if store != nil {
+				if t, err := store.CreateTask(ctx, &models.Task{
+					Node:        hubName,
+					TaskType:    "security_scan",
+					TargetType:  "system",
+					TargetName:  "all",
+					TriggeredBy: "scanner",
+					Status:      "running",
+				}); err == nil {
+					taskID = t.ID
+				}
+			}
+			started, _ := orch.StartScan(taskID)
+			if !started {
+				if taskID != "" && store != nil {
+					_ = store.FinishTask(context.Background(), taskID, "aborted", "scan already running")
+				}
+				return
+			}
+			defer orch.FinishScan()
+			scanCtx, scanCancel := context.WithTimeout(ctx, 15*time.Minute)
+			defer scanCancel()
+			if res, err := orch.RunFullScanWithTask(scanCtx, taskID); err == nil {
+				if alerter != nil {
+					_, _ = alerter.NotifyScanFindings(scanCtx, res)
+				}
+			}
 		}
+
+		runScheduledScan()
 		interval := time.Duration(cfg.Scanner.IntervalHours) * time.Hour
 		if interval <= 0 {
 			interval = 6 * time.Hour
@@ -326,9 +379,7 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if res, err := orch.RunFullScan(ctx); err == nil {
-					_, _ = alerter.NotifyScanFindings(ctx, res)
-				}
+				runScheduledScan()
 			}
 		}
 	}()
@@ -361,6 +412,7 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 		fmt.Fprintln(out, "Error: agent_token (or -token / SECURITY_HUB_AGENT_TOKEN) is required in agent mode")
 		return 1
 	}
+	cfg.NodeName = service.ResolveAgentNodeName(cfg)
 	store, err := db.NewSpoolStore(cfg.Database.DataDir, nil)
 	if err != nil {
 		fmt.Fprintf(out, "Failed to initialize agent spool store: %v\n", err)
@@ -373,6 +425,17 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	if cfg.HubURL != "" {
+		errCh := service.StartAnnouncer(ctx, cfg, nil)
+		go func() {
+			for err := range errCh {
+				if err != nil {
+					fmt.Fprintf(out, "[Agent Announcer] Warning: %v\n", err)
+				}
+			}
+		}()
+	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Web.Host, cfg.Web.Port)
 	httpSrv := &http.Server{
@@ -396,18 +459,141 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 	return 0
 }
 
+func runAgentServiceCLI(args []string, cfg *config.Config, out io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(out, "Usage: security-hub agent service <install|uninstall|start|stop|restart|status>")
+		return 1
+	}
+	sub := args[0]
+	switch sub {
+	case "install":
+		fs := flag.NewFlagSet("agent service install", flag.ContinueOnError)
+		nameFlag := fs.String("name", "", "Node name (defaults to system hostname)")
+		hostFlag := fs.String("host", "", "Bind host (default 0.0.0.0)")
+		portFlag := fs.Int("port", 0, "Agent bind port (default 10247)")
+		tokenFlag := fs.String("token", "", "Shared X-NAL-Node-Token secret")
+		hubFlag := fs.String("hub", "", "Security Hub URL (e.g. http://hub.lan:10311)")
+		advFlag := fs.String("advertise-url", "", "Advertise URL for this agent reachable by the hub")
+		pathFlag := fs.String("path", "", "Custom path to write service definition")
+		if err := fs.Parse(args[1:]); err != nil {
+			return 1
+		}
+
+		name := *nameFlag
+		if name == "" {
+			name = cfg.NodeName
+		}
+		host := *hostFlag
+		if host == "" {
+			host = cfg.Web.Host
+		}
+		port := *portFlag
+		if port <= 0 {
+			if cfg.Web.Port > 0 && cfg.Web.Port != 10311 {
+				port = cfg.Web.Port
+			} else {
+				port = 10247
+			}
+		}
+		tok := *tokenFlag
+		if tok == "" {
+			tok = cfg.AgentToken
+		}
+		hub := config.NormalizeURL(*hubFlag)
+		if hub == "" {
+			hub = config.NormalizeURL(cfg.HubURL)
+		}
+		adv := config.NormalizeURL(*advFlag)
+		if adv == "" {
+			adv = config.NormalizeURL(cfg.AgentAdvertiseURL)
+		}
+
+		exe, _ := os.Executable()
+		wd, _ := os.Getwd()
+
+		opts := service.AgentServiceOptions{
+			BinaryPath:   exe,
+			WorkingDir:   wd,
+			Name:         name,
+			Host:         host,
+			Port:         port,
+			Token:        tok,
+			HubURL:       hub,
+			AdvertiseURL: adv,
+			CustomPath:   *pathFlag,
+		}
+
+		if err := service.InstallAgent(opts); err != nil {
+			fmt.Fprintf(out, "Failed to install agent service: %v\n", err)
+			return 1
+		}
+		if runtime.GOOS == "darwin" {
+			fmt.Fprintf(out, "Installed agent launchd service plist (%s)\n", service.AgentLaunchdLabel)
+		} else {
+			fmt.Fprintf(out, "Installed agent systemd service (%s)\n", service.AgentSystemdUnit)
+		}
+		return 0
+
+	case "uninstall":
+		if err := service.UninstallAgent(); err != nil {
+			fmt.Fprintf(out, "Failed to uninstall agent service: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(out, "Agent service uninstalled.")
+		return 0
+
+	case "start":
+		if err := service.StartAgent(); err != nil {
+			fmt.Fprintf(out, "Failed to start agent service: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(out, "Agent service started.")
+		return 0
+
+	case "stop":
+		if err := service.StopAgent(); err != nil {
+			fmt.Fprintf(out, "Failed to stop agent service: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(out, "Agent service stopped.")
+		return 0
+
+	case "restart":
+		if err := service.RestartAgent(); err != nil {
+			fmt.Fprintf(out, "Failed to restart agent service: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(out, "Agent service restarted.")
+		return 0
+
+	case "status":
+		st, _ := service.StatusAgent()
+		if runtime.GOOS == "darwin" {
+			fmt.Fprintf(out, "Agent service %s: %s\n", service.AgentLaunchdLabel, st)
+		} else {
+			fmt.Fprintf(out, "Agent service %s: %s\n", service.AgentSystemdUnit, st)
+		}
+		return 0
+
+	default:
+		fmt.Fprintf(out, "Unknown agent service action: %s\n", sub)
+		return 1
+	}
+}
+
 func printUsage(out io.Writer) {
 	fmt.Fprintln(out, `Usage:
   security-hub <command> [flags]
 
 Commands:
-  run                Run the Hub scanner, spool syncer, and web dashboard
-  agent              Run the lightweight LAN Agent on a remote compute node
-  node <action>      Manage registered compute nodes (add, list, remove)
-  scan               Run an immediate multi-node Docker, Homebrew, CVE, and EoL scan
-  rollback <service> Roll back a Docker service to its previous snapshot
-  auth login-link    Generate a 5-minute break-glass web login link
-  db init            Provision the security_hub_db database in services/db
-  test-alert         Send a test SMTP email alert
-  service <action>   Manage macOS launchd service (install, start, stop, restart, status)`)
+  run                      Run the Hub scanner, spool syncer, and web dashboard
+  agent                    Run the lightweight LAN Agent on a remote compute node
+  agent service <action>   Manage Agent daemon service (install, uninstall, start, stop, restart, status)
+  node <action>            Manage registered compute nodes (add, list, remove)
+  scan                     Run an immediate multi-node Docker, Homebrew, CVE, and EoL scan
+  rollback <service>       Roll back a Docker service to its previous snapshot
+  auth login-link          Generate a 5-minute break-glass web login link
+  db init                  Provision the security_hub_db database in services/db
+  test-alert               Send a test SMTP email alert
+  service <action>         Manage Hub macOS launchd service (install, start, stop, restart, status)`)
 }

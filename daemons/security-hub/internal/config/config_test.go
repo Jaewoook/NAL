@@ -95,3 +95,56 @@ func TestGitBotConfigDefaultsAndEnvOverrides(t *testing.T) {
 		t.Fatal("expected SECURITY_HUB_GIT_COMMIT_ENABLED=0 to disable Git auto-commit")
 	}
 }
+
+func TestHubAndAgentAdvertiseURLConfig(t *testing.T) {
+	t.Setenv("SECURITY_HUB_URL", "http://hub.lan:10311")
+	t.Setenv("SECURITY_HUB_ADVERTISE_URL", "http://agent.lan:10247")
+
+	cfg := DefaultConfigWithEnv()
+	if cfg.HubURL != "http://hub.lan:10311" {
+		t.Fatalf("expected HubURL 'http://hub.lan:10311', got %q", cfg.HubURL)
+	}
+	if cfg.AgentAdvertiseURL != "http://agent.lan:10247" {
+		t.Fatalf("expected AgentAdvertiseURL 'http://agent.lan:10247', got %q", cfg.AgentAdvertiseURL)
+	}
+
+	tmp := filepath.Join(t.TempDir(), "agent-config.yml")
+	content := "hub_url: http://hub-yaml.lan:10311\nagent_advertise_url: http://agent-yaml.lan:10247\n"
+	if err := os.WriteFile(tmp, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SECURITY_HUB_URL", "")
+	t.Setenv("SECURITY_HUB_ADVERTISE_URL", "")
+	loaded, err := LoadConfig(tmp)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if loaded.HubURL != "http://hub-yaml.lan:10311" {
+		t.Fatalf("expected loaded HubURL 'http://hub-yaml.lan:10311', got %q", loaded.HubURL)
+	}
+	if loaded.AgentAdvertiseURL != "http://agent-yaml.lan:10247" {
+		t.Fatalf("expected loaded AgentAdvertiseURL 'http://agent-yaml.lan:10247', got %q", loaded.AgentAdvertiseURL)
+	}
+}
+
+func TestNormalizeURL(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"", ""},
+		{"   ", ""},
+		{"192.168.1.100:10311", "http://192.168.1.100:10311"},
+		{"192.168.1.100:10311/", "http://192.168.1.100:10311"},
+		{"http://192.168.1.100:10311///", "http://192.168.1.100:10311"},
+		{"https://agent.corp.internal:10247", "https://agent.corp.internal:10247"},
+		{"agent.corp.internal:10247/", "http://agent.corp.internal:10247"},
+		{"  http://localhost:8080/  ", "http://localhost:8080"},
+	}
+	for _, tc := range cases {
+		got := NormalizeURL(tc.input)
+		if got != tc.expected {
+			t.Errorf("NormalizeURL(%q) = %q; want %q", tc.input, got, tc.expected)
+		}
+	}
+}

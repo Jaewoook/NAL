@@ -3,15 +3,19 @@ package scanner
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jaewoook/security-hub/internal/config"
+	"github.com/jaewoook/security-hub/internal/db"
 	"github.com/jaewoook/security-hub/internal/models"
 )
 
@@ -380,6 +384,142 @@ func TestDockerScanner_GracefullyIgnoresStoppedOrMissingDocker(t *testing.T) {
 		t.Fatalf("expected graceful empty slice and nil error when Docker is stopped/uninstalled, got items=%v err=%v", items, err)
 	}
 }
+
+func TestOrchestrator_ScanMutex(t *testing.T) {
+	orch := &Orchestrator{}
+
+	scanning, active := orch.IsScanning()
+	if scanning || active != "" {
+		t.Fatalf("expected idle orchestrator, got scanning=%v active=%q", scanning, active)
+	}
+
+	started, active := orch.StartScan("task-123")
+	if !started || active != "" {
+		t.Fatalf("expected successful StartScan, got started=%v active=%q", started, active)
+	}
+
+	scanning, active = orch.IsScanning()
+	if !scanning || active != "task-123" {
+		t.Fatalf("expected scanning=true active=task-123, got scanning=%v active=%q", scanning, active)
+	}
+
+	// Attempt second scan while active
+	started2, active2 := orch.StartScan("task-456")
+	if started2 || active2 != "task-123" {
+		t.Fatalf("expected second StartScan to fail with active task-123, got started=%v active=%q", started2, active2)
+	}
+
+	orch.FinishScan()
+
+	scanning, active = orch.IsScanning()
+	if scanning || active != "" {
+		t.Fatalf("expected idle orchestrator after FinishScan, got scanning=%v active=%q", scanning, active)
+	}
+
+	// Default task ID when taskID == ""
+	started3, _ := orch.StartScan("")
+	if !started3 || !strings.HasPrefix(orch.activeTaskID, "scan_") {
+		t.Fatalf("expected default scan_ task ID, got started=%v activeTaskID=%q", started3, orch.activeTaskID)
+	}
+	orch.FinishScan()
+}
+
+func TestOrchestrator_FetchRemoteAgentScan_TokenFallback(t *testing.T) {
+	var receivedToken string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedToken = r.Header.Get("X-NAL-Node-Token")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"node":  "remote-node",
+			"items": []models.ManagedItem{},
+		})
+	}))
+	defer srv.Close()
+
+	cfg := &config.Config{
+		AgentToken: "shared-cluster-secret",
+	}
+	orch := &Orchestrator{
+		cfg:        cfg,
+		httpClient: srv.Client(),
+	}
+
+	// 1. Node without token should fall back to cfg.AgentToken
+	_, err := orch.fetchRemoteAgentScan(context.Background(), models.NodeInfo{
+		Name: "remote-node",
+		URL:  srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("fetchRemoteAgentScan failed: %v", err)
+	}
+	if receivedToken != "shared-cluster-secret" {
+		t.Fatalf("expected fallback token 'shared-cluster-secret', got %q", receivedToken)
+	}
+
+	// 2. Node with explicit token should override cfg.AgentToken
+	_, err = orch.fetchRemoteAgentScan(context.Background(), models.NodeInfo{
+		Name:  "remote-node",
+		URL:   srv.URL,
+		Token: "node-specific-secret",
+	})
+	if err != nil {
+		t.Fatalf("fetchRemoteAgentScan failed: %v", err)
+	}
+	if receivedToken != "node-specific-secret" {
+		t.Fatalf("expected explicit token 'node-specific-secret', got %q", receivedToken)
+	}
+}
+
+func TestOrchestrator_RunFullScanWithTask_ContextCancelled(t *testing.T) {
+	store, err := db.NewSpoolStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewSpoolStore failed: %v", err)
+	}
+	task, err := store.CreateTask(context.Background(), &models.Task{
+		TaskType:    "scan",
+		TriggeredBy: "manual",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask failed: %v", err)
+	}
+
+	cfg := &config.Config{}
+	orch := &Orchestrator{
+		cfg:   cfg,
+		store: store,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel context
+
+	res, err := orch.RunFullScanWithTask(ctx, task.ID)
+	if err == nil {
+		t.Fatal("expected error on cancelled context, got nil")
+	}
+	if res != nil {
+		t.Fatalf("expected nil result on cancelled context, got %+v", res)
+	}
+
+	finishedTask, _, err := store.GetTaskWithLogs(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("GetTaskWithLogs failed: %v", err)
+	}
+	if finishedTask.Status != "failed" {
+		t.Fatalf("expected task status 'failed', got %q", finishedTask.Status)
+	}
+}
+
+func TestOrchestrator_ScanLocalNode_NilCfg(t *testing.T) {
+	orch := &Orchestrator{}
+	items, err := orch.ScanLocalNode(context.Background())
+	if err != nil {
+		t.Fatalf("expected nil error on nil cfg, got: %v", err)
+	}
+	if items != nil && len(items) != 0 {
+		t.Fatalf("expected 0 items on nil scanners, got %d", len(items))
+	}
+}
+
 
 
 

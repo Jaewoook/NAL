@@ -77,14 +77,16 @@ type NotificationsConfig struct {
 }
 
 type Config struct {
-	NodeName      string              `yaml:"node_name"`
-	AgentToken    string              `yaml:"agent_token"`
-	Web           WebConfig           `yaml:"web"`
-	Auth          AuthConfig          `yaml:"auth"`
-	Database      DatabaseConfig      `yaml:"database"`
-	Scanner       ScannerConfig       `yaml:"scanner"`
-	Updater       UpdaterConfig       `yaml:"updater"`
-	Notifications NotificationsConfig `yaml:"notifications"`
+	NodeName          string              `yaml:"node_name"`
+	AgentToken        string              `yaml:"agent_token"`
+	HubURL            string              `yaml:"hub_url"`
+	AgentAdvertiseURL string              `yaml:"agent_advertise_url"`
+	Web               WebConfig           `yaml:"web"`
+	Auth              AuthConfig          `yaml:"auth"`
+	Database          DatabaseConfig      `yaml:"database"`
+	Scanner           ScannerConfig       `yaml:"scanner"`
+	Updater           UpdaterConfig       `yaml:"updater"`
+	Notifications     NotificationsConfig `yaml:"notifications"`
 }
 
 func DefaultNodeName() string {
@@ -188,6 +190,12 @@ func ApplyEnvOverrides(cfg *Config) {
 	}
 	if v := getEnv("SECURITY_HUB_AGENT_TOKEN", "NODE_TOKEN"); v != "" {
 		cfg.AgentToken = v
+	}
+	if v := getEnv("SECURITY_HUB_URL", "HUB_URL"); v != "" {
+		cfg.HubURL = v
+	}
+	if v := getEnv("SECURITY_HUB_ADVERTISE_URL", "AGENT_ADVERTISE_URL"); v != "" {
+		cfg.AgentAdvertiseURL = v
 	}
 	if v := getEnv("SECURITY_HUB_HOST"); v != "" {
 		cfg.Web.Host = v
@@ -334,4 +342,16 @@ func getEnv(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// NormalizeURL trims whitespace, trailing slashes, and ensures an http:// or https:// scheme is present.
+func NormalizeURL(raw string) string {
+	s := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if s == "" {
+		return ""
+	}
+	if !strings.HasPrefix(s, "http://") && !strings.HasPrefix(s, "https://") {
+		s = "http://" + s
+	}
+	return s
 }

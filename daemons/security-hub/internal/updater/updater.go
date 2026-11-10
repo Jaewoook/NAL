@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -103,7 +104,7 @@ func (m *Manager) RunUpdateSync(ctx context.Context, taskID string, req UpdateRe
 	if m.cfg != nil && m.cfg.NodeName != "" {
 		localNode = m.cfg.NodeName
 	}
-	if req.Node != "" && req.Node != localNode {
+	if req.Node != "" && !strings.EqualFold(req.Node, "local") && !strings.EqualFold(req.Node, localNode) {
 		return m.forwardUpdateToAgent(ctx, taskID, req)
 	}
 	if req.TargetType == string(models.TargetBrew) || (req.TargetType == string(models.TargetDaemon) && req.TargetName == "ollama") {
@@ -120,6 +121,12 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
 		return fmt.Errorf(errMsg)
 	}
+	if nodeInfo.Status != models.NodeStatusApproved {
+		errMsg := fmt.Sprintf("cannot update unapproved node %q (status: %s)", req.Node, nodeInfo.Status)
+		m.logStep(ctx, taskID, "error", errMsg)
+		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf(errMsg)
+	}
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("Forwarding update for %s (%s -> %s) to remote agent %s (%s)...", req.TargetName, req.TargetType, req.TargetVersion, nodeInfo.Name, nodeInfo.URL))
 	agentReq := req
 	agentReq.Node = nodeInfo.Name
@@ -131,8 +138,12 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 		return err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if nodeInfo.Token != "" {
-		httpReq.Header.Set("X-NAL-Node-Token", nodeInfo.Token)
+	tok := nodeInfo.Token
+	if tok == "" && m.cfg != nil {
+		tok = m.cfg.AgentToken
+	}
+	if tok != "" {
+		httpReq.Header.Set("X-NAL-Node-Token", tok)
 	}
 	resp, err := m.httpClient.Do(httpReq)
 	if err != nil {
@@ -148,7 +159,7 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 		ErrorMsg string               `json:"error_msg"`
 		Logs     []models.TaskLogLine `json:"logs"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&payload); err != nil {
 		errMsg := fmt.Sprintf("invalid response from agent %s (HTTP %d): %v", nodeInfo.Name, resp.StatusCode, err)
 		m.logStep(ctx, taskID, "error", errMsg)
 		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
@@ -417,10 +428,13 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 	if m.cfg != nil && m.cfg.NodeName != "" {
 		localNode = m.cfg.NodeName
 	}
-	if nodeName != "" && nodeName != localNode {
+	if nodeName != "" && !strings.EqualFold(nodeName, "local") && !strings.EqualFold(nodeName, localNode) {
 		nodeInfo, err := m.store.GetNode(ctx, nodeName)
 		if err != nil {
 			return nil, err
+		}
+		if nodeInfo.Status != models.NodeStatusApproved {
+			return nil, fmt.Errorf("cannot rollback unapproved node %q (status: %s)", nodeName, nodeInfo.Status)
 		}
 		task, err := m.store.CreateTask(ctx, &models.Task{
 			Node:        nodeName,
@@ -446,8 +460,12 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 			return task, err
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
-		if nodeInfo.Token != "" {
-			httpReq.Header.Set("X-NAL-Node-Token", nodeInfo.Token)
+		tok := nodeInfo.Token
+		if tok == "" && m.cfg != nil {
+			tok = m.cfg.AgentToken
+		}
+		if tok != "" {
+			httpReq.Header.Set("X-NAL-Node-Token", tok)
 		}
 		resp, err := m.httpClient.Do(httpReq)
 		if err != nil {
@@ -460,7 +478,7 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 			ErrorMsg string               `json:"error_msg"`
 			Logs     []models.TaskLogLine `json:"logs"`
 		}
-		decodeErr := json.NewDecoder(resp.Body).Decode(&payload)
+		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&payload)
 		for _, l := range payload.Logs {
 			m.logStep(ctx, task.ID, l.Stream, fmt.Sprintf("[%s] %s", nodeName, l.Line))
 		}

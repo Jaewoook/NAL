@@ -110,7 +110,19 @@ CREATE TABLE IF NOT EXISTS sent_alerts (
 	fingerprint TEXT PRIMARY KEY,
 	alert_type TEXT NOT NULL,
 	sent_at TIMESTAMPTZ NOT NULL
-);`
+);
+CREATE TABLE IF NOT EXISTS nodes (
+	name TEXT PRIMARY KEY,
+	url TEXT NOT NULL,
+	token TEXT,
+	role TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'approved',
+	online BOOLEAN NOT NULL DEFAULT true,
+	last_seen_at TIMESTAMPTZ,
+	last_error TEXT,
+	os_version TEXT
+);
+ALTER TABLE nodes ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved';`
 	_, err := p.runner("docker", "exec", "-i", p.containerName,
 		"psql", "-v", "ON_ERROR_STOP=1", "-U", p.dbUser, "-d", p.dbName, "-c", schema)
 	return err
@@ -203,6 +215,37 @@ func (p *PostgresBackend) UpsertSentAlert(ctx context.Context, fingerprint, aler
 VALUES (%s, %s, NOW())
 ON CONFLICT (fingerprint) DO UPDATE SET sent_at = NOW();`,
 		quoteLiteral(fingerprint), quoteLiteral(alertType))
+	return p.execSQL(sql)
+}
+
+func (p *PostgresBackend) UpsertNode(ctx context.Context, node models.NodeInfo) error {
+	lastSeen := "NULL"
+	if !node.LastSeenAt.IsZero() {
+		lastSeen = quoteLiteral(node.LastSeenAt.Format(time.RFC3339Nano))
+	}
+	status := string(node.Status)
+	if status == "" {
+		status = string(models.NodeStatusApproved)
+	}
+	sql := fmt.Sprintf(`INSERT INTO nodes (name, url, token, role, status, online, last_seen_at, last_error, os_version)
+VALUES (%s, %s, %s, %s, %s, %t, %s, %s, %s)
+ON CONFLICT (name) DO UPDATE SET
+url = EXCLUDED.url,
+token = CASE WHEN EXCLUDED.token <> '' THEN EXCLUDED.token ELSE nodes.token END,
+role = EXCLUDED.role,
+status = EXCLUDED.status,
+online = EXCLUDED.online,
+last_seen_at = EXCLUDED.last_seen_at,
+last_error = EXCLUDED.last_error,
+os_version = EXCLUDED.os_version;`,
+		quoteLiteral(node.Name), quoteLiteral(node.URL), quoteLiteral(node.Token),
+		quoteLiteral(node.Role), quoteLiteral(status), node.Online,
+		lastSeen, quoteLiteral(node.LastError), quoteLiteral(node.OSVersion))
+	return p.execSQL(sql)
+}
+
+func (p *PostgresBackend) DeleteNode(ctx context.Context, name string) error {
+	sql := fmt.Sprintf(`DELETE FROM nodes WHERE name = %s;`, quoteLiteral(name))
 	return p.execSQL(sql)
 }
 

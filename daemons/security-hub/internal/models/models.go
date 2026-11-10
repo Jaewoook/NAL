@@ -46,15 +46,24 @@ type EoLInfo struct {
 	Message       string    `json:"message,omitempty"`
 }
 
+type NodeStatus string
+
+const (
+	NodeStatusApproved NodeStatus = "approved"
+	NodeStatusPending  NodeStatus = "pending"
+	NodeStatusRejected NodeStatus = "rejected"
+)
+
 type NodeInfo struct {
-	Name       string    `json:"name"`
-	URL        string    `json:"url"`
-	Token      string    `json:"token,omitempty"`
-	Role       string    `json:"role"` // "hub" or "agent"
-	Online     bool      `json:"online"`
-	LastSeenAt time.Time `json:"last_seen_at,omitempty"`
-	LastError  string    `json:"last_error,omitempty"`
-	OSVersion  string    `json:"os_version,omitempty"`
+	Name       string     `json:"name"`
+	URL        string     `json:"url"`
+	Token      string     `json:"token,omitempty"`
+	Role       string     `json:"role"` // "hub" or "agent"
+	Status     NodeStatus `json:"status"`
+	Online     bool       `json:"online"`
+	LastSeenAt time.Time  `json:"last_seen_at,omitempty"`
+	LastError  string     `json:"last_error,omitempty"`
+	OSVersion  string     `json:"os_version,omitempty"`
 }
 
 type ManagedItem struct {
