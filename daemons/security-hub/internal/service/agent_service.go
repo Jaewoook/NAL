@@ -183,19 +183,36 @@ Environment=PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 WantedBy=multi-user.target
 `
 
+// quoteSystemdArg wraps an argument in double quotes and escapes backslashes and double quotes
+// if it contains whitespace, quotes, or is empty, ensuring safe word splitting by systemd ExecStart.
+func quoteSystemdArg(s string) string {
+	if s == "" || strings.ContainsAny(s, " \t\n\r\"'") {
+		escaped := strings.ReplaceAll(s, `\`, `\\`)
+		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+		return `"` + escaped + `"`
+	}
+	return s
+}
+
 // GenerateAgentSystemdUnit renders a systemd service unit for the Security Hub agent.
 func GenerateAgentSystemdUnit(opts AgentServiceOptions) string {
 	opts = applyAgentDefaults(opts)
+	rawArgs := buildAgentArgs(opts)
+	quotedArgs := make([]string, len(rawArgs))
+	for i, arg := range rawArgs {
+		quotedArgs[i] = quoteSystemdArg(arg)
+	}
+
 	data := struct {
 		BinaryPath string
 		WorkingDir string
 		User       string
 		Args       []string
 	}{
-		BinaryPath: opts.BinaryPath,
+		BinaryPath: quoteSystemdArg(opts.BinaryPath),
 		WorkingDir: opts.WorkingDir,
 		User:       opts.User,
-		Args:       buildAgentArgs(opts),
+		Args:       quotedArgs,
 	}
 
 	tmpl := template.Must(template.New("agent-systemd").Parse(agentSystemdTemplate))

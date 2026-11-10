@@ -110,3 +110,25 @@ func TestAgentService_InstallCustomPath(t *testing.T) {
 		t.Fatalf("installed content missing expected fields: %s", sContent)
 	}
 }
+
+func TestAgentService_SystemdWhitespaceQuoting(t *testing.T) {
+	opts := service.AgentServiceOptions{
+		BinaryPath: "/opt/My Security Hub/security-hub",
+		WorkingDir: "/var/lib/security-hub",
+		Name:       "Mac Studio M2",
+		Token:      "super secret token",
+		HubURL:     "http://hub.lan:10311",
+	}
+
+	unit := service.GenerateAgentSystemdUnit(opts)
+	for _, expected := range []string{
+		`ExecStart="/opt/My Security Hub/security-hub" agent`,
+		`-name "Mac Studio M2"`,
+		`-token "super secret token"`,
+		`-hub http://hub.lan:10311`,
+	} {
+		if !strings.Contains(unit, expected) {
+			t.Errorf("expected systemd unit to contain %q, but it did not:\n%s", expected, unit)
+		}
+	}
+}

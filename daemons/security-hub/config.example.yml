@@ -6,6 +6,15 @@
 node_name: ""
 agent_token: "replace-with-shared-lan-agent-secret"
 
+# Hub auto-announcement settings (for remote LAN agents):
+# Set hub_url to the central Security Hub dashboard URL to enable automatic background registration.
+# Leave empty on the central Hub machine.
+hub_url: ""
+
+# Agent advertise URL reachable by the central Hub (e.g. http://192.168.1.50:10247).
+# If left empty, the Hub automatically infers the agent address from the incoming TCP connection.
+agent_advertise_url: ""
+
 web:
   host: "0.0.0.0"
   port: 10311

@@ -88,11 +88,18 @@ function getFilteredItems() {
 }
 
 function selectNodeFilter(nodeName) {
+  if (nodeName && nodeName !== 'all') {
+    nodeName = decodeURIComponent(nodeName);
+  }
   currentNodeFilter = nodeName;
   renderNodeBar();
   renderSummary();
   renderItemsTable();
   renderTaskList();
+}
+
+function encodeNodeArg(name) {
+  return encodeURIComponent(name || '').replace(/'/g, '%27');
 }
 
 function renderNodeBar() {
@@ -106,7 +113,7 @@ function renderNodeBar() {
     const roleTag = n.role === 'hub' ? 'Hub' : 'Agent';
     const title = n.last_error ? `Offline: ${n.last_error}` : (n.url || 'Local Host');
     html += `
-      <button class="node-pill ${currentNodeFilter === n.name ? 'active' : ''}" title="${escapeHtml(title)}" onclick='selectNodeFilter("${escapeHtml(n.name)}")'>
+      <button class="node-pill ${currentNodeFilter === n.name ? 'active' : ''}" title="${escapeHtml(title)}" onclick='selectNodeFilter("${encodeNodeArg(n.name)}")'>
         <span class="dot ${dot}"></span>
         <span>${escapeHtml(n.name)}</span>
         <span class="node-role">${roleTag}</span>
@@ -266,7 +273,7 @@ function renderItemsTable() {
         actionsHtml += `<button class="btn btn-ghost" onclick='skipItem("${item.target_type}", "${item.name}", "${selectId}")'>Skip</button>`;
       }
       if (item.has_rollback) {
-        actionsHtml += `<button class="btn btn-ghost" onclick='rollbackService("${escapeHtml(nodeName)}", "${item.name}")'>Rollback (${escapeHtml(item.rollback_version)})</button>`;
+        actionsHtml += `<button class="btn btn-ghost" onclick='rollbackService("${encodeNodeArg(nodeName)}", "${item.name}")'>Rollback (${escapeHtml(item.rollback_version)})</button>`;
       }
     }
     if (item.release_notes_url) {
@@ -347,7 +354,8 @@ async function confirmAndStartUpdate() {
   }
 }
 
-async function rollbackService(nodeName, serviceName) {
+async function rollbackService(encodedNodeName, serviceName) {
+  const nodeName = decodeURIComponent(encodedNodeName || '');
   if (!confirm(`Roll back ${serviceName} on ${nodeName} to its previous snapshot version and digest?`)) return;
   const res = await fetch('/api/rollback', {
     method: 'POST',
@@ -403,8 +411,8 @@ function renderNodesModalList() {
             <div class="svc-sub" style="margin-top:2px;">${escapeHtml(n.url || 'LAN Node')}</div>
           </div>
           <div style="display:flex; gap:6px;">
-            <button class="btn btn-primary" onclick='approveNode("${escapeHtml(n.name)}")'>Approve</button>
-            <button class="btn btn-danger" onclick='rejectNode("${escapeHtml(n.name)}")'>Dismiss</button>
+            <button class="btn btn-primary" onclick='approveNode("${encodeNodeArg(n.name)}")'>Approve</button>
+            <button class="btn btn-danger" onclick='rejectNode("${encodeNodeArg(n.name)}")'>Dismiss</button>
           </div>
         </div>
       `).join('');
@@ -425,13 +433,14 @@ function renderNodesModalList() {
           ${n.os_version ? `<span class="badge skip" style="margin-left:4px; font-size:10px;">${escapeHtml(n.os_version)}</span>` : ''}
           <div class="svc-sub">${escapeHtml(n.url || 'Local Hub Host')} ${n.last_error ? '· ' + escapeHtml(n.last_error) : ''}</div>
         </div>
-        ${n.role !== 'hub' ? `<button class="btn btn-danger" onclick='deleteRemoteNode("${escapeHtml(n.name)}")'>Remove</button>` : ''}
+        ${n.role !== 'hub' ? `<button class="btn btn-danger" onclick='deleteRemoteNode("${encodeNodeArg(n.name)}")'>Remove</button>` : ''}
       </div>
     `).join('');
   }
 }
 
-async function approveNode(name) {
+async function approveNode(encodedName) {
+  const name = decodeURIComponent(encodedName || '');
   const res = await fetch(`/api/nodes/approve?name=${encodeURIComponent(name)}`, {method: 'POST'});
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -442,7 +451,8 @@ async function approveNode(name) {
   renderNodesModalList();
 }
 
-async function rejectNode(name) {
+async function rejectNode(encodedName) {
+  const name = decodeURIComponent(encodedName || '');
   if (!confirm(`Dismiss registration for "${name}"?`)) return;
   const res = await fetch(`/api/nodes/reject?name=${encodeURIComponent(name)}`, {method: 'POST'});
   if (!res.ok) {
@@ -557,7 +567,8 @@ async function saveRemoteNode() {
   renderNodesModalList();
 }
 
-async function deleteRemoteNode(name) {
+async function deleteRemoteNode(encodedName) {
+  const name = decodeURIComponent(encodedName || '');
   if (!confirm(`Remove compute node "${name}" from the registry?`)) return;
   await fetch(`/api/nodes?name=${encodeURIComponent(name)}`, {method: 'DELETE'});
   if (currentNodeFilter === name) currentNodeFilter = 'all';
@@ -654,9 +665,6 @@ async function triggerScan() {
     });
 
     activeScanEventSource.onerror = () => {
-      if (activeScanEventSource && activeScanEventSource.readyState === EventSource.CLOSED) {
-        return;
-      }
       if (activeScanEventSource) {
         activeScanEventSource.close();
         activeScanEventSource = null;
