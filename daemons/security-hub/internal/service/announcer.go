@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -28,7 +29,7 @@ type announcePayload struct {
 // ResolveAgentAdvertiseURL returns cfg.AgentAdvertiseURL if set,
 // or formats "http://<detected-ip-or-host>:<port>".
 func ResolveAgentAdvertiseURL(cfg *config.Config) string {
-	if cfg.AgentAdvertiseURL != "" {
+	if cfg != nil && cfg.AgentAdvertiseURL != "" {
 		adv := strings.TrimSpace(cfg.AgentAdvertiseURL)
 		if !strings.HasPrefix(adv, "http://") && !strings.HasPrefix(adv, "https://") {
 			adv = "http://" + adv
@@ -36,32 +37,83 @@ func ResolveAgentAdvertiseURL(cfg *config.Config) string {
 		return strings.TrimRight(adv, "/")
 	}
 
-	port := cfg.Web.Port
-	if port <= 0 {
-		port = 10247
+	port := 10247
+	bindHost := ""
+	hubURL := ""
+	if cfg != nil {
+		if cfg.Web.Port > 0 {
+			port = cfg.Web.Port
+		}
+		bindHost = cfg.Web.Host
+		hubURL = cfg.HubURL
 	}
 
-	host := detectLocalIPOrHost(cfg.Web.Host)
+	host := detectLocalIPOrHost(bindHost, hubURL)
 	return fmt.Sprintf("http://%s:%d", host, port)
 }
 
 // ResolveAgentNodeName returns cfg.NodeName or falls back to DefaultNodeName.
 func ResolveAgentNodeName(cfg *config.Config) string {
-	if strings.TrimSpace(cfg.NodeName) != "" {
+	if cfg != nil && strings.TrimSpace(cfg.NodeName) != "" {
 		return strings.TrimSpace(cfg.NodeName)
 	}
 	return config.DefaultNodeName()
 }
 
-func detectLocalIPOrHost(bindHost string) string {
+// IsVirtualInterface returns true if the network interface name matches known virtual/bridge patterns.
+func IsVirtualInterface(name string) bool {
+	lower := strings.ToLower(name)
+	prefixes := []string{"docker", "br-", "veth", "virbr", "cni", "tailscale", "tun", "tap", "flannel", "vmnet"}
+	for _, p := range prefixes {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func getOutboundIPToHost(hubURL string) string {
+	u, err := url.Parse(hubURL)
+	if err == nil && u.Host != "" {
+		host := u.Host
+		if !strings.Contains(host, ":") {
+			if u.Scheme == "https" {
+				host = host + ":443"
+			} else {
+				host = host + ":80"
+			}
+		}
+		conn, err := net.DialTimeout("udp", host, 2*time.Second)
+		if err == nil {
+			defer conn.Close()
+			if localAddr, ok := conn.LocalAddr().(*net.UDPAddr); ok && localAddr.IP != nil && !localAddr.IP.IsLoopback() {
+				if ip4 := localAddr.IP.To4(); ip4 != nil {
+					return ip4.String()
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func detectLocalIPOrHost(bindHost, hubURL string) string {
 	if bindHost != "" && bindHost != "0.0.0.0" && bindHost != "::" && bindHost != "127.0.0.1" && bindHost != "localhost" {
 		return bindHost
 	}
 
+	// 1. Preferred: Query kernel routing table towards Hub host
+	if hubURL != "" {
+		if ip := getOutboundIPToHost(hubURL); ip != "" {
+			return ip
+		}
+	}
+
+	// 2. Physical active non-virtual network interface
 	if ip := getOutboundIP(); ip != "" {
 		return ip
 	}
 
+	// 3. System hostname
 	if h, err := os.Hostname(); err == nil && strings.TrimSpace(h) != "" {
 		return strings.TrimSuffix(strings.TrimSpace(h), ".local")
 	}
@@ -76,6 +128,9 @@ func getOutboundIP() string {
 	}
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if IsVirtualInterface(iface.Name) {
 			continue
 		}
 		addrs, err := iface.Addrs()
@@ -178,6 +233,9 @@ func StartAnnouncer(ctx context.Context, cfg *config.Config, httpClient *http.Cl
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				if strings.Contains(payload.URL, "127.0.0.1") {
+					payload.URL = ResolveAgentAdvertiseURL(cfg)
+				}
 				if err := sendAnnouncement(ctx, httpClient, cfg.HubURL, payload); err != nil {
 					if ctx.Err() == nil {
 						select {

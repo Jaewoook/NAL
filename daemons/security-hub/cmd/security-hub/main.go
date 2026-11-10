@@ -325,13 +325,37 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 	// Background Security, Outdated, Brew & EoL Scanner
 	go func() {
 		runScheduledScan := func() {
-			started, _ := orch.StartScan("")
+			hubName := cfg.NodeName
+			if hubName == "" {
+				hubName = config.DefaultNodeName()
+			}
+			var taskID string
+			if store != nil {
+				if t, err := store.CreateTask(ctx, &models.Task{
+					Node:        hubName,
+					TaskType:    "security_scan",
+					TargetType:  "system",
+					TargetName:  "all",
+					TriggeredBy: "scanner",
+					Status:      "running",
+				}); err == nil {
+					taskID = t.ID
+				}
+			}
+			started, _ := orch.StartScan(taskID)
 			if !started {
+				if taskID != "" && store != nil {
+					_ = store.FinishTask(context.Background(), taskID, "aborted", "scan already running")
+				}
 				return
 			}
 			defer orch.FinishScan()
-			if res, err := orch.RunFullScan(ctx); err == nil {
-				_, _ = alerter.NotifyScanFindings(ctx, res)
+			scanCtx, scanCancel := context.WithTimeout(ctx, 15*time.Minute)
+			defer scanCancel()
+			if res, err := orch.RunFullScanWithTask(scanCtx, taskID); err == nil {
+				if alerter != nil {
+					_, _ = alerter.NotifyScanFindings(scanCtx, res)
+				}
 			}
 		}
 

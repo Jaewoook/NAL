@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -165,7 +166,7 @@ func (o *Orchestrator) fetchRemoteAgentScan(ctx context.Context, node models.Nod
 		Node  string               `json:"node"`
 		Items []models.ManagedItem `json:"items"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(&payload); err != nil {
 		return nil, err
 	}
 	for i := range payload.Items {

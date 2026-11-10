@@ -120,6 +120,12 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
 		return fmt.Errorf(errMsg)
 	}
+	if nodeInfo.Status != models.NodeStatusApproved {
+		errMsg := fmt.Sprintf("cannot update unapproved node %q (status: %s)", req.Node, nodeInfo.Status)
+		m.logStep(ctx, taskID, "error", errMsg)
+		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf(errMsg)
+	}
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("Forwarding update for %s (%s -> %s) to remote agent %s (%s)...", req.TargetName, req.TargetType, req.TargetVersion, nodeInfo.Name, nodeInfo.URL))
 	agentReq := req
 	agentReq.Node = nodeInfo.Name
@@ -421,6 +427,9 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 		nodeInfo, err := m.store.GetNode(ctx, nodeName)
 		if err != nil {
 			return nil, err
+		}
+		if nodeInfo.Status != models.NodeStatusApproved {
+			return nil, fmt.Errorf("cannot rollback unapproved node %q (status: %s)", nodeName, nodeInfo.Status)
 		}
 		task, err := m.store.CreateTask(ctx, &models.Task{
 			Node:        nodeName,

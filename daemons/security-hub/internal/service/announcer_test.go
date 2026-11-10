@@ -215,3 +215,68 @@ func TestStartAnnouncer_ErrorEmittedOnHubFailure(t *testing.T) {
 	for range errCh {
 	}
 }
+
+func TestIsVirtualInterface(t *testing.T) {
+	virtualInterfaces := []string{
+		"docker0",
+		"docker_gwbridge",
+		"br-5893a027c81d",
+		"br-lan",
+		"veth12345",
+		"virbr0",
+		"cni0",
+		"tailscale0",
+		"tun0",
+		"tap0",
+		"flannel.1",
+		"vmnet8",
+		"DOCKER0",
+	}
+
+	for _, name := range virtualInterfaces {
+		if !service.IsVirtualInterface(name) {
+			t.Errorf("expected %q to be classified as virtual, got false", name)
+		}
+	}
+
+	physicalInterfaces := []string{
+		"eth0",
+		"eth1",
+		"en0",
+		"en1",
+		"wlan0",
+		"wl0",
+		"bond0",
+	}
+
+	for _, name := range physicalInterfaces {
+		if service.IsVirtualInterface(name) {
+			t.Errorf("expected %q to NOT be classified as virtual, got true", name)
+		}
+	}
+}
+
+func TestResolveAdvertiseURL_ExplicitAndBindHost(t *testing.T) {
+	// 1. Explicit AgentAdvertiseURL takes precedence
+	cfgExplicit := &config.Config{
+		AgentAdvertiseURL: "http://my-domain.local:10247",
+	}
+	got := service.ResolveAgentAdvertiseURL(cfgExplicit)
+	if got != "http://my-domain.local:10247" {
+		t.Errorf("expected explicit URL, got %q", got)
+	}
+
+	// 2. Specific non-loopback bind host takes precedence over hub routing
+	cfgBind := &config.Config{
+		Web: config.WebConfig{
+			Host: "192.168.1.55",
+			Port: 10247,
+		},
+		HubURL: "http://hub:8080",
+	}
+	gotBind := service.ResolveAgentAdvertiseURL(cfgBind)
+	if gotBind != "http://192.168.1.55:10247" {
+		t.Errorf("expected bind host URL, got %q", gotBind)
+	}
+}
+

@@ -444,7 +444,7 @@ func TestServer_NodeAnnounce_PendingAndApprovedTransitions(t *testing.T) {
 	time.Sleep(10 * time.Millisecond) // ensure time diff
 	updatedPayload, _ := json.Marshal(map[string]string{
 		"name":       "MacStudio",
-		"url":        "http://192.168.1.125:10247",
+		"url":        "http://192.168.1.120:10247",
 		"token":      cfg.AgentToken,
 		"os_version": "darwin/arm64",
 	})
@@ -463,12 +463,43 @@ func TestServer_NodeAnnounce_PendingAndApprovedTransitions(t *testing.T) {
 	}
 
 	nodeUpdated, _ := store.GetNode(context.Background(), "MacStudio")
-	if nodeUpdated.URL != "http://192.168.1.125:10247" {
-		t.Fatalf("expected updated URL, got %s", nodeUpdated.URL)
+	if nodeUpdated.URL != "http://192.168.1.120:10247" {
+		t.Fatalf("expected URL, got %s", nodeUpdated.URL)
 	}
 	if !nodeUpdated.LastSeenAt.After(initialLastSeen) {
 		t.Fatalf("expected LastSeenAt to advance, initial=%v new=%v", initialLastSeen, nodeUpdated.LastSeenAt)
 	}
+
+	// 4b. Security test: Approved node changes URL -> automatically demoted to "pending"
+	relocatePayload, _ := json.Marshal(map[string]string{
+		"name":       "MacStudio",
+		"url":        "http://192.168.1.125:10247",
+		"token":      cfg.AgentToken,
+		"os_version": "darwin/arm64",
+	})
+	reqRelocate := httptest.NewRequest(http.MethodPost, "/api/nodes/announce", bytes.NewReader(relocatePayload))
+	wRelocate := httptest.NewRecorder()
+	h.ServeHTTP(wRelocate, reqRelocate)
+	if wRelocate.Code != http.StatusOK {
+		t.Fatalf("expected 200 on relocate announce, got %d: %s", wRelocate.Code, wRelocate.Body.String())
+	}
+	var resRelocate map[string]any
+	if err := json.Unmarshal(wRelocate.Body.Bytes(), &resRelocate); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resRelocate["status"] != "pending" {
+		t.Fatalf("expected status 'pending' on URL change, got %v", resRelocate["status"])
+	}
+	nodeRelocated, _ := store.GetNode(context.Background(), "MacStudio")
+	if nodeRelocated.Status != models.NodeStatusPending {
+		t.Fatalf("expected node status to be demoted to pending, got %q", nodeRelocated.Status)
+	}
+	if nodeRelocated.URL != "http://192.168.1.125:10247" {
+		t.Fatalf("expected updated URL, got %s", nodeRelocated.URL)
+	}
+
+	// Re-approve before testing rejection
+	_ = store.ApproveNode(context.Background(), "MacStudio")
 
 	// 5. Operator calls POST /api/nodes/reject?name=MacStudio -> 200 OK
 	rejectReq := httptest.NewRequest(http.MethodPost, "/api/nodes/reject?name=MacStudio", nil)

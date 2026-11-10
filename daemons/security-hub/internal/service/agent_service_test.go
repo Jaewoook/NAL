@@ -156,3 +156,40 @@ func TestAgentService_SystemdUserVsSystemTarget(t *testing.T) {
 	}
 }
 
+func TestAgentService_LaunchdPlistXMLEntityEscaping(t *testing.T) {
+	opts := service.AgentServiceOptions{
+		BinaryPath: "/usr/local/bin/security-hub",
+		WorkingDir: "/var/lib/security-hub",
+		Name:       "Node & <Test> 'Special'",
+		Token:      "tok&<val>\"quote'",
+	}
+
+	plist := service.GenerateAgentLaunchdPlist(opts)
+	// Assert raw unsafe XML characters are escaped
+	if strings.Contains(plist, "tok&<val>") {
+		t.Fatalf("expected unescaped & and < to be absent from plist, got:\n%s", plist)
+	}
+	if !strings.Contains(plist, "Node &amp; &lt;Test&gt; &#39;Special&#39;") {
+		t.Fatalf("expected XML entity escaped node name, got:\n%s", plist)
+	}
+	if !strings.Contains(plist, "tok&amp;&lt;val&gt;&#34;quote&#39;") {
+		t.Fatalf("expected XML entity escaped token, got:\n%s", plist)
+	}
+}
+
+func TestAgentService_SystemdDollarSignEscaping(t *testing.T) {
+	opts := service.AgentServiceOptions{
+		BinaryPath: "/usr/local/bin/security-hub",
+		Token:      "my$secret$token",
+		Name:       "node$1",
+	}
+
+	unit := service.GenerateAgentSystemdUnit(opts)
+	if !strings.Contains(unit, "-token my$$secret$$token") {
+		t.Fatalf("expected $ to be escaped as $$ in systemd token, got:\n%s", unit)
+	}
+	if !strings.Contains(unit, "-name node$$1") {
+		t.Fatalf("expected $ to be escaped as $$ in systemd name, got:\n%s", unit)
+	}
+}
+

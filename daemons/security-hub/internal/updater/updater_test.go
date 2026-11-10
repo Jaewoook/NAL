@@ -320,6 +320,55 @@ func TestManager_RollbackServiceOnNode_RemoteFailureHandled(t *testing.T) {
 	}
 }
 
+func TestManager_RejectsUpdateAndRollbackOnUnapprovedNode(t *testing.T) {
+	ctx := context.Background()
+	store, _ := db.NewSpoolStore(t.TempDir(), nil)
+	_ = store.UpsertNode(ctx, models.NodeInfo{
+		Name:   "pending-node",
+		URL:    "http://127.0.0.1:9999",
+		Role:   "agent",
+		Status: models.NodeStatusPending,
+	})
+	_ = store.UpsertNode(ctx, models.NodeInfo{
+		Name:   "rejected-node",
+		URL:    "http://127.0.0.1:9999",
+		Role:   "agent",
+		Status: models.NodeStatusRejected,
+	})
+
+	cfg := config.DefaultConfig()
+	cfg.NodeName = "hub-local"
+	mgr := NewManager(cfg, store, &recordingRunner{}, nil)
+
+	// 1. Rollback on pending node
+	_, err := mgr.RollbackServiceOnNode(ctx, "pending-node", "dns", "admin")
+	if err == nil || !strings.Contains(err.Error(), "cannot rollback unapproved node") {
+		t.Fatalf("expected rollback on pending node to be rejected, got: %v", err)
+	}
+
+	// 2. Rollback on rejected node
+	_, err = mgr.RollbackServiceOnNode(ctx, "rejected-node", "dns", "admin")
+	if err == nil || !strings.Contains(err.Error(), "cannot rollback unapproved node") {
+		t.Fatalf("expected rollback on rejected node to be rejected, got: %v", err)
+	}
+
+	// 3. Update forwarding on pending node
+	t1, _ := store.CreateTask(ctx, &models.Task{
+		Node:     "pending-node",
+		TaskType: "agent_update",
+		Status:   "running",
+	})
+	err = mgr.RunUpdateSync(ctx, t1.ID, UpdateRequest{
+		Node:          "pending-node",
+		TargetType:    "docker",
+		TargetName:    "dns",
+		TargetVersion: "v1.0.0",
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot update unapproved node") {
+		t.Fatalf("expected update on pending node to be rejected, got: %v", err)
+	}
+}
+
 func TestManager_RunUpdateSync_HealthyCommitsComposeToRealGitRepoAsNALBot(t *testing.T) {
 	ctx := context.Background()
 	repoRoot := t.TempDir()

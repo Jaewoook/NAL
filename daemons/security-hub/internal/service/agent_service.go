@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"encoding/xml"
 	"fmt"
 	"os"
 	"os/exec"
@@ -144,9 +145,21 @@ const agentLaunchdTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 `
 
+func escapeXML(s string) string {
+	var buf bytes.Buffer
+	_ = xml.EscapeText(&buf, []byte(s))
+	return buf.String()
+}
+
 // GenerateAgentLaunchdPlist renders a launchd plist for the Security Hub agent.
 func GenerateAgentLaunchdPlist(opts AgentServiceOptions) string {
 	opts = applyAgentDefaults(opts)
+	rawArgs := buildAgentArgs(opts)
+	escapedArgs := make([]string, len(rawArgs))
+	for i, a := range rawArgs {
+		escapedArgs[i] = escapeXML(a)
+	}
+
 	data := struct {
 		Label      string
 		BinaryPath string
@@ -154,9 +167,9 @@ func GenerateAgentLaunchdPlist(opts AgentServiceOptions) string {
 		Args       []string
 	}{
 		Label:      AgentLaunchdLabel,
-		BinaryPath: opts.BinaryPath,
-		WorkingDir: opts.WorkingDir,
-		Args:       buildAgentArgs(opts),
+		BinaryPath: escapeXML(opts.BinaryPath),
+		WorkingDir: escapeXML(opts.WorkingDir),
+		Args:       escapedArgs,
 	}
 
 	tmpl := template.Must(template.New("agent-launchd").Parse(agentLaunchdTemplate))
@@ -190,13 +203,15 @@ WantedBy=multi-user.target
 
 // quoteSystemdArg wraps an argument in double quotes and escapes backslashes and double quotes
 // if it contains whitespace, quotes, or is empty, ensuring safe word splitting by systemd ExecStart.
+// It also escapes $ as $$ to prevent systemd from treating it as an environment variable reference.
 func quoteSystemdArg(s string) string {
-	if s == "" || strings.ContainsAny(s, " \t\n\r\"'") {
-		escaped := strings.ReplaceAll(s, `\`, `\\`)
+	escaped := strings.ReplaceAll(s, "$", "$$")
+	if escaped == "" || strings.ContainsAny(escaped, " \t\n\r\"'") {
+		escaped = strings.ReplaceAll(escaped, `\`, `\\`)
 		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
 		return `"` + escaped + `"`
 	}
-	return s
+	return escaped
 }
 
 // GenerateAgentSystemdUnit renders a systemd service unit for the Security Hub agent.
@@ -278,8 +293,14 @@ func InstallAgent(opts AgentServiceOptions) error {
 		if isUser {
 			sysArgs = append(sysArgs, "--user")
 		}
-		_ = exec.Command(sysArgs[0], append(sysArgs[1:], "daemon-reload")...).Run()
-		_ = exec.Command(sysArgs[0], append(sysArgs[1:], "enable", AgentSystemdUnit)...).Run()
+		if _, lErr := exec.LookPath("systemctl"); lErr == nil {
+			if out, err := exec.Command(sysArgs[0], append(sysArgs[1:], "daemon-reload")...).CombinedOutput(); err != nil {
+				return fmt.Errorf("systemctl daemon-reload failed: %w (%s)", err, strings.TrimSpace(string(out)))
+			}
+			if out, err := exec.Command(sysArgs[0], append(sysArgs[1:], "enable", AgentSystemdUnit)...).CombinedOutput(); err != nil {
+				return fmt.Errorf("systemctl enable failed: %w (%s)", err, strings.TrimSpace(string(out)))
+			}
+		}
 		return nil
 
 	default:

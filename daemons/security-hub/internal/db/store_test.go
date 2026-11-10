@@ -625,6 +625,94 @@ func TestSpoolStore_LegacyNodesDefaultToApprovedAndPersistOnStartup(t *testing.T
 	}
 }
 
+func TestSpoolStore_NodeZeroLastSeenAndMetadataPreservation(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewSpoolStore(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	// 1. Node with zero LastSeenAt should be reported as Online: false by GetNode and ListNodes
+	zeroNode := models.NodeInfo{
+		Name:   "ZeroSeenAgent",
+		URL:    "http://10.0.0.5:10247",
+		Role:   "agent",
+		Status: models.NodeStatusApproved,
+		Online: true, // caller passes true, but LastSeenAt is zero
+	}
+	if err := store.UpsertNode(ctx, zeroNode); err != nil {
+		t.Fatalf("UpsertNode failed: %v", err)
+	}
+
+	gotZero, err := store.GetNode(ctx, "ZeroSeenAgent")
+	if err != nil {
+		t.Fatalf("GetNode failed: %v", err)
+	}
+	if gotZero.Online {
+		t.Errorf("expected GetNode for agent with zero LastSeenAt to report Online: false")
+	}
+
+	nodes, err := store.ListNodes(ctx)
+	if err != nil {
+		t.Fatalf("ListNodes failed: %v", err)
+	}
+	for _, n := range nodes {
+		if n.Name == "ZeroSeenAgent" && n.Online {
+			t.Errorf("expected ListNodes for agent with zero LastSeenAt to report Online: false")
+		}
+	}
+
+	// 2. Metadata preservation: existing metadata should not be clobbered by empty fields
+	now := time.Now().UTC()
+	richNode := models.NodeInfo{
+		Name:       "RichNode",
+		URL:        "http://10.0.0.6:10247",
+		Role:       "agent",
+		Status:     models.NodeStatusApproved,
+		Token:      "auth-token-123",
+		OSVersion:  "linux/amd64/synology",
+		Online:     true,
+		LastSeenAt: now,
+	}
+	if err := store.UpsertNode(ctx, richNode); err != nil {
+		t.Fatalf("UpsertNode failed: %v", err)
+	}
+
+	// Update node with empty token, empty os_version, zero last seen, online=false
+	sparseUpdate := models.NodeInfo{
+		Name: "RichNode",
+		URL:  "http://10.0.0.6:10248",
+	}
+	if err := store.UpsertNode(ctx, sparseUpdate); err != nil {
+		t.Fatalf("UpsertNode sparseUpdate failed: %v", err)
+	}
+
+	updated, err := store.GetNode(ctx, "RichNode")
+	if err != nil {
+		t.Fatalf("GetNode failed: %v", err)
+	}
+	if updated.URL != "http://10.0.0.6:10248" {
+		t.Errorf("expected updated URL, got %s", updated.URL)
+	}
+	if updated.Token != "auth-token-123" {
+		t.Errorf("expected preserved token 'auth-token-123', got %q", updated.Token)
+	}
+	if updated.OSVersion != "linux/amd64/synology" {
+		t.Errorf("expected preserved OSVersion 'linux/amd64/synology', got %q", updated.OSVersion)
+	}
+	if updated.Status != models.NodeStatusApproved {
+		t.Errorf("expected preserved Status 'approved', got %q", updated.Status)
+	}
+	if updated.LastSeenAt.IsZero() || !updated.LastSeenAt.Equal(now) {
+		t.Errorf("expected preserved LastSeenAt %v, got %v", now, updated.LastSeenAt)
+	}
+	if !updated.Online {
+		t.Errorf("expected preserved Online=true since LastSeenAt is fresh")
+	}
+}
+
+
 
 
 

@@ -458,6 +458,15 @@ func (s *SpoolStore) UpsertNode(ctx context.Context, node models.NodeInfo) error
 		if node.Status == "" {
 			node.Status = existing.Status
 		}
+		if node.OSVersion == "" {
+			node.OSVersion = existing.OSVersion
+		}
+		if node.LastSeenAt.IsZero() {
+			node.LastSeenAt = existing.LastSeenAt
+		}
+		if !node.Online && !existing.LastSeenAt.IsZero() && time.Since(existing.LastSeenAt) <= 3*time.Minute {
+			node.Online = existing.Online
+		}
 	}
 	if node.Status == "" {
 		node.Status = models.NodeStatusApproved
@@ -527,7 +536,7 @@ func (s *SpoolStore) GetNode(ctx context.Context, name string) (*models.NodeInfo
 	if !ok {
 		return nil, fmt.Errorf("node %q not found", name)
 	}
-	if n.Role == "agent" && !n.LastSeenAt.IsZero() && time.Since(n.LastSeenAt) > 3*time.Minute {
+	if n.Role == "agent" && (n.LastSeenAt.IsZero() || time.Since(n.LastSeenAt) > 3*time.Minute) {
 		n.Online = false
 	}
 	return &n, nil
@@ -538,7 +547,7 @@ func (s *SpoolStore) ListNodes(ctx context.Context) ([]models.NodeInfo, error) {
 	defer s.mu.RUnlock()
 	var list []models.NodeInfo
 	for _, n := range s.state.Nodes {
-		if n.Role == "agent" && !n.LastSeenAt.IsZero() && time.Since(n.LastSeenAt) > 3*time.Minute {
+		if n.Role == "agent" && (n.LastSeenAt.IsZero() || time.Since(n.LastSeenAt) > 3*time.Minute) {
 			n.Online = false
 		}
 		list = append(list, n)

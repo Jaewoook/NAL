@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
 	"encoding/json"
@@ -10,7 +11,9 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"runtime"
 	"strings"
 	"time"
@@ -228,7 +231,9 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 	if s.cfg != nil {
 		expected = s.cfg.AgentToken
 	}
-	if expected == "" || subtle.ConstantTimeCompare([]byte(req.Token), []byte(expected)) != 1 {
+	h1 := sha256.Sum256([]byte(req.Token))
+	h2 := sha256.Sum256([]byte(expected))
+	if expected == "" || req.Token == "" || subtle.ConstantTimeCompare(h1[:], h2[:]) != 1 {
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
 		return
@@ -262,6 +267,11 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "node rejected"})
 			return
+		}
+
+		// Security: If an already-approved node announces a changed URL, revert to pending so operator must re-approve
+		if existing.Status == models.NodeStatusApproved && existing.URL != "" && existing.URL != req.URL {
+			existing.Status = models.NodeStatusPending
 		}
 
 		existing.URL = req.URL
@@ -397,7 +407,19 @@ func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
 		targetURL = "http://" + targetURL
 	}
-	endpoint := targetURL + "/api/agent/info"
+	parsedURL, pErr := url.Parse(targetURL)
+	if pErr != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(nodeTestResponse{
+			OK:    false,
+			Error: "invalid url scheme: must be http or https",
+		})
+		return
+	}
+	parsedURL.Path = path.Join(parsedURL.Path, "/api/agent/info")
+	parsedURL.RawQuery = ""
+	parsedURL.Fragment = ""
+	endpoint := parsedURL.String()
 
 	testCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
@@ -663,8 +685,10 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		hubName = s.cfg.NodeName
 	}
 	actor := "web"
-	if claims, _ := s.authMgr.VerifyRequest(r); claims != nil {
-		actor = claims.Method + ":" + claims.Subject
+	if s.authMgr != nil {
+		if claims, _ := s.authMgr.VerifyRequest(r); claims != nil {
+			actor = claims.Method + ":" + claims.Subject
+		}
 	}
 
 	var taskID string
@@ -689,7 +713,9 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 	started, activeID := s.orch.StartScan(taskID)
 	if !started {
 		if s.store != nil {
-			_ = s.store.FinishTask(r.Context(), taskID, "aborted", "scan already running")
+			abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer abortCancel()
+			_ = s.store.FinishTask(abortCtx, taskID, "aborted", "scan already running")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
@@ -703,21 +729,24 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 	go func(tid string) {
 		defer s.orch.FinishScan()
 
-		scan, err := s.orch.RunFullScanWithTask(context.Background(), tid)
+		scanCtx, scanCancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer scanCancel()
+
+		scan, err := s.orch.RunFullScanWithTask(scanCtx, tid)
 		if err != nil {
 			if s.store != nil {
-				_ = s.store.FinishTask(context.Background(), tid, "failed", err.Error())
+				_ = s.store.FinishTask(scanCtx, tid, "failed", err.Error())
 			}
 			return
 		}
 		if s.store != nil {
-			curTask, _, _ := s.store.GetTaskWithLogs(context.Background(), tid)
+			curTask, _, _ := s.store.GetTaskWithLogs(scanCtx, tid)
 			if curTask != nil && curTask.Status == "running" {
-				_ = s.store.FinishTask(context.Background(), tid, "succeeded", "")
+				_ = s.store.FinishTask(scanCtx, tid, "succeeded", "")
 			}
 		}
 		if s.alerter != nil {
-			_, _ = s.alerter.NotifyScanFindings(context.Background(), scan)
+			_, _ = s.alerter.NotifyScanFindings(scanCtx, scan)
 		}
 	}(taskID)
 
