@@ -193,3 +193,17 @@ func TestAgentService_SystemdDollarSignEscaping(t *testing.T) {
 	}
 }
 
+func TestAgentService_SystemdWorkingDirectoryQuoting(t *testing.T) {
+	opts := service.AgentServiceOptions{
+		BinaryPath: "/usr/local/bin/security-hub",
+		WorkingDir: "/volume1/docker/security hub",
+		Name:       "SynologyAgent",
+	}
+
+	unit := service.GenerateAgentSystemdUnit(opts)
+	if !strings.Contains(unit, `WorkingDirectory="/volume1/docker/security hub"`) {
+		t.Fatalf("expected quoted WorkingDirectory for paths with whitespace, got:\n%s", unit)
+	}
+}
+
+

@@ -461,10 +461,11 @@ func (s *SpoolStore) UpsertNode(ctx context.Context, node models.NodeInfo) error
 		if node.OSVersion == "" {
 			node.OSVersion = existing.OSVersion
 		}
-		if node.LastSeenAt.IsZero() {
+		wasZeroSeen := node.LastSeenAt.IsZero()
+		if wasZeroSeen {
 			node.LastSeenAt = existing.LastSeenAt
 		}
-		if !node.Online && !existing.LastSeenAt.IsZero() && time.Since(existing.LastSeenAt) <= 3*time.Minute {
+		if !node.Online && node.LastError == "" && wasZeroSeen && !existing.LastSeenAt.IsZero() && time.Since(existing.LastSeenAt) <= 3*time.Minute {
 			node.Online = existing.Online
 		}
 	}

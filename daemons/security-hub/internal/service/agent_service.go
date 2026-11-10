@@ -231,7 +231,7 @@ func GenerateAgentSystemdUnit(opts AgentServiceOptions) string {
 		IsUser     bool
 	}{
 		BinaryPath: quoteSystemdArg(opts.BinaryPath),
-		WorkingDir: opts.WorkingDir,
+		WorkingDir: quoteSystemdArg(opts.WorkingDir),
 		User:       opts.User,
 		Args:       quotedArgs,
 		IsUser:     opts.IsUser,

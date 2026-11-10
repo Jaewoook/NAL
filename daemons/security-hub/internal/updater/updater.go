@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -154,7 +155,7 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 		ErrorMsg string               `json:"error_msg"`
 		Logs     []models.TaskLogLine `json:"logs"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&payload); err != nil {
 		errMsg := fmt.Sprintf("invalid response from agent %s (HTTP %d): %v", nodeInfo.Name, resp.StatusCode, err)
 		m.logStep(ctx, taskID, "error", errMsg)
 		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
@@ -469,7 +470,7 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 			ErrorMsg string               `json:"error_msg"`
 			Logs     []models.TaskLogLine `json:"logs"`
 		}
-		decodeErr := json.NewDecoder(resp.Body).Decode(&payload)
+		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&payload)
 		for _, l := range payload.Logs {
 			m.logStep(ctx, task.ID, l.Stream, fmt.Sprintf("[%s] %s", nodeName, l.Line))
 		}

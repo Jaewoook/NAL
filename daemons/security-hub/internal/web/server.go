@@ -180,7 +180,18 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.Name = strings.TrimSpace(req.Name)
-		req.URL = strings.TrimSpace(req.URL)
+		req.URL = strings.TrimRight(strings.TrimSpace(req.URL), "/")
+		hubName := ""
+		if s.cfg != nil && s.cfg.NodeName != "" {
+			hubName = s.cfg.NodeName
+		}
+		if hubName == "" {
+			hubName = config.DefaultNodeName()
+		}
+		if strings.EqualFold(req.Name, hubName) {
+			http.Error(w, `{"error":"agent node name conflicts with hub node name"}`, http.StatusBadRequest)
+			return
+		}
 		req.Role = "agent"
 		if err := s.store.UpsertNode(ctx, req); err != nil {
 			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
@@ -240,7 +251,7 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Name = strings.TrimSpace(req.Name)
-	req.URL = strings.TrimSpace(req.URL)
+	req.URL = strings.TrimRight(strings.TrimSpace(req.URL), "/")
 	if req.Name == "" || req.URL == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "name and url required"})
@@ -270,7 +281,8 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Security: If an already-approved node announces a changed URL, revert to pending so operator must re-approve
-		if existing.Status == models.NodeStatusApproved && existing.URL != "" && existing.URL != req.URL {
+		existingURL := strings.TrimRight(existing.URL, "/")
+		if existing.Status == models.NodeStatusApproved && existingURL != "" && existingURL != req.URL {
 			existing.Status = models.NodeStatusPending
 		}
 
@@ -505,7 +517,9 @@ func (s *Server) requireAgentToken(next http.HandlerFunc) http.HandlerFunc {
 			expected = s.cfg.AgentToken
 		}
 		got := r.Header.Get("X-NAL-Node-Token")
-		if expected == "" || subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
+		hGot := sha256.Sum256([]byte(got))
+		hExp := sha256.Sum256([]byte(expected))
+		if expected == "" || got == "" || subtle.ConstantTimeCompare(hGot[:], hExp[:]) != 1 {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid or missing X-NAL-Node-Token"})

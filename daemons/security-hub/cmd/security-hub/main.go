@@ -246,8 +246,16 @@ func runCLI(args []string, out io.Writer) int {
 				fmt.Fprintln(out, "Usage: security-hub node add <Name> <URL> [-token <secret>]")
 				return 1
 			}
-			nodeName := rest[1]
-			nodeURL := rest[2]
+			nodeName := strings.TrimSpace(rest[1])
+			nodeURL := strings.TrimRight(strings.TrimSpace(rest[2]), "/")
+			hubName := cfg.NodeName
+			if hubName == "" {
+				hubName = config.DefaultNodeName()
+			}
+			if strings.EqualFold(nodeName, hubName) {
+				fmt.Fprintf(out, "Error: agent node name %q conflicts with hub node name\n", nodeName)
+				return 1
+			}
 			fs := flag.NewFlagSet("node add", flag.ContinueOnError)
 			tokFlag := fs.String("token", cfg.AgentToken, "Shared X-NAL-Node-Token secret")
 			_ = fs.Parse(rest[3:])

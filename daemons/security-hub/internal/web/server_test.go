@@ -1135,4 +1135,95 @@ func TestOrchestrator_ScheduledAndManualScanCoordination(t *testing.T) {
 	}
 }
 
+func TestServer_AgentTokenPreHashedAndTrailingSlashNormalization(t *testing.T) {
+	srv, sessionCookie, store, cfg := setupTestHubServer(t)
+	h := srv.Handler()
+
+	// 1. requireAgentToken with various token lengths (leaks length if not pre-hashed)
+	for _, badToken := range []string{"", "short", "longer-than-the-actual-agent-token-123456789"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/agent/info", nil)
+		req.Header.Set("X-NAL-Node-Token", badToken)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("expected 401 for bad token %q, got %d", badToken, w.Code)
+		}
+	}
+	// Valid agent token succeeds
+	reqValid := httptest.NewRequest(http.MethodGet, "/api/agent/info", nil)
+	reqValid.Header.Set("X-NAL-Node-Token", cfg.AgentToken)
+	wValid := httptest.NewRecorder()
+	h.ServeHTTP(wValid, reqValid)
+	if wValid.Code != http.StatusOK {
+		t.Errorf("expected 200 for valid token, got %d", wValid.Code)
+	}
+
+	// 2. Trailing slash normalization in node announcement
+	annPayload, _ := json.Marshal(map[string]string{
+		"name":  "SlashNode",
+		"url":   "http://192.168.1.130:10247/",
+		"token": cfg.AgentToken,
+	})
+	annReq := httptest.NewRequest(http.MethodPost, "/api/nodes/announce", bytes.NewReader(annPayload))
+	annW := httptest.NewRecorder()
+	h.ServeHTTP(annW, annReq)
+	if annW.Code != http.StatusOK {
+		t.Fatalf("expected 200 on initial announce, got %d", annW.Code)
+	}
+	_ = store.ApproveNode(context.Background(), "SlashNode")
+
+	// Re-announce WITHOUT trailing slash: should remain approved (not demoted)
+	reAnnPayload, _ := json.Marshal(map[string]string{
+		"name":  "SlashNode",
+		"url":   "http://192.168.1.130:10247",
+		"token": cfg.AgentToken,
+	})
+	reAnnReq := httptest.NewRequest(http.MethodPost, "/api/nodes/announce", bytes.NewReader(reAnnPayload))
+	reAnnW := httptest.NewRecorder()
+	h.ServeHTTP(reAnnW, reAnnReq)
+	if reAnnW.Code != http.StatusOK {
+		t.Fatalf("expected 200 on re-announce, got %d", reAnnW.Code)
+	}
+	var reAnnRes map[string]any
+	_ = json.Unmarshal(reAnnW.Body.Bytes(), &reAnnRes)
+	if reAnnRes["status"] != "approved" {
+		t.Errorf("expected status 'approved' despite trailing slash difference, got %v", reAnnRes["status"])
+	}
+
+	// 3. POST /api/nodes manual node addition
+	// 3a. Reject node with Hub's name
+	hubConflictBody, _ := json.Marshal(map[string]string{
+		"name": cfg.NodeName,
+		"url":  "http://192.168.1.140:10247",
+	})
+	conflictReq := httptest.NewRequest(http.MethodPost, "/api/nodes", bytes.NewReader(hubConflictBody))
+	conflictReq.AddCookie(sessionCookie)
+	conflictW := httptest.NewRecorder()
+	h.ServeHTTP(conflictW, conflictReq)
+	if conflictW.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 when manually adding node with Hub name, got %d", conflictW.Code)
+	}
+
+	// 3b. Normalizes trailing slash on valid manual add
+	manualAddBody, _ := json.Marshal(map[string]string{
+		"name": "ManualSlashNode",
+		"url":  "http://192.168.1.141:10247/",
+	})
+	manReq := httptest.NewRequest(http.MethodPost, "/api/nodes", bytes.NewReader(manualAddBody))
+	manReq.AddCookie(sessionCookie)
+	manW := httptest.NewRecorder()
+	h.ServeHTTP(manW, manReq)
+	if manW.Code != http.StatusOK {
+		t.Fatalf("expected 200 on manual add, got %d", manW.Code)
+	}
+	manNode, err := store.GetNode(context.Background(), "ManualSlashNode")
+	if err != nil {
+		t.Fatalf("failed to get ManualSlashNode: %v", err)
+	}
+	if manNode.URL != "http://192.168.1.141:10247" {
+		t.Errorf("expected trailing slash to be trimmed on manual add, got %q", manNode.URL)
+	}
+}
+
+
 

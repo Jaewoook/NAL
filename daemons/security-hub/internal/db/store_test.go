@@ -710,6 +710,26 @@ func TestSpoolStore_NodeZeroLastSeenAndMetadataPreservation(t *testing.T) {
 	if !updated.Online {
 		t.Errorf("expected preserved Online=true since LastSeenAt is fresh")
 	}
+
+	// 3. Explicit scan error: node with LastError and Online: false must NOT be overwritten by existing fresh LastSeenAt
+	scanFailUpdate := models.NodeInfo{
+		Name:      "RichNode",
+		Online:    false,
+		LastError: "connection refused: 10.0.0.6:10248",
+	}
+	if err := store.UpsertNode(ctx, scanFailUpdate); err != nil {
+		t.Fatalf("UpsertNode scanFailUpdate failed: %v", err)
+	}
+	failedNode, err := store.GetNode(ctx, "RichNode")
+	if err != nil {
+		t.Fatalf("GetNode failed: %v", err)
+	}
+	if failedNode.Online {
+		t.Errorf("expected failedNode.Online to remain false when LastError is present")
+	}
+	if failedNode.LastError != "connection refused: 10.0.0.6:10248" {
+		t.Errorf("expected LastError to be recorded, got %q", failedNode.LastError)
+	}
 }
 
 

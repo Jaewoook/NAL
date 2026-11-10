@@ -422,9 +422,10 @@ function renderNodesModalList() {
     }
   }
 
-  const activeNodes = nodes.filter(n => n.status !== 'pending');
+  const activeNodes = nodes.filter(n => !n.status || n.status === 'approved');
+  const rejectedNodes = nodes.filter(n => n.status === 'rejected');
   if (box) {
-    box.innerHTML = activeNodes.map(n => `
+    const activeHtml = activeNodes.map(n => `
       <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border);">
         <div>
           <span class="dot ${n.online ? 'green' : 'amber'}"></span>
@@ -436,6 +437,28 @@ function renderNodesModalList() {
         ${n.role !== 'hub' ? `<button class="btn btn-danger" onclick='deleteRemoteNode("${encodeNodeArg(n.name)}")'>Remove</button>` : ''}
       </div>
     `).join('');
+
+    const rejectedHtml = rejectedNodes.length > 0 ? `
+      <div style="margin-top:14px; padding-top:8px; border-top:1px dashed var(--border);">
+        <div style="font-size:11px; font-weight:600; color:var(--text-dim); text-transform:uppercase; margin-bottom:6px;">Dismissed Nodes (${rejectedNodes.length})</div>
+        ${rejectedNodes.map(n => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); opacity:0.8;">
+            <div>
+              <span class="dot red"></span>
+              <strong>${escapeHtml(n.name)}</strong>
+              <span class="badge warn" style="margin-left:6px; font-size:10px; padding:1px 5px;">REJECTED</span>
+              <div class="svc-sub">${escapeHtml(n.url || 'LAN Node')}</div>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-primary" style="padding:2px 8px; font-size:11px;" onclick='approveNode("${encodeNodeArg(n.name)}")'>Re-Approve</button>
+              <button class="btn btn-danger" style="padding:2px 8px; font-size:11px;" onclick='deleteRemoteNode("${encodeNodeArg(n.name)}")'>Remove</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    box.innerHTML = activeHtml + rejectedHtml;
   }
 }
 

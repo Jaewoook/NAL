@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jaewoook/security-hub/internal/config"
 	"github.com/jaewoook/security-hub/internal/service"
 )
 
@@ -39,12 +40,25 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 
 	// Verify CLI node add / list / remove
 	out.Reset()
-	if code := runCLI([]string{"node", "add", "Atlas", "http://192.168.1.50:10247", "-token", "sec"}, &out); code != 0 {
+	if code := runCLI([]string{"node", "add", "Atlas", "http://192.168.1.50:10247/", "-token", "sec"}, &out); code != 0 {
 		t.Fatalf("expected exit code 0 for node add, got %d (%s)", code, out.String())
 	}
 	out.Reset()
 	if code := runCLI([]string{"node", "list"}, &out); code != 0 || !strings.Contains(out.String(), "Atlas") {
 		t.Fatalf("expected Atlas in node list output, got code=%d out=%s", code, out.String())
+	}
+	// Verify trailing slash was trimmed in node list
+	if strings.Contains(out.String(), "http://192.168.1.50:10247/") {
+		t.Fatalf("expected trailing slash to be trimmed from node URL, got: %s", out.String())
+	}
+	// Verify node add conflicts with hub name
+	hubName := config.DefaultNodeName()
+	out.Reset()
+	if code := runCLI([]string{"node", "add", hubName, "http://192.168.1.50:10247"}, &out); code != 1 {
+		t.Fatalf("expected exit code 1 when node name matches hub name, got %d (%s)", code, out.String())
+	}
+	if !strings.Contains(out.String(), "conflicts with hub node name") {
+		t.Fatalf("expected conflict error message, got: %s", out.String())
 	}
 	out.Reset()
 	if code := runCLI([]string{"node", "remove", "Atlas"}, &out); code != 0 {
