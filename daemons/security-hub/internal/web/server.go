@@ -12,6 +12,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jaewoook/security-hub/internal/auth"
@@ -34,6 +35,9 @@ type Server struct {
 	authMgr    *auth.Manager
 	alerter    *notifier.Alerter
 	httpClient *http.Client
+
+	scanMu         sync.Mutex
+	activeScanTask string
 }
 
 func NewServer(cfg *config.Config, store db.Store, orch *scanner.Orchestrator, updMgr *updater.Manager, authMgr *auth.Manager, alerter *notifier.Alerter) *Server {
@@ -620,16 +624,89 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	scan, err := s.orch.RunFullScan(r.Context())
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+
+	s.scanMu.Lock()
+	if s.activeScanTask != "" {
+		activeID := s.activeScanTask
+		s.scanMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error":   "scan already running",
+			"task_id": activeID,
+		})
 		return
 	}
-	if s.alerter != nil {
-		_, _ = s.alerter.NotifyScanFindings(r.Context(), scan)
+
+	if s.orch == nil {
+		s.scanMu.Unlock()
+		http.Error(w, `{"error":"orchestrator not configured"}`, http.StatusInternalServerError)
+		return
 	}
+
+	hubName := config.DefaultNodeName()
+	if s.cfg != nil && s.cfg.NodeName != "" {
+		hubName = s.cfg.NodeName
+	}
+	actor := "web"
+	if claims, _ := s.authMgr.VerifyRequest(r); claims != nil {
+		actor = claims.Method + ":" + claims.Subject
+	}
+
+	var taskID string
+	if s.store != nil {
+		task, err := s.store.CreateTask(r.Context(), &models.Task{
+			Node:        hubName,
+			TaskType:    "security_scan",
+			TargetType:  "system",
+			TargetName:  "all",
+			TriggeredBy: actor,
+			Status:      "running",
+		})
+		if err != nil {
+			s.scanMu.Unlock()
+			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+		taskID = task.ID
+	} else {
+		taskID = fmt.Sprintf("task_%d", time.Now().UnixNano())
+	}
+
+	s.activeScanTask = taskID
+	s.scanMu.Unlock()
+
+	go func(tid string) {
+		defer func() {
+			s.scanMu.Lock()
+			s.activeScanTask = ""
+			s.scanMu.Unlock()
+		}()
+
+		scan, err := s.orch.RunFullScanWithTask(context.Background(), tid)
+		if err != nil {
+			if s.store != nil {
+				_ = s.store.FinishTask(context.Background(), tid, "failed", err.Error())
+			}
+			return
+		}
+		if s.store != nil {
+			curTask, _, _ := s.store.GetTaskWithLogs(context.Background(), tid)
+			if curTask != nil && curTask.Status == "running" {
+				_ = s.store.FinishTask(context.Background(), tid, "succeeded", "")
+			}
+		}
+		if s.alerter != nil {
+			_, _ = s.alerter.NotifyScanFindings(context.Background(), scan)
+		}
+	}(taskID)
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(scan)
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"task_id": taskID,
+		"status":  "running",
+	})
 }
 
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {

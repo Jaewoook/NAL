@@ -673,3 +673,175 @@ func TestOrchestrator_ExcludesPendingNodesFromFullScan(t *testing.T) {
 		}
 	}
 }
+
+func TestServer_AsyncScanAndConcurrencyMutex(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.NodeName = "Axis"
+	cfg.AgentToken = "shared-cluster-token"
+	cfg.Database.DataDir = filepath.Join(root, "data")
+	cfg.Scanner.ServicesDir = filepath.Join(root, "services")
+
+	store, err := db.NewSpoolStore(cfg.Database.DataDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authMgr, err := auth.NewManager(cfg.Auth, filepath.Join(cfg.Database.DataDir, "auth_state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scanBlocker := make(chan struct{})
+	defer func() {
+		select {
+		case <-scanBlocker:
+		default:
+			close(scanBlocker)
+		}
+	}()
+
+	agentServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-scanBlocker
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"node": "Atlas",
+			"items": []models.ManagedItem{
+				{
+					Node:           "Atlas",
+					TargetType:     models.TargetDaemon,
+					Name:           "ollama",
+					CurrentVersion: "0.4.2",
+				},
+			},
+		})
+	}))
+	defer agentServer.Close()
+
+	_ = store.UpsertNode(context.Background(), models.NodeInfo{
+		Name:   "Atlas",
+		URL:    agentServer.URL,
+		Token:  cfg.AgentToken,
+		Role:   "agent",
+		Status: models.NodeStatusApproved,
+	})
+
+	runner := &noopRunner{}
+	alerter := notifier.NewAlerter(cfg.Notifications.Email, store)
+	orch := scanner.NewOrchestrator(cfg, store, runner, agentServer.Client())
+	updMgr := updater.NewManager(cfg, store, runner, alerter)
+
+	srv := NewServer(cfg, store, orch, updMgr, authMgr, alerter)
+	srv.SetHTTPClient(agentServer.Client())
+
+	tok, err := authMgr.GenerateBreakGlassToken(5 * time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginW := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(loginW, httptest.NewRequest(http.MethodGet, "/api/auth/token-login?token="+tok, nil))
+	cookies := loginW.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("expected session cookie on token-login")
+	}
+	sessionCookie := cookies[0]
+	h := srv.Handler()
+
+	// 1. Trigger POST /api/scan: assert HTTP 202 with task_id
+	scanReq1 := httptest.NewRequest(http.MethodPost, "/api/scan", nil)
+	scanReq1.AddCookie(sessionCookie)
+	w1 := httptest.NewRecorder()
+	h.ServeHTTP(w1, scanReq1)
+	if w1.Code != http.StatusAccepted {
+		t.Fatalf("expected HTTP 202 Accepted on first scan trigger, got %d: %s", w1.Code, w1.Body.String())
+	}
+	var resp1 struct {
+		TaskID string `json:"task_id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(w1.Body.Bytes(), &resp1); err != nil {
+		t.Fatalf("failed to parse scan response: %v", err)
+	}
+	if resp1.TaskID == "" {
+		t.Fatal("expected non-empty task_id in scan response")
+	}
+	if resp1.Status != "running" {
+		t.Fatalf("expected status 'running', got %q", resp1.Status)
+	}
+
+	// 2. Immediately trigger second POST /api/scan: assert HTTP 409 Conflict while first scan is running
+	scanReq2 := httptest.NewRequest(http.MethodPost, "/api/scan", nil)
+	scanReq2.AddCookie(sessionCookie)
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, scanReq2)
+	if w2.Code != http.StatusConflict {
+		t.Fatalf("expected HTTP 409 Conflict on simultaneous scan trigger, got %d: %s", w2.Code, w2.Body.String())
+	}
+	var resp2 struct {
+		Error  string `json:"error"`
+		TaskID string `json:"task_id"`
+	}
+	if err := json.Unmarshal(w2.Body.Bytes(), &resp2); err != nil {
+		t.Fatalf("failed to parse conflict response: %v", err)
+	}
+	if resp2.Error != "scan already running" {
+		t.Fatalf("expected error 'scan already running', got %q", resp2.Error)
+	}
+	if resp2.TaskID != resp1.TaskID {
+		t.Fatalf("expected conflict task_id %q, got %q", resp1.TaskID, resp2.TaskID)
+	}
+
+	// 3. Connect to /api/tasks/<task_id>/stream and assert SSE events receive step logs and terminate with event: done
+	streamReq := httptest.NewRequest(http.MethodGet, "/api/tasks/"+resp1.TaskID+"/stream", nil)
+	streamReq.AddCookie(sessionCookie)
+	streamW := httptest.NewRecorder()
+
+	streamDone := make(chan struct{})
+	go func() {
+		h.ServeHTTP(streamW, streamReq)
+		close(streamDone)
+	}()
+
+	// Allow subscriber to register before unblocking agent
+	time.Sleep(30 * time.Millisecond)
+	close(scanBlocker)
+
+	select {
+	case <-streamDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for SSE stream to complete")
+	}
+
+	if streamW.Code != http.StatusOK {
+		t.Fatalf("expected 200 from stream endpoint, got %d", streamW.Code)
+	}
+
+	streamBody := streamW.Body.String()
+	if !strings.Contains(streamBody, "event: done") {
+		t.Fatalf("expected SSE stream to contain 'event: done', got:\n%s", streamBody)
+	}
+
+	// Verify step logs are delivered in the SSE stream
+	expectedSteps := []string{
+		"Starting full scan on Hub (Axis)...",
+		"[Hub] Scanned",
+		"[Atlas] Querying remote agent",
+		"[Atlas] Scanned 1 remote components...",
+		"Analyzing CVEs against vulnerability feeds...",
+		"Scan complete:",
+	}
+	for _, step := range expectedSteps {
+		if !strings.Contains(streamBody, step) {
+			t.Fatalf("expected stream to contain step log %q, got body:\n%s", step, streamBody)
+		}
+	}
+
+	// 4. After first scan completes, triggering POST /api/scan again succeeds (HTTP 202)
+	scanReq3 := httptest.NewRequest(http.MethodPost, "/api/scan", nil)
+	scanReq3.AddCookie(sessionCookie)
+	w3 := httptest.NewRecorder()
+	h.ServeHTTP(w3, scanReq3)
+	if w3.Code != http.StatusAccepted {
+		t.Fatalf("expected HTTP 202 on scan after completion, got %d: %s", w3.Code, w3.Body.String())
+	}
+}
+
