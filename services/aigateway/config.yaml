@@ -12,13 +12,27 @@ litellm_settings:
   telemetry: false
   drop_params: true
   modify_params: true
+  allowed_openai_params:
+    - "reasoning_effort"
+    - "thinking"
+    - "output_config"
+    - "extra_body"
+    - "chat_template_kwargs"
   public_model_groups:
-    - "Qwen3.8-27B-oQ6e-mtp"
-    - "claude-qwe-n-3.8-27b-oq6e-mtp"
-    - "claude-gemm-a-4-31b-it-oq6e-mtp"
+    - "qwen3.8-27b-oq6e-mtp"
+    - "qwen3.8-27b-oq6e-mtp-nothink"
+    - "gemma4-31b-it-oq6e-mtp"
+    - "gemma4-31b-it-oq6e-mtp-nothink"
+    - "claude-sonnet-5-qwe-n-3.8-27b-oq6e-mtp"
+    - "claude-sonnet-5-qwe-n-3.8-27b-oq6e-mtp-nothink"
+    - "claude-sonnet-5-gemm-a-4-31b-it-oq6e-mtp"
+    - "claude-sonnet-5-gemm-a-4-31b-it-oq6e-mtp-nothink"
 
 model_list:
-  - model_name: "Qwen3.8-27B-oQ6e-mtp"
+  # =================================================================
+  # 1. OpenAI Compatible Endpoints (ATLAS_OPEN_API_BASE)
+  # =================================================================
+  - model_name: "qwen3.8-27b-oq6e-mtp"
     litellm_params:
       model: "openai/Qwen3.8-27B-oQ6e-mtp"
       api_base: "os.environ/ATLAS_OPEN_API_BASE"
@@ -26,30 +40,133 @@ model_list:
       # Set based on Gemini 3.8 Flash pricing (In: $0.75 / Out: $3.75 per 1M token)
       input_cost_per_token: 0.00000075
       output_cost_per_token: 0.00000375
+    model_info:
+      mode: "chat"
+      supports_reasoning: true
+      supports_function_calling: true
 
-  - model_name: "claude-qwe-n-3.8-27b-oq6e-mtp"
+  - model_name: "qwen3.8-27b-oq6e-mtp-nothink"
+    litellm_params:
+      model: "openai/Qwen3.8-27B-oQ6e-mtp"
+      api_base: "os.environ/ATLAS_OPEN_API_BASE"
+      api_key: "omlx-local"
+      temperature: 0.7
+      top_p: 0.80
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+      # Set based on Gemini 3.8 Flash pricing (In: $0.75 / Out: $3.75 per 1M token)
+      input_cost_per_token: 0.00000075
+      output_cost_per_token: 0.00000375
+    model_info:
+      mode: "chat"
+      supports_reasoning: false
+      supports_function_calling: true
+
+  - model_name: "gemma4-31b-it-oq6e-mtp"
+    litellm_params:
+      model: "openai/gemma-4-31B-it-oQ6e-mtp"
+      api_base: "os.environ/ATLAS_OPEN_API_BASE"
+      api_key: "omlx-local"
+      temperature: 1.0
+      top_p: 0.95
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: true
+      # Set based on Gemini 3.8 Flash pricing (In: $0.75 / Out: $3.75 per 1M token)
+      input_cost_per_token: 0.00000075
+      output_cost_per_token: 0.00000375
+    model_info:
+      mode: "chat"
+      supports_reasoning: true
+      supports_function_calling: true
+
+  - model_name: "gemma4-31b-it-oq6e-mtp-nothink"
+    litellm_params:
+      model: "openai/gemma-4-31B-it-oQ6e-mtp"
+      api_base: "os.environ/ATLAS_OPEN_API_BASE"
+      api_key: "omlx-local"
+      temperature: 0.7
+      top_p: 0.90
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+      # Set based on Gemini 3.8 Flash pricing (In: $0.75 / Out: $3.75 per 1M token)
+      input_cost_per_token: 0.00000075
+      output_cost_per_token: 0.00000375
+    model_info:
+      mode: "chat"
+      supports_reasoning: false
+      supports_function_calling: true
+
+  # =================================================================
+  # 2. Anthropic Compatible Endpoints (ATLAS_ANTHROPIC_API_BASE)
+  # =================================================================
+  - model_name: "claude-sonnet-5-qwe-n-3.8-27b-oq6e-mtp"
     litellm_params:
       model: "anthropic/Qwen3.8-27B-oQ6e-mtp"
       api_base: "os.environ/ATLAS_ANTHROPIC_API_BASE"
       api_key: "omlx-local"
+      chat_template_kwargs:
+        enable_thinking: true
       # Set based on Gemini 3.8 Flash pricing (In: $0.75 / Out: $3.75 per 1M token)
       input_cost_per_token: 0.00000075
       output_cost_per_token: 0.00000375
+    model_info:
+      mode: "chat"
+      supports_reasoning: true
+      supports_function_calling: true
 
-  - model_name: "claude-gemm-a-4-31b-it-oq6e-mtp"
+  - model_name: "claude-sonnet-5-qwe-n-3.8-27b-oq6e-mtp-nothink"
+    litellm_params:
+      model: "anthropic/Qwen3.8-27B-oQ6e-mtp"
+      api_base: "os.environ/ATLAS_ANTHROPIC_API_BASE"
+      api_key: "omlx-local"
+      temperature: 0.7
+      top_p: 0.80
+      # extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
+      # Set based on Gemini 3.8 Flash pricing (In: $0.75 / Out: $3.75 per 1M token)
+      input_cost_per_token: 0.00000075
+      output_cost_per_token: 0.00000375
+    model_info:
+      mode: "chat"
+      supports_reasoning: false
+      supports_function_calling: true
+
+  - model_name: "claude-sonnet-5-gemm-a-4-31b-it-oq6e-mtp"
     litellm_params:
       model: "anthropic/gemma-4-31B-it-oQ6e-mtp"
       api_base: "os.environ/ATLAS_ANTHROPIC_API_BASE"
       api_key: "omlx-local"
+      temperature: 1.0
+      top_p: 0.95
+      chat_template_kwargs:
+        enable_thinking: true
+      # extra_body:
       # Set based on Gemini 3.8 Flash pricing (In: $0.75 / Out: $3.75 per 1M token)
       input_cost_per_token: 0.00000075
       output_cost_per_token: 0.00000375
+    model_info:
+      mode: "chat"
+      supports_reasoning: true
+      supports_function_calling: true
 
-  - model_name: "*"
+  - model_name: "claude-sonnet-5-gemm-a-4-31b-it-oq6e-mtp-nothink"
     litellm_params:
-      model: "openai/Qwen3.8-27B-oQ6e-mtp"
-      api_base: "os.environ/ATLAS_OPEN_API_BASE"
+      model: "anthropic/gemma-4-31B-it-oQ6e-mtp"
+      api_base: "os.environ/ATLAS_ANTHROPIC_API_BASE"
       api_key: "omlx-local"
+      temperature: 0.7
+      top_p: 0.90
+      # extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
       # Set based on Gemini 3.8 Flash pricing (In: $0.75 / Out: $3.75 per 1M token)
       input_cost_per_token: 0.00000075
       output_cost_per_token: 0.00000375
+    model_info:
+      mode: "chat"
+      supports_reasoning: false
+      supports_function_calling: true
