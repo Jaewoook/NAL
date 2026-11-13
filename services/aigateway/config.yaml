@@ -12,6 +12,14 @@ litellm_settings:
   telemetry: false
   drop_params: true
   modify_params: true
+  callbacks:
+    - "websearch_interception"
+  websearch_interception_params:
+    search_tool_name: "websearch-searxng"
+    enabled_providers:
+      - "anthropic"
+      - "openai"
+
   allowed_openai_params:
     - "reasoning_effort"
     - "thinking"
@@ -27,6 +35,12 @@ litellm_settings:
     - "claude-sonnet-5-qwe-n-3.8-27b-oq6e-mtp-nothink"
     - "claude-sonnet-5-gemm-a-4-31b-it-oq6e-mtp"
     - "claude-sonnet-5-gemm-a-4-31b-it-oq6e-mtp-nothink"
+
+search_tools:
+  - search_tool_name: "websearch-searxng"
+    litellm_params:
+      search_provider: "searxng"
+      api_base: "http://searxng:8080"
 
 model_list:
   # =================================================================
