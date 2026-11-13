@@ -65,25 +65,132 @@ Start, stop, or restart one or more services with:
 > - jaewook.dev
 > - home.jaewook.me (Inaccessible from outside)
 
-| Service          | Endpoint | Description | Status |
-| ---------------- | :------: | ----------- | :----: |
-| VPN              | N/A | Wireguard VPN Proxy | Deprecated |
-| DDNS             | N/A | Cloudflare DDNS Daemon | Stable |
-| Tunnel           | N/A | Cloudflare Tunnel Daemon | Stable |
-| Proxy            | <ul><li>https://nginx.jaewook.dev</li></ul> | Nginx web management console | Stable |
-| Virt             | <ul><li>https://docker.jaewook.dev</li></ul> | Docker stack management console | Stable |
-| AI Gateway       | <ul><li>https://aigateway.jaewook.dev</li></ul> | Centralized LiteLLM inference proxy, OpenAI/Anthropic protocol translator, and SSO API key portal ([`services/aigateway`](./services/aigateway)) | Stable |
-| LLM              | <ul><li>https://llm.jaewook.dev</li><li>https://llm.home.jaewook.me</li></ul> | On-premise LLM web chat interface routed via AI Gateway & SearXNG ([`services/llm`](./services/llm)) | Experimental |
-| Web Search       | N/A | Self-hosted SearXNG meta-search engine tool for Open WebUI ([`services/websearch`](./services/websearch)) | Stable |
-| Remote Desktop   | <ul><li>https://remote.jaewook.dev</li></ul> | Apache Guacamole clientless remote desktop gateway for Atlas ([`services/remote`](./services/remote)) | Experimental |
-| Auth             | <ul><li>https://auth.jaewook.dev</li></ul> | Authenticate/Authorize (OIDC/Passkeys) + LDAP ([`services/auth`](./services/auth)) | Stable |
-| DB               | N/A | Shared PostgreSQL database server ([`services/db`](./services/db)) | Stable |
-| Storage          | <ul><li>https://storage.jaewook.dev</li></ul> | Synology DSM web console & central NAS persistence | Stable |
-| Homebrew NAL Tap | <ul><li>https://homebrew-nal.jaewook.dev</li></ul> | [Homebrew tap](https://github.com/Jaewoook/homebrew-nal) registry ([`services/homebrew-nal`](./services/homebrew-nal)) | Stable |
-| DNS              | <ul><li>https://dns.home.jaewook.me</li></ul> | Technitium DNS server for local network ([`services/dns`](./services/dns)) | Stable |
-| IoT              | <ul><li>https://ha.home.jaewook.me</li></ul> | Home Assistant + Matter Hub: bridges LG ThinQ and Xiaomi devices into SmartThings ([`services/iot`](./services/iot)) | Experimental |
-| Code Review      | <ul><li>https://code-review.home.jaewook.me</li></ul> | Gerrit code review system ([`services/code-review`](./services/code-review)) | Experimental |
-| Docker Registry  | | Private docker image registry | Planned |
+<table>
+  <thead>
+    <tr>
+      <th>Service</th>
+      <th align="center">Endpoint</th>
+      <th>Description</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th colspan="4">Networking &amp; Ingress</th>
+    </tr>
+    <tr>
+      <td>DDNS</td>
+      <td align="center">N/A</td>
+      <td>Cloudflare DDNS daemon for automated DNS record updates (<a href="./services/cloudflare-ddns"><code>services/cloudflare-ddns</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <td>Tunnel</td>
+      <td align="center">N/A</td>
+      <td>Cloudflare Tunnel (<code>cloudflared</code>) zero-trust ingress daemon (<a href="./services/cloudflare-tunnel"><code>services/cloudflare-tunnel</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <td>Proxy</td>
+      <td align="center"><a href="https://nginx.jaewook.dev">https://nginx.jaewook.dev</a></td>
+      <td>Nginx Proxy Manager reverse proxy &amp; TLS termination console (<a href="./services/nginx-proxy"><code>services/nginx-proxy</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <td>DNS</td>
+      <td align="center"><a href="https://dns.home.jaewook.me">https://dns.home.jaewook.me</a></td>
+      <td>Technitium DNS server for local network zone resolution (<a href="./services/dns"><code>services/dns</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <th colspan="4">Platform &amp; Access</th>
+    </tr>
+    <tr>
+      <td>Auth</td>
+      <td align="center"><a href="https://auth.jaewook.dev">https://auth.jaewook.dev</a></td>
+      <td>Authentik identity provider (OIDC/Passkeys) &amp; LDAP directory (<a href="./services/auth"><code>services/auth</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <td>DB</td>
+      <td align="center">N/A</td>
+      <td>Shared PostgreSQL database server (<a href="./services/db"><code>services/db</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <td>Virt</td>
+      <td align="center"><a href="https://virt.jaewook.dev">https://virt.jaewook.dev</a></td>
+      <td>Portainer Docker container &amp; stack management console (<a href="./services/virt"><code>services/virt</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <td>Remote Desktop</td>
+      <td align="center"><a href="https://remote.jaewook.dev">https://remote.jaewook.dev</a></td>
+      <td>Apache Guacamole clientless VNC remote desktop gateway for Atlas (<a href="./services/remote"><code>services/remote</code></a>)</td>
+      <td>Experimental</td>
+    </tr>
+    <tr>
+      <th colspan="4">AI</th>
+    </tr>
+    <tr>
+      <td>AI Gateway</td>
+      <td align="center"><a href="https://aigateway.jaewook.dev">https://aigateway.jaewook.dev</a></td>
+      <td>Centralized LiteLLM inference proxy, OpenAI/Anthropic protocol translator, and SSO API key portal (<a href="./services/aigateway"><code>services/aigateway</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <td>LLM</td>
+      <td align="center"><a href="https://llm.jaewook.dev">https://llm.jaewook.dev</a></td>
+      <td>On-premise Open WebUI chat interface routed via AI Gateway &amp; SearXNG (<a href="./services/llm"><code>services/llm</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <td>Web Search</td>
+      <td align="center">N/A</td>
+      <td>Self-hosted SearXNG meta-search engine for Open WebUI RAG grounding (<a href="./services/websearch"><code>services/websearch</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <th colspan="4">Developer &amp; Registry</th>
+    </tr>
+    <tr>
+      <td>Code Review</td>
+      <td align="center"><a href="https://code-review.jaewook.dev">https://code-review.jaewook.dev</a></td>
+      <td>Gerrit code review &amp; Git repository hosting system (<a href="./services/code-review"><code>services/code-review</code></a>)</td>
+      <td>Experimental</td>
+    </tr>
+    <tr>
+      <td>Homebrew NAL Tap</td>
+      <td align="center"><a href="https://homebrew-nal.jaewook.dev">https://homebrew-nal.jaewook.dev</a></td>
+      <td>Self-hosted <a href="https://github.com/Jaewoook/homebrew-nal">Homebrew tap</a> registry (<a href="./services/homebrew-nal"><code>services/homebrew-nal</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <td>Docker Registry</td>
+      <td align="center">TBD</td>
+      <td>Private Docker container image registry</td>
+      <td>Planned</td>
+    </tr>
+    <tr>
+      <th colspan="4">IoT &amp; Home Automation</th>
+    </tr>
+    <tr>
+      <td>IoT</td>
+      <td align="center"><a href="https://ha.home.jaewook.me">https://ha.home.jaewook.me</a></td>
+      <td>Home Assistant + Matter Hub bridging LG ThinQ and Xiaomi devices into SmartThings (<a href="./services/iot"><code>services/iot</code></a>)</td>
+      <td>Experimental</td>
+    </tr>
+    <tr>
+      <th colspan="4">Storage (External)</th>
+    </tr>
+    <tr>
+      <td>Storage</td>
+      <td align="center"><a href="https://storage.jaewook.dev">https://storage.jaewook.dev</a></td>
+      <td>Synology DSM web console &amp; central NAS persistence</td>
+      <td>Stable</td>
+    </tr>
+  </tbody>
+</table>
 
 **Lab Services:** User-facing project services are served through the NAL ingress gateway (`cloudflare-tunnel` → `nginx-proxy`) as hosted workloads, separate from core system components.
 
