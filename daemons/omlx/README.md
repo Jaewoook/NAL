@@ -1,6 +1,6 @@
 # Atlas oMLX Host Daemon & Ingress Firewall Setup
 
-This directory contains the host configuration files for running **oMLX** bare-metal on **Atlas** (Apple Silicon M5 Max Mac Studio, 64GB Unified Memory).
+This directory contains the host configuration files for running **oMLX** bare-metal on **Atlas** (Apple Silicon M5 Max Mac Studio, 128GB Unified Memory).
 
 ## Architecture & Security Model
 

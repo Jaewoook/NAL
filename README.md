@@ -22,24 +22,25 @@ All infrastructure is running on the following hardwares.
 
 - Role: Ingress Gateway & Container Virtualization Host
 - Processor: Apple M2
-- RAM: 16GB
+- RAM: 16GB Unified Memory
 - Storage: 256GB SSD
 - Network: 1Gbps wired connection
 
 ### Apple Mac Studio (Atlas)
 
-- Role: Dedicated Local LLM Compute Server
+- Role: Dedicated Local AI Compute Server
 - Processor: Apple M5 Max
-- RAM: 64GB
+- RAM: 128GB Unified Memory
 - Storage: 1TB SSD
+- Network: 2.5Gbps wired connection
 
 ### Synology DS925+
 
 - Role: Central Persistence & Storage (NAS)
 - Processor: AMD Ryzen V1500B
-- RAM: 4GB
-- Storage: 32TB HDD
-- Network: 1Gbps wired connection
+- RAM: 8GB ECC
+- Storage: 32TB HDD (RAID 5)
+- Network: 2.5Gbps wired connection
 
 ## Get Started
 
@@ -155,7 +156,7 @@ Unlike Docker services running inside the container virtualization layer, daemon
 | :--- | :--- | :--- | :--- |
 | **Server Monitor** | [`daemons/server-monitor`](./daemons/server-monitor) | Real-time CPU spike & plunge drop anomaly detection, host health telemetry (Axis & M5 Max Atlas), dead-man's-switch aliveness heartbeat, and multi-channel alerting (Telegram, Discord, Slack, Email, Webhook). | macOS `launchd` / CLI |
 | **Security Hub** | [`daemons/security-hub`](./daemons/security-hub) | Multi-node Hub (`https://securityhub.jaewook.dev` on Axis) & LAN Agent (Atlas) for unified Docker/Homebrew/daemon outdated checks, CVE & LTS/EoL scanning, SMTP alerts, Authentik SSO/Passkey dashboard, 60s Dead-Man's Rollback, and automated Git Bot commits. | macOS `launchd` / CLI |
-| **oMLX** | [`daemons/omlx`](./daemons/omlx) | Native bare-metal Apple Silicon MLX inference server on **Atlas** (M5 Max GPU, 56GB wired VRAM limit) with continuous batching, prefix caching, and `pfctl` ingress firewall restricted to Axis. | macOS `launchd` / CLI |
+| **oMLX** | [`daemons/omlx`](./daemons/omlx) | Native bare-metal Apple Silicon MLX inference server on **Atlas** (M5 Max GPU, 128GB unified memory) with continuous batching, prefix caching, and `pfctl` ingress firewall restricted to Axis. | macOS `launchd` / CLI |
 
 **Quick Commands:**
 ```sh
