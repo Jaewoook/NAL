@@ -42,6 +42,14 @@ All infrastructure is running on the following hardwares.
 - Storage: 32TB HDD (RAID 5)
 - Network: 2.5Gbps wired connection
 
+### Raspberry Pi 3B+ (Aegis)
+
+- Role: Edge & Auxiliary DNS Node ([`nodes/aegis`](./nodes/aegis))
+- Processor: Broadcom BCM2837B0 (ARM64)
+- RAM: 1GB LPDDR2
+- Storage: microSD
+- Network: Wired Ethernet (Gigabit over USB 2.0)
+
 ## Get Started
 
 Setup docker environment by running the command:
