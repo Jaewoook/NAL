@@ -69,6 +69,7 @@ Start, stop, or restart one or more services with:
   <thead>
     <tr>
       <th>Service</th>
+      <th align="center">Type</th>
       <th align="center">Endpoint</th>
       <th>Description</th>
       <th>Status</th>
@@ -76,115 +77,155 @@ Start, stop, or restart one or more services with:
   </thead>
   <tbody>
     <tr>
-      <th colspan="4">Networking &amp; Ingress</th>
+      <th colspan="5">Networking &amp; Ingress</th>
     </tr>
     <tr>
       <td>DDNS</td>
+      <td align="center">Service</td>
       <td align="center">N/A</td>
-      <td>Cloudflare DDNS daemon for automated DNS record updates (<a href="./services/cloudflare-ddns"><code>services/cloudflare-ddns</code></a>)</td>
+      <td>Cloudflare dynamic DNS updater for automated DNS record updates (<a href="./services/cloudflare-ddns"><code>services/cloudflare-ddns</code></a>)</td>
       <td>Stable</td>
     </tr>
     <tr>
       <td>Tunnel</td>
+      <td align="center">Service</td>
       <td align="center">N/A</td>
-      <td>Cloudflare Tunnel (<code>cloudflared</code>) zero-trust ingress daemon (<a href="./services/cloudflare-tunnel"><code>services/cloudflare-tunnel</code></a>)</td>
+      <td>Cloudflare Tunnel (<code>cloudflared</code>) zero-trust ingress agent (<a href="./services/cloudflare-tunnel"><code>services/cloudflare-tunnel</code></a>)</td>
       <td>Stable</td>
     </tr>
     <tr>
       <td>Proxy</td>
+      <td align="center">Service</td>
       <td align="center"><a href="https://nginx.jaewook.dev">https://nginx.jaewook.dev</a></td>
       <td>Nginx Proxy Manager reverse proxy &amp; TLS termination console (<a href="./services/nginx-proxy"><code>services/nginx-proxy</code></a>)</td>
       <td>Stable</td>
     </tr>
     <tr>
       <td>DNS</td>
+      <td align="center">Service</td>
       <td align="center"><a href="https://dns.home.jaewook.me">https://dns.home.jaewook.me</a></td>
       <td>Technitium DNS server for local network zone resolution (<a href="./services/dns"><code>services/dns</code></a>)</td>
       <td>Stable</td>
     </tr>
     <tr>
-      <th colspan="4">Platform &amp; Access</th>
+      <th colspan="5">Platform &amp; Access</th>
     </tr>
     <tr>
       <td>Auth</td>
+      <td align="center">Service</td>
       <td align="center"><a href="https://auth.jaewook.dev">https://auth.jaewook.dev</a></td>
       <td>Authentik identity provider (OIDC/Passkeys) &amp; LDAP directory (<a href="./services/auth"><code>services/auth</code></a>)</td>
       <td>Stable</td>
     </tr>
     <tr>
       <td>DB</td>
+      <td align="center">Service</td>
       <td align="center">N/A</td>
       <td>Shared PostgreSQL database server (<a href="./services/db"><code>services/db</code></a>)</td>
       <td>Stable</td>
     </tr>
     <tr>
       <td>Virt</td>
+      <td align="center">Service</td>
       <td align="center"><a href="https://virt.jaewook.dev">https://virt.jaewook.dev</a></td>
       <td>Portainer Docker container &amp; stack management console (<a href="./services/virt"><code>services/virt</code></a>)</td>
       <td>Stable</td>
     </tr>
     <tr>
       <td>Remote Desktop</td>
+      <td align="center">Service</td>
       <td align="center"><a href="https://remote.jaewook.dev">https://remote.jaewook.dev</a></td>
       <td>Apache Guacamole clientless VNC remote desktop gateway for Atlas (<a href="./services/remote"><code>services/remote</code></a>)</td>
       <td>Experimental</td>
     </tr>
     <tr>
-      <th colspan="4">AI</th>
+      <th colspan="5">Security &amp; Monitoring</th>
+    </tr>
+    <tr>
+      <td>Security Hub</td>
+      <td align="center">Daemon</td>
+      <td align="center"><a href="https://securityhub.jaewook.dev">https://securityhub.jaewook.dev</a></td>
+      <td>Multi-node Hub (Axis) &amp; LAN Agent (Atlas) for Docker/Homebrew/daemon update checks, CVE &amp; LTS/EoL scanning, Authentik SSO/Passkey dashboard, and 60s Dead-Man's Rollback (<a href="./daemons/security-hub"><code>daemons/security-hub</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <td>Server Monitor</td>
+      <td align="center">Daemon</td>
+      <td align="center">N/A</td>
+      <td>Real-time CPU spike &amp; plunge anomaly detection, host health telemetry (Axis &amp; M5 Max Atlas), dead-man's-switch heartbeat, and multi-channel alerting (<a href="./daemons/server-monitor"><code>daemons/server-monitor</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
+      <th colspan="5">AI</th>
     </tr>
     <tr>
       <td>AI Gateway</td>
+      <td align="center">Service</td>
       <td align="center"><a href="https://aigateway.jaewook.dev">https://aigateway.jaewook.dev</a></td>
       <td>Centralized LiteLLM inference proxy, OpenAI/Anthropic protocol translator, and SSO API key portal (<a href="./services/aigateway"><code>services/aigateway</code></a>)</td>
       <td>Stable</td>
     </tr>
     <tr>
       <td>LLM</td>
+      <td align="center">Service</td>
       <td align="center"><a href="https://llm.jaewook.dev">https://llm.jaewook.dev</a></td>
       <td>On-premise Open WebUI chat interface routed via AI Gateway &amp; SearXNG (<a href="./services/llm"><code>services/llm</code></a>)</td>
       <td>Stable</td>
     </tr>
     <tr>
+      <td>oMLX</td>
+      <td align="center">Daemon</td>
+      <td align="center"><a href="https://omlx.home.jaewook.me">https://omlx.home.jaewook.me</a></td>
+      <td>Native bare-metal Apple Silicon MLX inference server &amp; dashboard on Atlas (M5 Max GPU, 128GB unified memory, continuous batching, prefix caching, <code>pfctl</code> restricted to Axis) (<a href="./daemons/omlx"><code>daemons/omlx</code></a>)</td>
+      <td>Stable</td>
+    </tr>
+    <tr>
       <td>Web Search</td>
+      <td align="center">Service</td>
       <td align="center">N/A</td>
       <td>Self-hosted SearXNG meta-search engine for Open WebUI RAG grounding (<a href="./services/websearch"><code>services/websearch</code></a>)</td>
       <td>Stable</td>
     </tr>
     <tr>
-      <th colspan="4">Developer &amp; Registry</th>
+      <th colspan="5">Developer &amp; Registry</th>
     </tr>
     <tr>
       <td>Code Review</td>
+      <td align="center">Service</td>
       <td align="center"><a href="https://code-review.jaewook.dev">https://code-review.jaewook.dev</a></td>
       <td>Gerrit code review &amp; Git repository hosting system (<a href="./services/code-review"><code>services/code-review</code></a>)</td>
       <td>Experimental</td>
     </tr>
     <tr>
       <td>Homebrew NAL Tap</td>
+      <td align="center">Service</td>
       <td align="center"><a href="https://homebrew-nal.jaewook.dev">https://homebrew-nal.jaewook.dev</a></td>
       <td>Self-hosted <a href="https://github.com/Jaewoook/homebrew-nal">Homebrew tap</a> registry (<a href="./services/homebrew-nal"><code>services/homebrew-nal</code></a>)</td>
       <td>Stable</td>
     </tr>
     <tr>
       <td>Docker Registry</td>
+      <td align="center">Service</td>
       <td align="center">TBD</td>
       <td>Private Docker container image registry</td>
       <td>Planned</td>
     </tr>
     <tr>
-      <th colspan="4">IoT &amp; Home Automation</th>
+      <th colspan="5">IoT &amp; Home Automation</th>
     </tr>
     <tr>
       <td>IoT</td>
+      <td align="center">Service</td>
       <td align="center"><a href="https://ha.home.jaewook.me">https://ha.home.jaewook.me</a></td>
       <td>Home Assistant + Matter Hub bridging LG ThinQ and Xiaomi devices into SmartThings (<a href="./services/iot"><code>services/iot</code></a>)</td>
       <td>Experimental</td>
     </tr>
     <tr>
-      <th colspan="4">Storage (External)</th>
+      <th colspan="5">Storage (External)</th>
     </tr>
     <tr>
       <td>Storage</td>
+      <td align="center">External</td>
       <td align="center"><a href="https://storage.jaewook.dev">https://storage.jaewook.dev</a></td>
       <td>Synology DSM web console &amp; central NAS persistence</td>
       <td>Stable</td>
@@ -192,10 +233,40 @@ Start, stop, or restart one or more services with:
   </tbody>
 </table>
 
+**Host Daemons:** Entries marked `Daemon` run natively via macOS `launchd` on the physical hosts (**Axis** and **Atlas**) rather than inside Docker, enabling bare-metal Apple Silicon GPU acceleration, hardware telemetry, and multi-node security management.
+
 **Lab Services:** User-facing project services are served through the NAL ingress gateway (`cloudflare-tunnel` → `nginx-proxy`) as hosted workloads, separate from core system components.
 
 Future work: Technitium (DNS) supports OIDC SSO login for its web console,
 which can be integrated with the Authentik (Auth) instance — not implemented yet.
+
+### Daemon Quick Commands
+
+```sh
+# Manage oMLX host daemon lifecycle on Atlas
+./daemons/omlx/service.sh status     # Check status, PID, port reachability, models
+./daemons/omlx/service.sh start      # Start background daemon
+./daemons/omlx/service.sh stop       # Stop background daemon
+./daemons/omlx/service.sh restart    # Restart background daemon
+./daemons/omlx/service.sh logs       # Tail daemon logs
+
+# Run a one-off Security Hub scan or start Hub / remote LAN Agent
+./daemons/security-hub/security-hub scan
+./daemons/security-hub/security-hub run
+./daemons/security-hub/security-hub agent -name <node-name> -token "<shared-lan-secret>"
+
+# One-off system health inspection
+./daemons/server-monitor/server-monitor check
+
+# Test notification channel (e.g. Telegram)
+./daemons/server-monitor/server-monitor test-alert -channel telegram
+
+# Manage Server Monitor background service lifecycle
+./daemons/server-monitor/server-monitor service status    # Check status, PID, uptime, memory
+./daemons/server-monitor/server-monitor service start     # Start background daemon
+./daemons/server-monitor/server-monitor service stop      # Stop background daemon
+./daemons/server-monitor/server-monitor service restart   # Restart background daemon
+```
 
 ## Networks
 
@@ -254,43 +325,6 @@ export NAL_BACKUP_REMOTE="b2:my-bucket/nal"
 Recovery after a full wipe: `./setup-docker-env.sh` (networks + empty
 volumes) → `./batch/restore-volumes.sh <volume>` for each volume that had
 data → `./manage-services.sh start all`.
-
-## Daemons (Host-Level Background Services)
-
-Unlike Docker services running inside the container virtualization layer, daemons run natively on the physical macOS hosts (**Axis** and **Atlas**) for bare-metal Apple Silicon GPU acceleration, hardware telemetry, and multi-node security management.
-
-| Daemon | Path | Description | Management |
-| :--- | :--- | :--- | :--- |
-| **Server Monitor** | [`daemons/server-monitor`](./daemons/server-monitor) | Real-time CPU spike & plunge drop anomaly detection, host health telemetry (Axis & M5 Max Atlas), dead-man's-switch aliveness heartbeat, and multi-channel alerting (Telegram, Discord, Slack, Email, Webhook). | macOS `launchd` / CLI |
-| **Security Hub** | [`daemons/security-hub`](./daemons/security-hub) | Multi-node Hub (`https://securityhub.jaewook.dev` on Axis) & LAN Agent (Atlas) for unified Docker/Homebrew/daemon outdated checks, CVE & LTS/EoL scanning, SMTP alerts, Authentik SSO/Passkey dashboard, 60s Dead-Man's Rollback, and automated Git Bot commits. | macOS `launchd` / CLI |
-| **oMLX** | [`daemons/omlx`](./daemons/omlx) | Native bare-metal Apple Silicon MLX inference server on **Atlas** (M5 Max GPU, 128GB unified memory) with continuous batching, prefix caching, and `pfctl` ingress firewall restricted to Axis. | macOS `launchd` / CLI |
-
-**Quick Commands:**
-```sh
-# Manage oMLX host daemon lifecycle on Atlas
-./daemons/omlx/service.sh status     # Check status, PID, port reachability, models
-./daemons/omlx/service.sh start      # Start background daemon
-./daemons/omlx/service.sh stop       # Stop background daemon
-./daemons/omlx/service.sh restart    # Restart background daemon
-./daemons/omlx/service.sh logs       # Tail daemon logs
-
-# Run a one-off Security Hub scan or start Hub / remote LAN Agent
-./daemons/security-hub/security-hub scan
-./daemons/security-hub/security-hub run
-./daemons/security-hub/security-hub agent -name <node-name> -token "<shared-lan-secret>"
-
-# One-off system health inspection
-./daemons/server-monitor/server-monitor check
-
-# Test notification channel (e.g. Telegram)
-./daemons/server-monitor/server-monitor test-alert -channel telegram
-
-# Manage Server Monitor background service lifecycle
-./daemons/server-monitor/server-monitor service status    # Check status, PID, uptime, memory
-./daemons/server-monitor/server-monitor service start     # Start background daemon
-./daemons/server-monitor/server-monitor service stop      # Stop background daemon
-./daemons/server-monitor/server-monitor service restart   # Restart background daemon
-```
 
 ## Batch Tasks
 
