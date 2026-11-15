@@ -112,7 +112,7 @@ Start, stop, or restart one or more services with:
       <td>DNS</td>
       <td align="center">Service</td>
       <td align="center"><a href="https://dns.home.jaewook.me">https://dns.home.jaewook.me</a></td>
-      <td>Technitium DNS server for local network zone resolution (<a href="./services/dns"><code>services/dns</code></a>)</td>
+      <td>Technitium DNS server for local network zone resolution with Authentik OIDC SSO (<a href="./services/dns"><code>services/dns</code></a>)</td>
       <td>Stable</td>
     </tr>
     <tr>
@@ -245,9 +245,6 @@ Start, stop, or restart one or more services with:
 
 **Lab Services:** User-facing project services are served through the NAL ingress gateway (`cloudflare-tunnel` → `nginx-proxy`) as hosted workloads, separate from core system components.
 
-Future work: Technitium (DNS) supports OIDC SSO login for its web console,
-which can be integrated with the Authentik (Auth) instance — not implemented yet.
-
 ### Daemon Quick Commands
 
 ```sh
@@ -284,7 +281,6 @@ which can be integrated with the Authentik (Auth) instance — not implemented y
 | ----------------- | -------------------------------------------------- | :-----: |
 | nginx_network     | Nginx uses this network to proxy other services    | Stable  |
 | db_network        | Shared network for services to reach the DB server | Stable  |
-| ~~nextcloud-aio~~ | ~~All of the Nextcloud services use this network~~ | Deleted |
 
 `nginx_network` is created with a fixed subnet (`172.22.0.0/16`) and gateway
 (`172.22.0.1`), with dynamically-assigned addresses restricted to the
