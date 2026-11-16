@@ -3,6 +3,15 @@ set -euo pipefail
 
 # Read-only diagnostics for Aegis (safe to run without sudo).
 
+# Non-login SSH sessions for non-root users can omit sbin directories where swapon/zramctl live.
+for sbin_dir in /usr/local/sbin /usr/sbin /sbin; do
+    case ":${PATH:-}:" in
+        *":${sbin_dir}:"*) ;;
+        *) PATH="${PATH:+$PATH:}${sbin_dir}" ;;
+    esac
+done
+export PATH
+
 echo "=== Host ==="
 echo "Hostname : $(hostname)"
 echo "Kernel   : $(uname -srm)"

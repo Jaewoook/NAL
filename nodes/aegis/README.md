@@ -39,7 +39,7 @@ Run this once Aegis boots (if you didn't set the hostname in Raspberry Pi Imager
 *(Omit `--host raspberrypi.local` if Aegis is already reachable as `AEGIS_HOST` in `.env`. Pass `--refresh-host-key` after any re-flash so your MacBook clears the previous SSH host key.)*
 
 This connects over SSH and idempotently:
-* Confirms `aarch64` / Debian-based OS and sets hostname to `aegis`.
+* Confirms `aarch64` / Debian-based OS, configures system locale (`en_US.UTF-8`), and sets hostname to `aegis`.
 * Installs `curl`, `ca-certificates`, and `iptables` (plus `zram-tools` on legacy Bookworm) with apt lock timeout handling.
 * Ensures `config.txt` and `cmdline.txt` cgroups match your `.env` settings.
 * Enables compressed in-RAM `zram` swap (`rpi-swap` on Trixie+, `zramswap` on Bookworm) without disk swapfile wear, and puts `systemd-journald` into volatile 32 MB RAM mode to protect the microSD card.

@@ -196,6 +196,7 @@ build_ssh_opts() {
         -o "ControlPersist=60"
         -o "ControlPath=$CONTROL_PATH"
         -o "ConnectTimeout=10"
+        -o "SetEnv=LANG=C.UTF-8 LC_ALL=C.UTF-8"
     )
     SCP_OPTS=(
         -P "$AEGIS_SSH_PORT"
@@ -203,6 +204,7 @@ build_ssh_opts() {
         -o "ControlPersist=60"
         -o "ControlPath=$CONTROL_PATH"
         -o "ConnectTimeout=10"
+        -o "SetEnv=LANG=C.UTF-8 LC_ALL=C.UTF-8"
     )
     if [[ -n "${AEGIS_SSH_KEY:-}" ]]; then
         SSH_OPTS+=(-i "$AEGIS_SSH_KEY")
@@ -346,6 +348,7 @@ run_prep() {
     echo "==> Step 1: Preparing host $SSH_TARGET"
     write_local_env \
         AEGIS_NODE_NAME \
+        AEGIS_LOCALE \
         AEGIS_GPU_MEM \
         AEGIS_ZRAM_PERCENT \
         AEGIS_ZRAM_ALGO \
@@ -452,6 +455,10 @@ validate_common_inputs() {
     fi
 
     if [[ "$COMMAND" == "prep" ]]; then
+        if [[ -n "$AEGIS_LOCALE" && ! "$AEGIS_LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]]; then
+            echo "Error: invalid locale AEGIS_LOCALE='$AEGIS_LOCALE'." >&2
+            exit 1
+        fi
         if [[ ! "$AEGIS_ZRAM_PERCENT" =~ ^[0-9]+$ ]] || (( AEGIS_ZRAM_PERCENT < 1 || AEGIS_ZRAM_PERCENT > 200 )); then
             echo "Error: AEGIS_ZRAM_PERCENT must be an integer between 1 and 200 (got '$AEGIS_ZRAM_PERCENT')." >&2
             exit 1
@@ -482,6 +489,9 @@ main() {
     AEGIS_BOOT_DIR="${AEGIS_BOOT_DIR:-}"
     AEGIS_SSH_PORT="${AEGIS_SSH_PORT:-22}"
     AEGIS_NODE_NAME="${AEGIS_NODE_NAME:-aegis}"
+    if [[ -z "${AEGIS_LOCALE+x}" ]]; then
+        AEGIS_LOCALE="en_US.UTF-8"
+    fi
     AEGIS_GPU_MEM="${AEGIS_GPU_MEM:-16}"
     AEGIS_ZRAM_PERCENT="${AEGIS_ZRAM_PERCENT:-50}"
     AEGIS_ZRAM_ALGO="${AEGIS_ZRAM_ALGO:-lz4}"

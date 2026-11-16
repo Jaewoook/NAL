@@ -16,6 +16,9 @@ if [[ -n "${1:-}" && -f "$1" ]]; then
 fi
 
 AEGIS_NODE_NAME="${AEGIS_NODE_NAME:-aegis}"
+if [[ -z "${AEGIS_LOCALE+x}" ]]; then
+    AEGIS_LOCALE="en_US.UTF-8"
+fi
 AEGIS_GPU_MEM="${AEGIS_GPU_MEM:-16}"
 AEGIS_ZRAM_PERCENT="${AEGIS_ZRAM_PERCENT:-50}"
 AEGIS_ZRAM_ALGO="${AEGIS_ZRAM_ALGO:-lz4}"
@@ -35,6 +38,10 @@ validate_bool() {
 validate_inputs() {
     if ! [[ "$AEGIS_NODE_NAME" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
         echo "Error: AEGIS_NODE_NAME must be a valid lowercase RFC 1123 label (got '$AEGIS_NODE_NAME')." >&2
+        exit 1
+    fi
+    if [[ -n "$AEGIS_LOCALE" && ! "$AEGIS_LOCALE" =~ ^[A-Za-z0-9_.@-]+$ ]]; then
+        echo "Error: invalid locale AEGIS_LOCALE='$AEGIS_LOCALE'." >&2
         exit 1
     fi
     if ! [[ "$AEGIS_GPU_MEM" =~ ^[0-9]+$ ]]; then
@@ -101,6 +108,44 @@ configure_hostname() {
         sed -i -E "s|^127\.0\.1\.1[[:space:]]+.*|127.0.1.1\t${AEGIS_NODE_NAME}|" /etc/hosts
     else
         printf '127.0.1.1\t%s\n' "$AEGIS_NODE_NAME" >> /etc/hosts
+    fi
+}
+
+configure_locale() {
+    if [[ -z "$AEGIS_LOCALE" ]]; then
+        return 0
+    fi
+
+    local locales_out locale_pat default_lang=""
+    locales_out="$(locale -a 2>/dev/null || true)"
+    # Debian `locale -a` normalizes `.UTF-8` to `.utf8`.
+    if [[ "$AEGIS_LOCALE" == *.* ]]; then
+        locale_pat="^${AEGIS_LOCALE%.*}(\\.${AEGIS_LOCALE#*.}|\\.utf-?8)$"
+    else
+        locale_pat="^${AEGIS_LOCALE}$"
+    fi
+    if [[ -r /etc/default/locale ]]; then
+        default_lang="$(awk -F= '/^LANG=/ { gsub(/["\047]/, "", $2); print $2; exit }' /etc/default/locale)"
+    fi
+
+    if grep -qiE "$locale_pat" <<< "$locales_out" && [[ "$default_lang" == "$AEGIS_LOCALE" ]]; then
+        echo "==> Locale already configured ($AEGIS_LOCALE)"
+        return 0
+    fi
+
+    echo "==> Configuring system locale ($AEGIS_LOCALE)"
+    if command -v raspi-config &>/dev/null && raspi-config nonint do_change_locale "$AEGIS_LOCALE"; then
+        return 0
+    fi
+
+    if [[ -f /etc/locale.gen ]]; then
+        sed -i -E "s|^#[[:space:]]*(${AEGIS_LOCALE}[[:space:]]+)|\1|" /etc/locale.gen
+    fi
+    if command -v locale-gen &>/dev/null; then
+        locale-gen "$AEGIS_LOCALE"
+    fi
+    if command -v update-locale &>/dev/null; then
+        update-locale "LANG=$AEGIS_LOCALE"
     fi
 }
 
@@ -239,6 +284,7 @@ main() {
     validate_inputs
     check_platform
     configure_hostname
+    configure_locale
     install_packages
     configure_boot_config
     configure_cmdline_cgroups
