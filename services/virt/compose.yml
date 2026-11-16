@@ -3,7 +3,7 @@ volumes:
 
 services:
   portainer:
-    image: portainer/portainer-ce:latest
+    image: portainer/portainer-ee:latest
     container_name: portainer
     expose:
       - 8000
