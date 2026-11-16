@@ -12,6 +12,8 @@ litellm_settings:
   telemetry: false
   drop_params: true
   modify_params: true
+  # Renders <think> blocks in Open WebUI
+  merge_reasoning_content_in_choices: true
   callbacks:
     - "websearch_interception"
   websearch_interception_params:
@@ -130,6 +132,8 @@ model_list:
       mode: "chat"
       supports_reasoning: true
       supports_function_calling: true
+      supported_reasoning_effort: ["low", "medium", "xhigh"]
+      supports_reasoning_effort: true
 
   - model_name: "claude-sonnet-5-qwe-n-3.8-27b-oq6e-mtp-nothink"
     litellm_params:
