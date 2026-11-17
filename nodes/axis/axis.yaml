@@ -1,0 +1,48 @@
+minimumLimaVersion: "2.0.0"
+
+base:
+  - template:_images/ubuntu-24.04
+
+vmType: "vz"
+arch: "aarch64"
+
+cpus: __AXIS_CPUS__
+memory: "__AXIS_MEMORY__"
+disk: "__AXIS_DISK__"
+
+# Keep macOS host home directory isolated from Kubernetes workloads.
+mounts: []
+
+# k3s ships its own containerd; disable Lima's standalone daemon to save RAM.
+containerd:
+  system: false
+  user: false
+
+networks:
+  - lima: bridged
+    interface: lima0
+    macAddress: "__AXIS_BRIDGE_MAC__"
+
+portForwards:
+  # Forward k3s API cleanly to macOS localhost so Axis kubectl avoids vmnet bridged hairpin limits.
+  - guestIP: "0.0.0.0"
+    guestPort: 6443
+    hostIP: "127.0.0.1"
+    hostPort: __AXIS_LOCAL_API_PORT__
+    proto: tcp
+  # Ignore all other guest ports so cluster services never collide with OrbStack on 192.168.0.2.
+  - guestIP: "0.0.0.0"
+    guestPortRange: [1, 65535]
+    ignore: true
+  - guestIP: "127.0.0.1"
+    guestPortRange: [1, 65535]
+    ignore: true
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get -o DPkg::Lock::Timeout=60 update -qq
+      apt-get -o DPkg::Lock::Timeout=60 install -y -qq curl ca-certificates iptables nfs-common
