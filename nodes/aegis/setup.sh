@@ -4,7 +4,11 @@ set -euo pipefail
 # Runs on your MacBook to remotely prepare Aegis (Raspberry Pi 3B+) or join it to k3s.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NODES_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="${NAL_AEGIS_ENV_FILE:-$SCRIPT_DIR/.env}"
+
+# shellcheck source=../lib/common.sh
+. "$NODES_DIR/lib/common.sh"
 
 usage() {
     cat <<EOF
@@ -27,107 +31,13 @@ Options (override values from $ENV_FILE):
   --eject                 Eject the SD card after 'sd' completes
   --port <port>           SSH port (default: 22)
   --key <path>            SSH private key file
-  --k3s-url <url>         k3s server URL, e.g. https://192.168.0.2:6443 (join only)
+  --k3s-url <url>         k3s server URL, e.g. https://192.168.0.10:6443 (join only)
   --k3s-token <token>     k3s node join token (join only)
   --k3s-version <ver>     Pin k3s version to match Axis, e.g. v1.31.4+k3s1 (join only)
   --refresh-host-key      Remove cached SSH host keys for Aegis before connecting (after reset)
   --no-reboot             Skip automatic reboot at the end of 'prep'
   -h, --help              Show this help message
 EOF
-}
-
-trim_ws() {
-    local s="$1"
-    s="${s#"${s%%[![:space:]]*}"}"
-    s="${s%"${s##*[![:space:]]}"}"
-    printf '%s' "$s"
-}
-
-parse_env_value() {
-    local raw="$1" line_no="$2"
-    local trimmed val="" i len ch next
-    trimmed="${raw#"${raw%%[![:space:]]*}"}"
-
-    if [[ -z "$trimmed" || "$trimmed" == \#* ]]; then
-        printf '%s' ""
-        return 0
-    fi
-
-    if [[ "$trimmed" == \'* ]]; then
-        local sq_re="^'([^']*)'([[:space:]]*(#.*)?)?$"
-        if [[ "$trimmed" =~ $sq_re ]]; then
-            printf '%s' "${BASH_REMATCH[1]}"
-            return 0
-        fi
-        echo "Error: malformed single-quoted value in $ENV_FILE:$line_no." >&2
-        return 1
-    fi
-
-    if [[ "$trimmed" == \"* ]]; then
-        len="${#trimmed}"
-        i=1
-        while (( i < len )); do
-            ch="${trimmed:$i:1}"
-            if [[ "$ch" == "\\" ]]; then
-                if (( i + 1 >= len )); then
-                    echo "Error: trailing backslash in $ENV_FILE:$line_no." >&2
-                    return 1
-                fi
-                next="${trimmed:$((i + 1)):1}"
-                val="${val}${next}"
-                i=$((i + 2))
-                continue
-            fi
-            if [[ "$ch" == '"' ]]; then
-                local suffix="${trimmed:$((i + 1))}"
-                local suffix_re='^[[:space:]]*(#.*)?$'
-                if [[ "$suffix" =~ $suffix_re ]]; then
-                    printf '%s' "$val"
-                    return 0
-                fi
-                echo "Error: unexpected trailing characters after quoted value in $ENV_FILE:$line_no." >&2
-                return 1
-            fi
-            val="${val}${ch}"
-            i=$((i + 1))
-        done
-        echo "Error: unterminated double-quoted value in $ENV_FILE:$line_no." >&2
-        return 1
-    fi
-
-    # Unquoted values allow literal '$' (e.g. $6$ hashes) and strip trailing `<ws>#...` comments.
-    trimmed="${trimmed%%[[:space:]]#*}"
-    trim_ws "$trimmed"
-}
-
-load_env_file() {
-    if [[ ! -e "$ENV_FILE" ]]; then
-        return 0
-    fi
-    if [[ ! -f "$ENV_FILE" || ! -r "$ENV_FILE" ]]; then
-        echo "Error: env file '$ENV_FILE' is not readable." >&2
-        exit 1
-    fi
-
-    local line trimmed key val line_no=0
-    local export_re='^export[[:space:]]+(.*)$'
-    local kv_re='^([A-Za-z_][A-Za-z0-9_]*)=(.*)$'
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        line_no=$((line_no + 1))
-        line="${line%$'\r'}"
-        trimmed="$(trim_ws "$line")"
-        [[ -z "$trimmed" || "$trimmed" == \#* ]] && continue
-        if [[ "$trimmed" =~ $export_re ]]; then
-            trimmed="${BASH_REMATCH[1]}"
-        fi
-        if [[ ! "$trimmed" =~ $kv_re ]]; then
-            echo "Error: invalid syntax in $ENV_FILE:$line_no." >&2
-            exit 1
-        fi
-        key="${BASH_REMATCH[1]}"
-        val="$(parse_env_value "${BASH_REMATCH[2]}" "$line_no")" || exit 1
-        printf -v "$key" '%s' "$val"
-    done < "$ENV_FILE"
 }
 
 COMMAND=""
@@ -240,10 +150,7 @@ cleanup() {
 
 write_local_env() {
     LOCAL_ENV_FILE="$(mktemp)"
-    chmod 600 "$LOCAL_ENV_FILE"
-    for var in "$@"; do
-        printf '%s=%q\n' "$var" "${!var:-}" >> "$LOCAL_ENV_FILE"
-    done
+    write_env_vars "$LOCAL_ENV_FILE" "$@"
 }
 
 open_ssh_session() {
@@ -405,23 +312,12 @@ run_join() {
     run_status
 }
 
-validate_bool() {
-    local name="$1" val="$2"
-    if [[ "$val" != "true" && "$val" != "false" ]]; then
-        echo "Error: $name must be 'true' or 'false' (got '$val')." >&2
-        exit 1
-    fi
-}
-
 validate_common_inputs() {
     if [[ ! "$AEGIS_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
         echo "Error: invalid Linux username AEGIS_USER='$AEGIS_USER'." >&2
         exit 1
     fi
-    if [[ ! "$AEGIS_NODE_NAME" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
-        echo "Error: AEGIS_NODE_NAME must be a valid lowercase RFC 1123 label (got '$AEGIS_NODE_NAME')." >&2
-        exit 1
-    fi
+    validate_node_name "AEGIS_NODE_NAME" "$AEGIS_NODE_NAME"
 
     if [[ "$COMMAND" != "sd" ]]; then
         if [[ -z "$AEGIS_HOST" || "$AEGIS_HOST" =~ [[:space:]] ]]; then
@@ -433,11 +329,7 @@ validate_common_inputs() {
             exit 1
         fi
         if [[ -n "${AEGIS_SSH_KEY:-}" ]]; then
-            if [[ "$AEGIS_SSH_KEY" == "~" ]]; then
-                AEGIS_SSH_KEY="$HOME"
-            elif [[ "$AEGIS_SSH_KEY" == "~/"* ]]; then
-                AEGIS_SSH_KEY="${HOME}${AEGIS_SSH_KEY#\~}"
-            fi
+            AEGIS_SSH_KEY="$(expand_tilde "$AEGIS_SSH_KEY")"
             if [[ ! -f "$AEGIS_SSH_KEY" || ! -r "$AEGIS_SSH_KEY" ]]; then
                 echo "Error: SSH key file not found or unreadable: '$AEGIS_SSH_KEY'." >&2
                 exit 1
@@ -481,7 +373,7 @@ main() {
         exit 0
     fi
 
-    load_env_file
+    load_env_file "$ENV_FILE"
     AEGIS_HOST="${AEGIS_HOST:-aegis.local}"
     AEGIS_USER="${AEGIS_USER:-pi}"
     AEGIS_PASSWORD="${AEGIS_PASSWORD:-}"

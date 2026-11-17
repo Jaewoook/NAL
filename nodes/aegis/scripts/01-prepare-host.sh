@@ -116,13 +116,15 @@ configure_locale() {
         return 0
     fi
 
-    local locales_out locale_pat default_lang=""
+    local locales_out locale_pat escaped_locale default_lang=""
     locales_out="$(locale -a 2>/dev/null || true)"
+    escaped_locale="${AEGIS_LOCALE//./\\.}"
     # Debian `locale -a` normalizes `.UTF-8` to `.utf8`.
-    if [[ "$AEGIS_LOCALE" == *.* ]]; then
-        locale_pat="^${AEGIS_LOCALE%.*}(\\.${AEGIS_LOCALE#*.}|\\.utf-?8)$"
+    if [[ "$AEGIS_LOCALE" =~ ^([^.]+)\.[Uu][Tt][Ff]-?8$ ]]; then
+        local base_esc="${BASH_REMATCH[1]//./\\.}"
+        locale_pat="^${base_esc}\.utf-?8$"
     else
-        locale_pat="^${AEGIS_LOCALE}$"
+        locale_pat="^${escaped_locale}$"
     fi
     if [[ -r /etc/default/locale ]]; then
         default_lang="$(awk -F= '/^LANG=/ { gsub(/["\047]/, "", $2); print $2; exit }' /etc/default/locale)"
@@ -139,7 +141,7 @@ configure_locale() {
     fi
 
     if [[ -f /etc/locale.gen ]]; then
-        sed -i -E "s|^#[[:space:]]*(${AEGIS_LOCALE}[[:space:]]+)|\1|" /etc/locale.gen
+        sed -i -E "s|^#[[:space:]]*(${escaped_locale}[[:space:]]+)|\1|" /etc/locale.gen
     fi
     if command -v locale-gen &>/dev/null; then
         locale-gen "$AEGIS_LOCALE"

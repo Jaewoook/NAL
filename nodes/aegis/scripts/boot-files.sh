@@ -13,7 +13,7 @@ update_boot_config_file() {
     echo "==> Updating $config_file (gpu_mem=${gpu_mem}, disable_wifi=${disable_wifi}, disable_bt=${disable_bt})"
 
     # Strip any prior NAL block, top-level gpu_mem overrides, and trailing blank lines idempotently.
-    awk '
+    if ! awk '
         /^# --- BEGIN NAL AEGIS ---$/ { skip=1; next }
         /^# --- END NAL AEGIS ---$/   { skip=0; next }
         skip { next }
@@ -24,7 +24,10 @@ update_boot_config_file() {
             blanks = 0
             print
         }
-    ' "$config_file" > "$tmp_file"
+    ' "$config_file" > "$tmp_file"; then
+        rm -f "$tmp_file"
+        return 1
+    fi
 
     # Ensure our block falls under [all] regardless of preceding [pi4]/[pi5] filters.
     last_section="$(awk '
@@ -54,7 +57,10 @@ update_boot_config_file() {
     } >> "$tmp_file"
 
     # Overwrite in place because FAT32 boot partitions can reject chmod/chown (EPERM).
-    cat "$tmp_file" > "$config_file"
+    if ! cat "$tmp_file" > "$config_file"; then
+        rm -f "$tmp_file"
+        return 1
+    fi
     rm -f "$tmp_file"
 }
 
