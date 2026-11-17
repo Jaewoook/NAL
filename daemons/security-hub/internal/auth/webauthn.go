@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -80,7 +81,7 @@ func (m *Manager) FinishPasskeyRegistration(w http.ResponseWriter, r *http.Reque
 		PublicKeySPKI string `json:"public_key_spki"`
 		Challenge     string `json:"challenge"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
@@ -148,7 +149,7 @@ func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		ClientDataJSON    string `json:"client_data_json"`
 		Signature         string `json:"signature"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
@@ -226,7 +227,11 @@ func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"corrupt stored public key"}`, http.StatusInternalServerError)
 		return
 	}
-	ecPub := pubAny.(*ecdsa.PublicKey)
+	ecPub, ok := pubAny.(*ecdsa.PublicKey)
+	if !ok {
+		http.Error(w, `{"error":"corrupt stored public key"}`, http.StatusInternalServerError)
+		return
+	}
 
 	clientHash := sha256.Sum256(clientDataBytes)
 	signedData := append(append([]byte{}, authData...), clientHash[:]...)

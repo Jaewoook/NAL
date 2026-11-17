@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,13 +32,7 @@ func NewEoLChecker(baseURL string, httpClient *http.Client) *EoLChecker {
 }
 
 func mapItemToEoLProductAndCycle(item models.ManagedItem) (product, cycle string) {
-	ver := strings.TrimPrefix(item.CurrentVersion, "v")
-	if idx := strings.IndexByte(ver, '-'); idx > 0 {
-		ver = ver[:idx]
-	}
-	if idx := strings.IndexByte(ver, '_'); idx > 0 {
-		ver = ver[:idx]
-	}
+	ver := cleanUpstreamVersion(item.CurrentVersion)
 	parts := strings.Split(ver, ".")
 	major := parts[0]
 	majorMinor := major
@@ -45,23 +40,24 @@ func mapItemToEoLProductAndCycle(item models.ManagedItem) (product, cycle string
 		majorMinor = parts[0] + "." + parts[1]
 	}
 
-	ref := strings.ToLower(item.ImageRef + " " + item.Name)
+	baseName := stripAptArch(item.Name)
+	ref := strings.ToLower(item.ImageRef + " " + baseName)
 	switch {
 	case strings.Contains(ref, "postgres"):
 		return "postgresql", major
-	case strings.Contains(ref, "authentik") || item.Name == "auth":
+	case strings.Contains(ref, "authentik") || baseName == "auth":
 		return "authentik", majorMinor
 	case strings.Contains(ref, "home-assistant") || strings.Contains(ref, "homeassistant"):
 		return "home-assistant", majorMinor
 	case strings.Contains(ref, "gerrit"):
 		return "gerrit", majorMinor
-	case strings.HasPrefix(item.Name, "node@") || item.Name == "node":
+	case strings.HasPrefix(baseName, "node@") || baseName == "node" || baseName == "nodejs":
 		return "nodejs", major
-	case strings.HasPrefix(item.Name, "openssl@") || item.Name == "openssl":
+	case strings.HasPrefix(baseName, "openssl@") || baseName == "openssl":
 		return "openssl", majorMinor
-	case strings.HasPrefix(item.Name, "python@") || item.Name == "python":
+	case strings.HasPrefix(baseName, "python@") || baseName == "python" || baseName == "python3" || strings.HasPrefix(baseName, "python3."):
 		return "python", majorMinor
-	case item.Name == "go" || strings.HasPrefix(item.Name, "go@"):
+	case baseName == "go" || strings.HasPrefix(baseName, "go@") || baseName == "golang" || baseName == "golang-go":
 		return "go", majorMinor
 	case item.TargetType == models.TargetMacOS:
 		return "macos", major
@@ -181,6 +177,9 @@ func (e *EoLChecker) fetchProductReleases(ctx context.Context, product string) m
 		return out
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return out
+	}
 
 	type relItem struct {
 		Name    string `json:"name"`
@@ -192,7 +191,7 @@ func (e *EoLChecker) fetchProductReleases(ctx context.Context, product string) m
 			Releases []relItem `json:"releases"`
 		} `json:"result"`
 	}
-	if json.NewDecoder(resp.Body).Decode(&payload) == nil {
+	if json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&payload) == nil {
 		for _, rel := range payload.Releases {
 			out[rel.Name] = rel.EoLFrom
 		}

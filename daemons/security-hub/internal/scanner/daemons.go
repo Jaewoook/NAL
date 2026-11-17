@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -47,10 +48,13 @@ func (ds *DaemonScanner) fetchLatestOllamaVersion(ctx context.Context, fallback 
 		return fallback
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fallback
+	}
 	var rel struct {
 		TagName string `json:"tag_name"`
 	}
-	if json.NewDecoder(resp.Body).Decode(&rel) == nil && rel.TagName != "" {
+	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&rel) == nil && rel.TagName != "" {
 		return strings.TrimPrefix(rel.TagName, "v")
 	}
 	return fallback

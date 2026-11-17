@@ -157,7 +157,7 @@ func runCLI(args []string, out io.Writer) int {
 		fmt.Fprintf(out, "High CVEs:         %d\n", res.TotalHighCVEs)
 		fmt.Fprintf(out, "LTS/EoL Warnings:  %d\n", res.TotalEoLIssues)
 		fmt.Fprintf(out, "Outdated Packages: %d\n", res.TotalOutdated)
-		fmt.Fprintf(out, "Broken Brew Links: %d\n", res.TotalBrokenBrew)
+		fmt.Fprintf(out, "Broken Pkg Links:  %d\n", res.TotalBrokenBrew)
 		return 0
 
 	case "rollback":

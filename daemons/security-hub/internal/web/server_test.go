@@ -1310,5 +1310,172 @@ func TestNodeAnnounce_BodyLimitAndSchemeNormalization(t *testing.T) {
 	}
 }
 
+func TestRaspberryPiAgent_AptScanAndRemoteUpgrade(t *testing.T) {
+	// 1. Setup Raspberry Pi Agent node running APT only (no Docker or Homebrew)
+	rpiDir := t.TempDir()
+	rpiCfg := config.DefaultConfig()
+	rpiCfg.NodeName = "RPi-01"
+	rpiCfg.AgentToken = "rpi-secret-token"
+	rpiCfg.Database.DataDir = rpiDir
+	rpiCfg.Scanner.ServicesDir = filepath.Join(rpiDir, "no-services")
+
+	var upgradedAptPkg bool
+	rpiRunner := &mockCmdRunner{
+		fn: func(name string, args ...string) ([]byte, error) {
+			cmdLine := name + " " + strings.Join(args, " ")
+			switch {
+			case name == "docker" || name == "brew" || name == "ollama" || name == "sw_vers" || name == "softwareupdate":
+				return nil, errors.New("not installed")
+			case name == "dpkg-query":
+				return []byte("openssl\t3.0.11-1~deb12u2\tinstalled\n"), nil
+			case strings.Contains(cmdLine, "apt-get update"):
+				return []byte(""), nil
+			case strings.Contains(cmdLine, "apt list --upgradable"):
+				return []byte("Listing...\nopenssl/stable-security 3.0.14-1~deb12u1 arm64 [upgradable from: 3.0.11-1~deb12u2]\n"), nil
+			case strings.Contains(cmdLine, "apt-mark showmanual"):
+				return []byte("openssl\n"), nil
+			case strings.Contains(cmdLine, "dpkg --audit") || strings.Contains(cmdLine, "apt-get -o Debug::NoLocking=true check"):
+				return []byte(""), nil
+			case strings.Contains(cmdLine, "apt-get install --only-upgrade -y") && strings.HasSuffix(cmdLine, " openssl"):
+				upgradedAptPkg = true
+				return []byte("Unpacking openssl (3.0.14-1~deb12u1) ...\nSetting up openssl (3.0.14-1~deb12u1) ..."), nil
+			case strings.Contains(cmdLine, "dpkg -s -- openssl"):
+				return []byte("Package: openssl\nStatus: install ok installed\n"), nil
+			default:
+				return nil, nil
+			}
+		},
+	}
+
+	rpiStore, _ := db.NewSpoolStore(rpiDir, nil)
+	rpiAuth, _ := auth.NewManager(rpiCfg.Auth, filepath.Join(rpiDir, "auth.json"))
+	rpiOrch := scanner.NewOrchestrator(rpiCfg, rpiStore, rpiRunner, &http.Client{Transport: &handlerRoundTripper{}})
+	rpiUpd := updater.NewManager(rpiCfg, rpiStore, rpiRunner, nil)
+	rpiSrv := NewServer(rpiCfg, rpiStore, rpiOrch, rpiUpd, rpiAuth, nil)
+
+	// 2. Setup Hub connected to Raspberry Pi Agent
+	hubDir := t.TempDir()
+	hubCfg := config.DefaultConfig()
+	hubCfg.NodeName = "Axis"
+	hubCfg.Database.DataDir = hubDir
+	hubCfg.Scanner.ServicesDir = filepath.Join(hubDir, "services")
+	hubStore, _ := db.NewSpoolStore(hubDir, nil)
+	_ = hubStore.UpsertNode(context.Background(), models.NodeInfo{
+		Name:   "RPi-01",
+		URL:    "http://atlas.lan:10247",
+		Token:  "rpi-secret-token",
+		Role:   "agent",
+		Status: models.NodeStatusApproved,
+	})
+
+	lanHTTP := &http.Client{Transport: &handlerRoundTripper{handler: rpiSrv.Handler()}}
+	hubRunner := &mockCmdRunner{
+		fn: func(name string, args ...string) ([]byte, error) {
+			return nil, errors.New("not installed")
+		},
+	}
+	hubOrch := scanner.NewOrchestrator(hubCfg, hubStore, hubRunner, lanHTTP)
+
+	// 3. Multi-node scan discovers outdated apt package on RPi-01
+	scanRes, err := hubOrch.RunFullScan(context.Background())
+	if err != nil {
+		t.Fatalf("RunFullScan failed: %v", err)
+	}
+	var foundApt bool
+	for _, it := range scanRes.Items {
+		if it.Node == "RPi-01" && it.TargetType == models.TargetApt && it.Name == "openssl" && it.Outdated && it.LatestVersion == "3.0.14-1~deb12u1" {
+			foundApt = true
+		}
+	}
+	if !foundApt {
+		t.Fatalf("expected Hub scan to discover outdated apt openssl on RPi-01, got items=%+v", scanRes.Items)
+	}
+
+	// 4. Remote upgrade for RPi-01 apt package executes via agent and aggregates logs
+	hubUpd := updater.NewManager(hubCfg, hubStore, hubRunner, nil)
+	hubUpd.SetHTTPClient(lanHTTP)
+	hubTask, _ := hubStore.CreateTask(context.Background(), &models.Task{
+		Node:       "RPi-01",
+		TaskType:   "apt_upgrade",
+		TargetType: string(models.TargetApt),
+		TargetName: "openssl",
+		ToVersion:  "3.0.14-1~deb12u1",
+	})
+	if err := hubUpd.RunUpdateSync(context.Background(), hubTask.ID, updater.UpdateRequest{
+		Node:          "RPi-01",
+		TargetType:    string(models.TargetApt),
+		TargetName:    "openssl",
+		TargetVersion: "3.0.14-1~deb12u1",
+		TriggeredBy:   "web:admin",
+	}); err != nil {
+		t.Fatalf("remote apt upgrade on RPi-01 failed: %v", err)
+	}
+	if !upgradedAptPkg {
+		t.Fatal("expected apt-get install --only-upgrade -y openssl to execute on RPi-01 agent")
+	}
+	finalTask, logs, _ := hubStore.GetTaskWithLogs(context.Background(), hubTask.ID)
+	if finalTask.Status != "succeeded" || len(logs) == 0 {
+		t.Fatalf("expected succeeded task with logs from RPi-01, got task=%+v logs=%+v", finalTask, logs)
+	}
+
+	// 5. Verify Web UI assets include shared System Packages tab, security fixes, and node-scoped skip
+	indexBytes, _ := staticEmbedFS.ReadFile("static/index.html")
+	appBytes, _ := staticEmbedFS.ReadFile("static/app.js")
+	if !strings.Contains(string(indexBytes), "System Packages (`brew` / `apt`)") {
+		t.Error("expected index.html to display shared System Packages (`brew` / `apt`) tab")
+	}
+	if !strings.Contains(string(appBytes), "item.target_type === 'apt'") || !strings.Contains(string(appBytes), "isSafeHttpUrl") {
+		t.Error("expected app.js to handle item.target_type === 'apt' and isSafeHttpUrl")
+	}
+
+	// 6. Verify node-scoped POST/DELETE /api/skip isolates RPi-01 from RPi-02
+	hubAuthMgr, _ := auth.NewManager(hubCfg.Auth, filepath.Join(hubDir, "auth.json"))
+	hubSrv := NewServer(hubCfg, hubStore, hubOrch, hubUpd, hubAuthMgr, nil)
+	hubH := hubSrv.Handler()
+	tok, _ := hubAuthMgr.GenerateBreakGlassToken(5 * time.Minute)
+	loginW := httptest.NewRecorder()
+	hubH.ServeHTTP(loginW, httptest.NewRequest(http.MethodGet, "/api/auth/token-login?token="+tok, nil))
+	cookie := loginW.Result().Cookies()[0]
+
+	skipBody, _ := json.Marshal(map[string]string{
+		"node":        "RPi-01",
+		"target_type": "apt",
+		"target_name": "openssl",
+		"version":     "3.0.14-1~deb12u1",
+	})
+	skipReq := httptest.NewRequest(http.MethodPost, "/api/skip", bytes.NewReader(skipBody))
+	skipReq.AddCookie(cookie)
+	skipW := httptest.NewRecorder()
+	hubH.ServeHTTP(skipW, skipReq)
+	if skipW.Code != http.StatusOK {
+		t.Fatalf("POST /api/skip returned %d", skipW.Code)
+	}
+
+	skippedMap, _ := hubStore.ListSkippedVersions(context.Background())
+	multiItems := []models.ManagedItem{
+		{Node: "RPi-01", TargetType: models.TargetApt, Name: "openssl", LatestVersion: "3.0.14-1~deb12u1", Outdated: true},
+		{Node: "RPi-02", TargetType: models.TargetApt, Name: "openssl", LatestVersion: "3.0.14-1~deb12u1", Outdated: true},
+	}
+	summarized := scanner.ApplySkippedAndSummarize(multiItems, skippedMap)
+	if !summarized.Items[0].Skipped || summarized.Items[0].Outdated {
+		t.Fatalf("expected RPi-01 openssl skipped, got %+v", summarized.Items[0])
+	}
+	if summarized.Items[1].Skipped || !summarized.Items[1].Outdated {
+		t.Fatalf("expected RPi-02 openssl NOT skipped when only RPi-01 skipped, got %+v", summarized.Items[1])
+	}
+
+	unskipReq := httptest.NewRequest(http.MethodDelete, "/api/skip?node=RPi-01&target_type=apt&target_name=openssl", nil)
+	unskipReq.AddCookie(cookie)
+	unskipW := httptest.NewRecorder()
+	hubH.ServeHTTP(unskipW, unskipReq)
+	if unskipW.Code != http.StatusOK {
+		t.Fatalf("DELETE /api/skip returned %d", unskipW.Code)
+	}
+	skippedAfter, _ := hubStore.ListSkippedVersions(context.Background())
+	if _, stillExists := skippedAfter["RPi-01:apt:openssl"]; stillExists {
+		t.Fatalf("expected RPi-01:apt:openssl to be removed after DELETE /api/skip, got %v", skippedAfter)
+	}
+}
+
 
 

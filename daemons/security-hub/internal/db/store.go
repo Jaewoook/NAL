@@ -192,7 +192,7 @@ func (s *SpoolStore) CreateTask(ctx context.Context, task *models.Task) (*models
 }
 
 func (s *SpoolStore) GetRawLogPath(taskID string) string {
-	return filepath.Join(s.logsDir, fmt.Sprintf("%s.log", taskID))
+	return filepath.Join(s.logsDir, fmt.Sprintf("%s.log", filepath.Base(taskID)))
 }
 
 func (s *SpoolStore) AppendTaskLog(ctx context.Context, taskID string, stream string, line string) (models.TaskLogLine, error) {

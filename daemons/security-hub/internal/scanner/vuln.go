@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -39,23 +40,31 @@ type osvQuery struct {
 	} `json:"package"`
 }
 
+func cleanUpstreamVersion(raw string) string {
+	cleanVer := strings.TrimPrefix(strings.TrimSpace(raw), "v")
+	if idx := strings.IndexByte(cleanVer, ':'); idx >= 0 {
+		cleanVer = cleanVer[idx+1:]
+	}
+	for _, sep := range []byte{'-', '_', '+', '~'} {
+		if idx := strings.IndexByte(cleanVer, sep); idx > 0 {
+			cleanVer = cleanVer[:idx]
+		}
+	}
+	return cleanVer
+}
+
 func mapItemToOSVPackage(item models.ManagedItem) (eco, pkgName, cleanVer string, ok bool) {
-	cleanVer = strings.TrimPrefix(item.CurrentVersion, "v")
-	if idx := strings.IndexByte(cleanVer, '-'); idx > 0 {
-		cleanVer = cleanVer[:idx]
-	}
-	if idx := strings.IndexByte(cleanVer, '_'); idx > 0 {
-		cleanVer = cleanVer[:idx]
-	}
+	cleanVer = cleanUpstreamVersion(item.CurrentVersion)
 	if cleanVer == "" || IsFloatingTag(cleanVer) {
 		return "", "", "", false
 	}
 
-	ref := strings.ToLower(item.ImageRef + " " + item.Name)
+	baseName := stripAptArch(item.Name)
+	ref := strings.ToLower(item.ImageRef + " " + baseName)
 	switch {
 	case strings.Contains(ref, "cloudflared") || strings.Contains(ref, "cloudflare-tunnel"):
 		return "Go", "github.com/cloudflare/cloudflared", cleanVer, true
-	case strings.Contains(ref, "authentik") || item.Name == "auth":
+	case strings.Contains(ref, "authentik") || baseName == "auth":
 		return "PyPI", "authentik", cleanVer, true
 	case strings.Contains(ref, "home-assistant") || strings.Contains(ref, "homeassistant"):
 		return "PyPI", "homeassistant", cleanVer, true
@@ -111,52 +120,54 @@ func (v *VulnScanner) CheckVulnerabilities(ctx context.Context, items []models.M
 			resp, err := v.httpClient.Do(req)
 			if err == nil {
 				defer resp.Body.Close()
-				var batchResp struct {
-					Results []struct {
-						Vulns []struct {
-							ID               string `json:"id"`
-							Summary          string `json:"summary"`
-							DatabaseSpecific struct {
-								Severity string `json:"severity"`
-							} `json:"database_specific"`
-							Affected []struct {
-								Ranges []struct {
-									Events []struct {
-										Fixed string `json:"fixed"`
-									} `json:"events"`
-								} `json:"ranges"`
-							} `json:"affected"`
-						} `json:"vulns"`
-					} `json:"results"`
-				}
-				if json.NewDecoder(resp.Body).Decode(&batchResp) == nil {
-					for qIdx, res := range batchResp.Results {
-						if qIdx >= len(queryIdxToItem) {
-							break
-						}
-						itemIdx := queryIdxToItem[qIdx]
-						for _, vuln := range res.Vulns {
-							sev := normalizeSeverity(vuln.DatabaseSpecific.Severity)
-							if vuln.DatabaseSpecific.Severity == "" {
-								sev = models.SeverityHigh
+				if resp.StatusCode == http.StatusOK {
+					var batchResp struct {
+						Results []struct {
+							Vulns []struct {
+								ID               string `json:"id"`
+								Summary          string `json:"summary"`
+								DatabaseSpecific struct {
+									Severity string `json:"severity"`
+								} `json:"database_specific"`
+								Affected []struct {
+									Ranges []struct {
+										Events []struct {
+											Fixed string `json:"fixed"`
+										} `json:"events"`
+									} `json:"ranges"`
+								} `json:"affected"`
+							} `json:"vulns"`
+						} `json:"results"`
+					}
+					if json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&batchResp) == nil {
+						for qIdx, res := range batchResp.Results {
+							if qIdx >= len(queryIdxToItem) {
+								break
 							}
-							fixedVer := ""
-							for _, aff := range vuln.Affected {
-								for _, rng := range aff.Ranges {
-									for _, ev := range rng.Events {
-										if ev.Fixed != "" {
-											fixedVer = ev.Fixed
+							itemIdx := queryIdxToItem[qIdx]
+							for _, vuln := range res.Vulns {
+								sev := normalizeSeverity(vuln.DatabaseSpecific.Severity)
+								if vuln.DatabaseSpecific.Severity == "" {
+									sev = models.SeverityHigh
+								}
+								fixedVer := ""
+								for _, aff := range vuln.Affected {
+									for _, rng := range aff.Ranges {
+										for _, ev := range rng.Events {
+											if ev.Fixed != "" {
+												fixedVer = ev.Fixed
+											}
 										}
 									}
 								}
+								appendVuln(&items[itemIdx], models.Vulnerability{
+									ID:           vuln.ID,
+									Summary:      vuln.Summary,
+									Severity:     sev,
+									FixedVersion: fixedVer,
+									URL:          "https://osv.dev/vulnerability/" + vuln.ID,
+								})
 							}
-							appendVuln(&items[itemIdx], models.Vulnerability{
-								ID:           vuln.ID,
-								Summary:      vuln.Summary,
-								Severity:     sev,
-								FixedVersion: fixedVer,
-								URL:          "https://osv.dev/vulnerability/" + vuln.ID,
-							})
 						}
 					}
 				}

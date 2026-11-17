@@ -63,6 +63,8 @@ func (m *Manager) newTaskModel(req UpdateRequest, fromVer string) *models.Task {
 	taskType := "docker_update"
 	if req.TargetType == string(models.TargetBrew) {
 		taskType = "brew_upgrade"
+	} else if req.TargetType == string(models.TargetApt) {
+		taskType = "apt_upgrade"
 	} else if req.TargetType == string(models.TargetDaemon) {
 		taskType = "daemon_upgrade"
 	}
@@ -110,6 +112,9 @@ func (m *Manager) RunUpdateSync(ctx context.Context, taskID string, req UpdateRe
 	if req.TargetType == string(models.TargetBrew) || (req.TargetType == string(models.TargetDaemon) && req.TargetName == "ollama") {
 		return m.runBrewUpgrade(ctx, taskID, req)
 	}
+	if req.TargetType == string(models.TargetApt) {
+		return m.runAptUpgrade(ctx, taskID, req)
+	}
 	return m.runDockerUpdate(ctx, taskID, req)
 }
 
@@ -118,14 +123,14 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 	if err != nil {
 		errMsg := fmt.Sprintf("unknown remote node %q: %v", req.Node, err)
 		m.logStep(ctx, taskID, "error", errMsg)
-		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf(errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 	if nodeInfo.Status != models.NodeStatusApproved {
 		errMsg := fmt.Sprintf("cannot update unapproved node %q (status: %s)", req.Node, nodeInfo.Status)
 		m.logStep(ctx, taskID, "error", errMsg)
-		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf(errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("Forwarding update for %s (%s -> %s) to remote agent %s (%s)...", req.TargetName, req.TargetType, req.TargetVersion, nodeInfo.Name, nodeInfo.URL))
 	agentReq := req
@@ -134,7 +139,7 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 	endpoint := strings.TrimRight(nodeInfo.URL, "/") + "/api/agent/update"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		_ = m.store.FinishTask(ctx, taskID, "failed", err.Error())
+		m.finishTask(ctx, taskID, "failed", err.Error())
 		return err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -149,8 +154,8 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to contact remote agent %s: %v", nodeInfo.Name, err)
 		m.logStep(ctx, taskID, "error", errMsg)
-		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf(errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 	defer resp.Body.Close()
 
@@ -162,8 +167,8 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&payload); err != nil {
 		errMsg := fmt.Sprintf("invalid response from agent %s (HTTP %d): %v", nodeInfo.Name, resp.StatusCode, err)
 		m.logStep(ctx, taskID, "error", errMsg)
-		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf(errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 	for _, l := range payload.Logs {
 		m.logStep(ctx, taskID, l.Stream, fmt.Sprintf("[%s] %s", nodeInfo.Name, l.Line))
@@ -176,21 +181,61 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 			status = "failed"
 		}
 	}
-	_ = m.store.FinishTask(ctx, taskID, status, payload.ErrorMsg)
+	m.finishTask(ctx, taskID, status, payload.ErrorMsg)
 	if status != "succeeded" {
 		return fmt.Errorf("remote agent %s task finished with status %s: %s", nodeInfo.Name, status, payload.ErrorMsg)
 	}
 	return nil
 }
 
+func (m *Manager) finishTask(ctx context.Context, taskID, status, errMsg string) {
+	if m.store != nil {
+		_ = m.store.FinishTask(ctx, taskID, status, errMsg)
+	}
+}
+
+func isValidBrewPackageName(name string) bool {
+	if name == "" || len(name) > 128 {
+		return false
+	}
+	if name[0] == '-' || name[0] == '.' || strings.Contains(name, "..") {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		isAlphaNum := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+		if !isAlphaNum && c != '@' && c != '.' && c != '_' && c != '+' && c != '/' && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidServiceDirName(name string) bool {
+	if name == "" || name == "." || name == ".." || len(name) > 128 {
+		return false
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return false
+	}
+	return filepath.Base(name) == name
+}
+
 func (m *Manager) runBrewUpgrade(ctx context.Context, taskID string, req UpdateRequest) error {
-	m.logStep(ctx, taskID, "info", fmt.Sprintf("Starting Homebrew upgrade for %s -> %s", req.TargetName, req.TargetVersion))
+	pkgName := strings.TrimSpace(req.TargetName)
+	if !isValidBrewPackageName(pkgName) {
+		errMsg := fmt.Sprintf("invalid brew package name %q", req.TargetName)
+		m.logStep(ctx, taskID, "error", errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
+	}
+	m.logStep(ctx, taskID, "info", fmt.Sprintf("Starting Homebrew upgrade for %s -> %s", pkgName, req.TargetVersion))
 	action := "upgrade"
 	if req.BrokenLinkage {
 		action = "reinstall"
 	}
-	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ brew %s %s", action, req.TargetName))
-	out, err := m.runner.Run(ctx, "brew", action, req.TargetName)
+	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ brew %s %s", action, pkgName))
+	out, err := m.runner.Run(ctx, "brew", action, pkgName)
 	if len(out) > 0 {
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			m.logStep(ctx, taskID, "stdout", line)
@@ -198,28 +243,124 @@ func (m *Manager) runBrewUpgrade(ctx context.Context, taskID string, req UpdateR
 	}
 	if err != nil {
 		m.logStep(ctx, taskID, "error", fmt.Sprintf("Homebrew %s failed: %v", action, err))
-		_ = m.store.FinishTask(ctx, taskID, "failed", err.Error())
+		m.finishTask(ctx, taskID, "failed", err.Error())
 		return err
 	}
 	// Verify linkage post-upgrade
-	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ brew linkage --test %s", req.TargetName))
-	if linkOut, linkErr := m.runner.Run(ctx, "brew", "linkage", "--test", req.TargetName); linkErr != nil {
+	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ brew linkage --test %s", pkgName))
+	if linkOut, linkErr := m.runner.Run(ctx, "brew", "linkage", "--test", pkgName); linkErr != nil {
 		errMsg := fmt.Sprintf("post-upgrade linkage check failed: %s", strings.TrimSpace(string(linkOut)))
 		m.logStep(ctx, taskID, "error", errMsg)
-		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf(errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
-	m.logStep(ctx, taskID, "info", fmt.Sprintf("Homebrew formula %s is healthy and linked.", req.TargetName))
-	_ = m.store.FinishTask(ctx, taskID, "succeeded", "")
+	m.logStep(ctx, taskID, "info", fmt.Sprintf("Homebrew formula %s is healthy and linked.", pkgName))
+	m.finishTask(ctx, taskID, "succeeded", "")
+	return nil
+}
+
+func isValidAptToken(s string, minLen, maxLen int) bool {
+	if len(s) < minLen || len(s) > maxLen {
+		return false
+	}
+	if s[len(s)-1] == '-' {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		isAlphaNum := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+		if i == 0 && !isAlphaNum {
+			return false
+		}
+		if !isAlphaNum && c != '.' && c != '+' && c != '-' && c != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidAptPackageName(name string) bool {
+	if strings.Count(name, ":") > 1 {
+		return false
+	}
+	if idx := strings.IndexByte(name, ':'); idx >= 0 {
+		return isValidAptToken(name[:idx], 2, 128) && isValidAptToken(name[idx+1:], 2, 32)
+	}
+	return isValidAptToken(name, 2, 128)
+}
+
+func isDpkgStatusHealthy(out []byte) bool {
+	for _, line := range strings.Split(string(out), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Status:") {
+			return strings.HasSuffix(trimmed, " ok installed")
+		}
+	}
+	return false
+}
+
+func (m *Manager) runAptUpgrade(ctx context.Context, taskID string, req UpdateRequest) error {
+	pkgName := strings.TrimSpace(req.TargetName)
+	if !isValidAptPackageName(pkgName) {
+		errMsg := fmt.Sprintf("invalid apt package name %q", req.TargetName)
+		m.logStep(ctx, taskID, "error", errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
+	}
+
+	m.logStep(ctx, taskID, "info", fmt.Sprintf("Starting APT upgrade for %s -> %s", pkgName, req.TargetVersion))
+	aptArgs := []string{"install", "--only-upgrade", "-y", "-o", "DPkg::Lock::Timeout=60", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold", "--", pkgName}
+	if req.BrokenLinkage {
+		aptArgs = []string{"install", "--reinstall", "-f", "-y", "-o", "DPkg::Lock::Timeout=60", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold", "--", pkgName}
+	}
+
+	m.logStep(ctx, taskID, "cmd", "$ apt-get "+strings.Join(aptArgs, " "))
+	out, err := m.runner.Run(ctx, "apt-get", aptArgs...)
+	if err != nil {
+		outStr := string(out)
+		if strings.Contains(outStr, "Permission denied") || strings.Contains(outStr, "are you root") {
+			sudoArgs := append([]string{"-n", "env", "DEBIAN_FRONTEND=noninteractive", "apt-get"}, aptArgs...)
+			m.logStep(ctx, taskID, "cmd", "$ sudo "+strings.Join(sudoArgs, " "))
+			out, err = m.runner.Run(ctx, "sudo", sudoArgs...)
+		}
+	}
+	if len(out) > 0 {
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			m.logStep(ctx, taskID, "stdout", line)
+		}
+	}
+	if err != nil {
+		m.logStep(ctx, taskID, "error", fmt.Sprintf("APT upgrade failed: %v", err))
+		m.finishTask(ctx, taskID, "failed", err.Error())
+		return err
+	}
+
+	// Verify package installation state post-upgrade (mirroring brew linkage check)
+	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ dpkg -s -- %s", pkgName))
+	if statusOut, statusErr := m.runner.Run(ctx, "dpkg", "-s", "--", pkgName); statusErr != nil || !isDpkgStatusHealthy(statusOut) {
+		errMsg := fmt.Sprintf("post-upgrade package check failed: %s", strings.TrimSpace(string(statusOut)))
+		m.logStep(ctx, taskID, "error", errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
+	}
+
+	m.logStep(ctx, taskID, "info", fmt.Sprintf("APT package %s is healthy and installed.", pkgName))
+	m.finishTask(ctx, taskID, "succeeded", "")
 	return nil
 }
 
 func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req UpdateRequest) error {
-	svcName := req.TargetName
+	svcName := strings.TrimSpace(req.TargetName)
 	svcKey := ""
-	if idx := strings.IndexByte(svcName, '/'); idx > 0 {
+	if idx := strings.IndexByte(svcName, '/'); idx >= 0 {
 		svcKey = svcName[idx+1:]
 		svcName = svcName[:idx]
+	}
+	if !isValidServiceDirName(svcName) {
+		errMsg := fmt.Sprintf("invalid service name %q", req.TargetName)
+		m.logStep(ctx, taskID, "error", errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	composeDir := filepath.Join(m.cfg.Scanner.ServicesDir, svcName)
@@ -227,8 +368,8 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	if err != nil || len(refs) == 0 {
 		errMsg := fmt.Sprintf("failed to inspect compose service %s: %v", svcName, err)
 		m.logStep(ctx, taskID, "error", errMsg)
-		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf(errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	ref := refs[0]
@@ -279,8 +420,8 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 		if bErr != nil {
 			errMsg := fmt.Sprintf("pre-update volume backup failed, aborting update: %v", bErr)
 			m.logStep(ctx, taskID, "error", errMsg)
-			_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
-			return fmt.Errorf(errMsg)
+			m.finishTask(ctx, taskID, "failed", errMsg)
+			return fmt.Errorf("%s", errMsg)
 		}
 	} else {
 		m.logStep(ctx, taskID, "info", "STEP 2/6: Pre-update volume backup skipped.")
@@ -301,8 +442,8 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	if pullErr != nil {
 		errMsg := fmt.Sprintf("docker pull failed for %s: %v", targetImage, pullErr)
 		m.logStep(ctx, taskID, "error", errMsg)
-		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf(errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	// Step 4: Surgical Config Update & Container Recreate
@@ -310,8 +451,8 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	if _, _, err := UpdateFileTag(ref.ComposePath, ref.EnvPath, ref.ServiceKey, targetTag); err != nil {
 		errMsg := fmt.Sprintf("failed to update compose tag: %v", err)
 		m.logStep(ctx, taskID, "error", errMsg)
-		_ = m.store.FinishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf(errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ docker compose --project-directory %s up -d", composeDir))
@@ -335,13 +476,13 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 			if rbErr := m.restoreSnapshot(ctx, taskID, snap, composeDir); rbErr != nil {
 				m.logStep(ctx, taskID, "error", fmt.Sprintf("Rollback failed: %v", rbErr))
 			}
-			_ = m.store.FinishTask(ctx, taskID, "rolled_back", reason)
+			m.finishTask(ctx, taskID, "rolled_back", reason)
 			if m.alerter != nil {
 				_ = m.alerter.NotifyDeadManRollback(ctx, req.TargetName, snap.PreviousVersion, targetTag, reason)
 			}
 			return fmt.Errorf("update failed and was automatically rolled back: %w", verifyErr)
 		}
-		_ = m.store.FinishTask(ctx, taskID, "failed", reason)
+		m.finishTask(ctx, taskID, "failed", reason)
 		return verifyErr
 	}
 
@@ -350,7 +491,7 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	m.commitComposeFile(ctx, taskID, "STEP 6/6: ", ref.ComposePath, composeBytes, commitMsg)
 
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("Service %s updated to %s and verified healthy.", req.TargetName, targetTag))
-	_ = m.store.FinishTask(ctx, taskID, "succeeded", "")
+	m.finishTask(ctx, taskID, "succeeded", "")
 	return nil
 }
 
@@ -456,7 +597,7 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 		endpoint := strings.TrimRight(nodeInfo.URL, "/") + "/api/agent/rollback"
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 		if err != nil {
-			_ = m.store.FinishTask(ctx, task.ID, "failed", err.Error())
+			m.finishTask(ctx, task.ID, "failed", err.Error())
 			return task, err
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
@@ -469,7 +610,7 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 		}
 		resp, err := m.httpClient.Do(httpReq)
 		if err != nil {
-			_ = m.store.FinishTask(ctx, task.ID, "failed", err.Error())
+			m.finishTask(ctx, task.ID, "failed", err.Error())
 			return task, err
 		}
 		defer resp.Body.Close()
@@ -489,22 +630,30 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 			}
 			payload.Status = "failed"
 			payload.ErrorMsg = errMsg
-			_ = m.store.FinishTask(ctx, task.ID, payload.Status, payload.ErrorMsg)
+			m.finishTask(ctx, task.ID, payload.Status, payload.ErrorMsg)
 			return task, fmt.Errorf("%s", errMsg)
 		}
 		if decodeErr != nil {
 			errMsg := fmt.Sprintf("failed to decode agent response from %s: %v", nodeName, decodeErr)
-			_ = m.store.FinishTask(ctx, task.ID, "failed", errMsg)
+			m.finishTask(ctx, task.ID, "failed", errMsg)
 			return task, fmt.Errorf("%s", errMsg)
 		}
 		if payload.Status == "" {
 			payload.Status = "succeeded"
 		}
-		_ = m.store.FinishTask(ctx, task.ID, payload.Status, payload.ErrorMsg)
+		m.finishTask(ctx, task.ID, payload.Status, payload.ErrorMsg)
 		if payload.Status != "succeeded" {
 			return task, fmt.Errorf("remote rollback on %s ended with status %q: %s", nodeName, payload.Status, payload.ErrorMsg)
 		}
 		return task, nil
+	}
+
+	svcDirName := strings.TrimSpace(serviceName)
+	if idx := strings.IndexByte(svcDirName, '/'); idx >= 0 {
+		svcDirName = svcDirName[:idx]
+	}
+	if !isValidServiceDirName(svcDirName) {
+		return nil, fmt.Errorf("invalid service name %q", serviceName)
 	}
 
 	snap, err := m.store.GetLatestSnapshot(ctx, serviceName)
@@ -525,10 +674,6 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 		return nil, err
 	}
 
-	svcDirName := serviceName
-	if idx := strings.IndexByte(svcDirName, '/'); idx > 0 {
-		svcDirName = svcDirName[:idx]
-	}
 	composeDir := filepath.Join(m.cfg.Scanner.ServicesDir, svcDirName)
 
 	var preRollbackBytes []byte
@@ -536,14 +681,14 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 		preRollbackBytes, _ = os.ReadFile(snap.ComposePath)
 	}
 	if err := m.restoreSnapshot(ctx, task.ID, snap, composeDir); err != nil {
-		_ = m.store.FinishTask(ctx, task.ID, "failed", err.Error())
+		m.finishTask(ctx, task.ID, "failed", err.Error())
 		return task, err
 	}
 	if snap.ComposePath != "" {
 		commitMsg := fmt.Sprintf("revert(services): roll back %s image to %s", serviceName, snap.PreviousVersion)
 		m.commitComposeFile(ctx, task.ID, "", snap.ComposePath, preRollbackBytes, commitMsg)
 	}
-	_ = m.store.FinishTask(ctx, task.ID, "succeeded", "")
+	m.finishTask(ctx, task.ID, "succeeded", "")
 	return task, nil
 }
 

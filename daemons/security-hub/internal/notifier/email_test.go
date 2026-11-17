@@ -98,11 +98,26 @@ func TestAlerter_NotifyScanFindingsDeduplicationAndRollback(t *testing.T) {
 		t.Fatalf("expected 0 new findings and no extra email on duplicate scan, got count=%d emails=%d", count2, len(sentMessages))
 	}
 
+	// Node-scoped findings on distinct Raspberry Pi nodes should NOT deduplicate against each other
+	piScan := &models.ScanResult{
+		Items: []models.ManagedItem{
+			{Node: "RPi-01", TargetType: models.TargetApt, Name: "nginx", CurrentVersion: "1.22.1-9", BrokenLinkage: true, LinkageDetails: "unmet dependency"},
+			{Node: "RPi-02", TargetType: models.TargetApt, Name: "nginx", CurrentVersion: "1.22.1-9", BrokenLinkage: true, LinkageDetails: "unmet dependency"},
+		},
+	}
+	piCount, err := alerter.NotifyScanFindings(ctx, piScan)
+	if err != nil || piCount != 2 || len(sentMessages) != 2 {
+		t.Fatalf("expected 2 node-scoped APT findings across RPi-01 and RPi-02, got count=%d err=%v emails=%d", piCount, err, len(sentMessages))
+	}
+	if !strings.Contains(sentMessages[1], "[RPi-01] nginx") || !strings.Contains(sentMessages[1], "[RPi-02] nginx") || !strings.Contains(sentMessages[1], "APT BROKEN DEPENDENCY") {
+		t.Fatalf("expected node labels and APT BROKEN DEPENDENCY in email body:\n%s", sentMessages[1])
+	}
+
 	// Rollback alert
 	if err := alerter.NotifyDeadManRollback(ctx, "cloudflare-tunnel", "2026.8.0", "2026.10.2", "external probe failed"); err != nil {
 		t.Fatalf("NotifyDeadManRollback failed: %v", err)
 	}
-	if len(sentMessages) != 2 || !strings.Contains(sentMessages[1], "ROLLBACK") {
+	if len(sentMessages) != 3 || !strings.Contains(sentMessages[2], "ROLLBACK") {
 		t.Fatalf("expected rollback email to be sent, got %d messages", len(sentMessages))
 	}
 }

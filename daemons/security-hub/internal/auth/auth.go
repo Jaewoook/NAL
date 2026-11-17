@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -195,6 +196,15 @@ func (m *Manager) RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+func (m *Manager) pruneExpiredBreakGlassTokensLocked() {
+	now := time.Now().UTC().Unix()
+	for tok, exp := range m.state.BreakGlassTokens {
+		if now > exp {
+			delete(m.state.BreakGlassTokens, tok)
+		}
+	}
+}
+
 func (m *Manager) GenerateBreakGlassToken(ttl time.Duration) (string, error) {
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
@@ -205,6 +215,7 @@ func (m *Manager) GenerateBreakGlassToken(ttl time.Duration) (string, error) {
 	}
 	tok := hex.EncodeToString(buf)
 	m.mu.Lock()
+	m.pruneExpiredBreakGlassTokensLocked()
 	m.state.BreakGlassTokens[tok] = time.Now().UTC().Add(ttl).Unix()
 	err := m.saveStateLocked()
 	m.mu.Unlock()
@@ -224,11 +235,12 @@ func (m *Manager) ConsumeBreakGlassToken(token string) (bool, error) {
 		}
 	}
 	exp, ok := m.state.BreakGlassTokens[token]
+	delete(m.state.BreakGlassTokens, token)
+	m.pruneExpiredBreakGlassTokensLocked()
+	_ = m.saveStateLocked()
 	if !ok {
 		return false, nil
 	}
-	delete(m.state.BreakGlassTokens, token)
-	_ = m.saveStateLocked()
 	if time.Now().UTC().Unix() > exp {
 		return false, nil
 	}
@@ -321,11 +333,15 @@ func (m *Manager) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, fmt.Sprintf("OIDC token endpoint returned HTTP %d", resp.StatusCode), http.StatusBadGateway)
+		return
+	}
 
 	var tokResp struct {
 		IDToken string `json:"id_token"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&tokResp); err != nil || tokResp.IDToken == "" {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&tokResp); err != nil || tokResp.IDToken == "" {
 		http.Error(w, "invalid OIDC token response", http.StatusBadGateway)
 		return
 	}

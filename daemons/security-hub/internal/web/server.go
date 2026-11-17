@@ -335,7 +335,7 @@ func (s *Server) handleNodeApprove(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Name string `json:"name"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req)
 		name = strings.TrimSpace(req.Name)
 	}
 	if name == "" {
@@ -366,7 +366,7 @@ func (s *Server) handleNodeReject(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Name string `json:"name"`
 		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req)
 		name = strings.TrimSpace(req.Name)
 	}
 	if name == "" {
@@ -572,7 +572,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req updater.UpdateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
@@ -615,7 +615,7 @@ func (s *Server) handleAgentRollback(w http.ResponseWriter, r *http.Request) {
 		ServiceName string `json:"service_name"`
 		TriggeredBy string `json:"triggered_by"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ServiceName == "" {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || req.ServiceName == "" {
 		http.Error(w, `{"error":"service_name required"}`, http.StatusBadRequest)
 		return
 	}
@@ -648,6 +648,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	for i := range scan.Items {
 		if scan.Items[i].Node == "" {
 			scan.Items[i].Node = hubName
+		}
+		if scan.Items[i].TargetType != models.TargetDocker {
+			continue
 		}
 		if snap, ok := snapshots[scan.Items[i].Node+":"+scan.Items[i].Name]; ok {
 			scan.Items[i].HasRollback = true
@@ -780,7 +783,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	claims, _ := s.authMgr.VerifyRequest(r)
 	var req updater.UpdateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
@@ -806,7 +809,7 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 		Node        string `json:"node"`
 		ServiceName string `json:"service_name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ServiceName == "" {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || req.ServiceName == "" {
 		http.Error(w, `{"error":"service_name required"}`, http.StatusBadRequest)
 		return
 	}
@@ -832,20 +835,29 @@ func (s *Server) handleSkip(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		var req struct {
+			Node       string `json:"node"`
 			TargetType string `json:"target_type"`
 			TargetName string `json:"target_name"`
 			Version    string `json:"version"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 			http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 			return
 		}
-		_ = s.store.SetSkippedVersion(r.Context(), req.TargetType, req.TargetName, req.Version, actor)
+		tt := strings.TrimSpace(req.TargetType)
+		if n := strings.TrimSpace(req.Node); n != "" {
+			tt = n + ":" + tt
+		}
+		_ = s.store.SetSkippedVersion(r.Context(), tt, req.TargetName, req.Version, actor)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "skipped"})
 	case http.MethodDelete:
-		tt := r.URL.Query().Get("target_type")
+		node := strings.TrimSpace(r.URL.Query().Get("node"))
+		tt := strings.TrimSpace(r.URL.Query().Get("target_type"))
 		tn := r.URL.Query().Get("target_name")
+		if node != "" {
+			_ = s.store.RemoveSkippedVersion(r.Context(), node+":"+tt, tn)
+		}
 		_ = s.store.RemoveSkippedVersion(r.Context(), tt, tn)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "unskipped"})
@@ -869,7 +881,7 @@ func (s *Server) handleTaskDetailOrStream(w http.ResponseWriter, r *http.Request
 	trimmed := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
 	parts := strings.Split(trimmed, "/")
 	taskID := parts[0]
-	if taskID == "" {
+	if taskID == "" || taskID == "." || taskID == ".." || strings.ContainsAny(taskID, `/\`) {
 		http.NotFound(w, r)
 		return
 	}

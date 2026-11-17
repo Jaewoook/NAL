@@ -21,6 +21,7 @@ type Orchestrator struct {
 	httpClient    *http.Client
 	dockerScanner *DockerScanner
 	brewScanner   *BrewScanner
+	aptScanner    *AptScanner
 	daemonScanner *DaemonScanner
 	vulnScanner   *VulnScanner
 	eolChecker    *EoLChecker
@@ -34,7 +35,7 @@ func NewOrchestrator(cfg *config.Config, store db.Store, runner CommandRunner, h
 		runner = NewOSCommandRunner()
 	}
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 20 * time.Second}
+		httpClient = &http.Client{Timeout: 60 * time.Second}
 	}
 	reg := NewRegistryClient(httpClient)
 	return &Orchestrator{
@@ -43,6 +44,7 @@ func NewOrchestrator(cfg *config.Config, store db.Store, runner CommandRunner, h
 		httpClient:    httpClient,
 		dockerScanner: NewDockerScanner(cfg.Scanner.ServicesDir, cfg.Updater.CriticalServices, cfg.Updater.StatefulVolumes, runner, reg),
 		brewScanner:   NewBrewScanner(runner),
+		aptScanner:    NewAptScanner(runner),
 		daemonScanner: NewDaemonScannerWithHTTP(cfg.Scanner.DaemonsDir, runner, httpClient),
 		vulnScanner:   NewVulnScanner(cfg.Scanner.OSVAPIURL, httpClient, runner),
 		eolChecker:    NewEoLChecker(cfg.Scanner.EoLAPIURL, httpClient),
@@ -139,6 +141,11 @@ func (o *Orchestrator) ScanLocalNode(ctx context.Context) ([]models.ManagedItem,
 			localItems = append(localItems, brewItems...)
 		}
 	}
+	if o.aptScanner != nil {
+		if aptItems, err := o.aptScanner.ScanApt(ctx); err == nil {
+			localItems = append(localItems, aptItems...)
+		}
+	}
 	if o.daemonScanner != nil {
 		if daemonItems, err := o.daemonScanner.ScanDaemonsAndOS(ctx); err == nil {
 			localItems = append(localItems, daemonItems...)
@@ -188,6 +195,10 @@ func (o *Orchestrator) fetchRemoteAgentScan(ctx context.Context, node models.Nod
 	}
 	for i := range payload.Items {
 		payload.Items[i].Node = node.Name
+		u := strings.TrimSpace(payload.Items[i].ReleaseNotesURL)
+		if u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+			payload.Items[i].ReleaseNotesURL = ""
+		}
 	}
 	return payload.Items, nil
 }
@@ -279,7 +290,7 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 			wg.Add(1)
 			go func(idx int, node models.NodeInfo) {
 				defer wg.Done()
-				scanCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				scanCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 				defer cancel()
 				items, err := o.fetchRemoteAgentScan(scanCtx, node)
 				results[idx] = nodeScanResult{node: node, items: items, err: err}
@@ -334,6 +345,9 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 	}
 
 	for i := range allItems {
+		if allItems[i].TargetType != models.TargetDocker {
+			continue
+		}
 		if snap, ok := snapshots[allItems[i].Node+":"+allItems[i].Name]; ok {
 			allItems[i].HasRollback = true
 			allItems[i].RollbackVersion = snap.PreviousVersion

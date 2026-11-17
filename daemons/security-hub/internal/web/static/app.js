@@ -152,7 +152,7 @@ function renderSummary() {
   document.getElementById('stat-last-scan').textContent = scan.scanned_at ? `Last scan: ${new Date(scan.scanned_at).toLocaleString()}` : 'Last scan: Not yet run';
 
   document.getElementById('badge-docker').textContent = items.filter(i => i.target_type === 'docker').length;
-  document.getElementById('badge-brew').textContent = items.filter(i => i.target_type === 'brew').length;
+  document.getElementById('badge-brew').textContent = items.filter(i => i.target_type === 'brew' || i.target_type === 'apt').length;
   document.getElementById('badge-daemons').textContent = items.filter(i => i.target_type === 'daemon' || i.target_type === 'macos').length;
   document.getElementById('badge-logs').textContent = tasks.length;
 }
@@ -195,7 +195,7 @@ function renderItemsTable() {
   tbody.innerHTML = '';
   const items = getFilteredItems().filter(item => {
     if (currentTab === 'docker') return item.target_type === 'docker';
-    if (currentTab === 'brew') return item.target_type === 'brew';
+    if (currentTab === 'brew') return item.target_type === 'brew' || item.target_type === 'apt';
     return item.target_type === 'daemon' || item.target_type === 'macos';
   });
 
@@ -270,25 +270,25 @@ function renderItemsTable() {
     const optionsHtml = tags.map(t => `<option value="${escapeHtml(t)}" ${t === item.latest_version ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('');
 
     let actionsHtml = '';
-    if (item.target_type === 'docker' || item.target_type === 'brew' || (item.target_type === 'daemon' && item.name === 'ollama')) {
+    if (item.target_type === 'docker' || item.target_type === 'brew' || item.target_type === 'apt' || (item.target_type === 'daemon' && item.name === 'ollama')) {
       const btnClass = (item.crit_count > 0 || item.broken_linkage) ? 'btn-danger' : 'btn-primary';
       const btnLabel = item.broken_linkage ? 'Upgrade & Fix' : 'Update';
       actionsHtml += `<button class="btn ${btnClass}" onclick='openUpdateModalByIndex(${idx}, "${selectId}")'>${btnLabel}</button>`;
       if (item.skipped) {
         actionsHtml += `<span class="badge skip">Skipped ${escapeHtml(item.skipped_version)}</span>`;
-        actionsHtml += `<button class="btn btn-ghost" onclick='unskipItem("${encodeNodeArg(item.target_type)}", "${encodeNodeArg(item.name)}")'>Unskip</button>`;
+        actionsHtml += `<button class="btn btn-ghost" onclick='unskipItem("${encodeNodeArg(nodeName)}", "${encodeNodeArg(item.target_type)}", "${encodeNodeArg(item.name)}")'>Unskip</button>`;
       } else if (item.outdated) {
-        actionsHtml += `<button class="btn btn-ghost" onclick='skipItem("${encodeNodeArg(item.target_type)}", "${encodeNodeArg(item.name)}", "${selectId}")'>Skip</button>`;
+        actionsHtml += `<button class="btn btn-ghost" onclick='skipItem("${encodeNodeArg(nodeName)}", "${encodeNodeArg(item.target_type)}", "${encodeNodeArg(item.name)}", "${selectId}")'>Skip</button>`;
       }
       if (item.has_rollback) {
         actionsHtml += `<button class="btn btn-ghost" onclick='rollbackService("${encodeNodeArg(nodeName)}", "${encodeNodeArg(item.name)}")'>Rollback (${escapeHtml(item.rollback_version)})</button>`;
       }
     }
-    if (item.release_notes_url) {
-      actionsHtml += `<a class="btn btn-ghost" href="${escapeHtml(item.release_notes_url)}" target="_blank" style="text-decoration:none;">Notes ↗</a>`;
+    if (item.release_notes_url && isSafeHttpUrl(item.release_notes_url)) {
+      actionsHtml += `<a class="btn btn-ghost" href="${escapeHtml(item.release_notes_url)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Notes ↗</a>`;
     }
 
-    const subType = item.target_type === 'brew' ? 'brew' : (item.image_ref || item.target_type);
+    const subType = (item.target_type === 'brew' || item.target_type === 'apt') ? item.target_type : (item.image_ref || item.target_type);
 
     tr.innerHTML = `
       <td>
@@ -327,6 +327,7 @@ function openUpdateModal(item, selectId) {
   const sel = document.getElementById(selectId);
   const targetVer = sel ? sel.value : item.latest_version;
   const nodeName = item.node || (dashboardData && dashboardData.hub_node) || 'local';
+  const isDocker = item.target_type === 'docker';
   pendingUpdateReq = {
     node: nodeName,
     target_type: item.target_type,
@@ -338,7 +339,15 @@ function openUpdateModal(item, selectId) {
   document.getElementById('modal-title').textContent = `Confirm Update on [${nodeName}]: ${item.name}`;
   document.getElementById('modal-desc').textContent = `Updating ${item.name} on ${nodeName} from ${item.current_version} → ${targetVer}`;
   document.getElementById('chk-backup').checked = !!item.stateful;
-  document.getElementById('lbl-backup').style.display = item.target_type === 'docker' ? 'flex' : 'none';
+  document.getElementById('lbl-backup').style.display = isDocker ? 'flex' : 'none';
+  const critBadge = document.getElementById('modal-crit-badge');
+  if (critBadge) critBadge.style.display = isDocker ? 'inline-flex' : 'none';
+  const lblSnapshot = document.getElementById('lbl-snapshot');
+  if (lblSnapshot) lblSnapshot.style.display = isDocker ? 'flex' : 'none';
+  const lblDeadman = document.getElementById('lbl-deadman');
+  if (lblDeadman) lblDeadman.style.display = isDocker ? 'flex' : 'none';
+  const confirmBtn = document.getElementById('btn-confirm-update');
+  if (confirmBtn) confirmBtn.textContent = isDocker ? 'Pull & Apply Update' : 'Apply Package Upgrade';
   document.getElementById('modal-update').style.display = 'flex';
 }
 
@@ -360,6 +369,11 @@ async function confirmAndStartUpdate() {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(reqBody)
   });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    alert(`Update failed: ${errData.error || res.statusText}`);
+    return;
+  }
   const task = await res.json();
   await loadDashboard();
   switchTab('logs');
@@ -619,23 +633,43 @@ async function deleteRemoteNode(encodedName) {
   renderNodesModalList();
 }
 
-async function skipItem(encodedTargetType, encodedTargetName, selectId) {
-  const targetType = decodeURIComponent(encodedTargetType || '');
-  const targetName = decodeURIComponent(encodedTargetName || '');
+async function skipItem(encodedNode, encodedTargetType, encodedTargetName, selectId) {
+  let nodeName = '';
+  let targetType = '';
+  let targetName = '';
+  if (selectId === undefined) {
+    // Backward-compatible 3-arg signature: (encodedTargetType, encodedTargetName, selectId)
+    targetType = decodeURIComponent(encodedNode || '');
+    targetName = decodeURIComponent(encodedTargetType || '');
+    selectId = encodedTargetName;
+  } else {
+    nodeName = decodeURIComponent(encodedNode || '');
+    targetType = decodeURIComponent(encodedTargetType || '');
+    targetName = decodeURIComponent(encodedTargetName || '');
+  }
   const sel = document.getElementById(selectId);
   const ver = sel ? sel.value : '';
   await fetch('/api/skip', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({target_type: targetType, target_name: targetName, version: ver})
+    body: JSON.stringify({node: nodeName, target_type: targetType, target_name: targetName, version: ver})
   });
   await loadDashboard();
 }
 
-async function unskipItem(encodedTargetType, encodedTargetName) {
-  const targetType = decodeURIComponent(encodedTargetType || '');
-  const targetName = decodeURIComponent(encodedTargetName || '');
-  await fetch(`/api/skip?target_type=${encodeURIComponent(targetType)}&target_name=${encodeURIComponent(targetName)}`, {method: 'DELETE'});
+async function unskipItem(encodedNode, encodedTargetType, encodedTargetName) {
+  let nodeName = '';
+  let targetType = '';
+  let targetName = '';
+  if (encodedTargetName === undefined) {
+    targetType = decodeURIComponent(encodedNode || '');
+    targetName = decodeURIComponent(encodedTargetType || '');
+  } else {
+    nodeName = decodeURIComponent(encodedNode || '');
+    targetType = decodeURIComponent(encodedTargetType || '');
+    targetName = decodeURIComponent(encodedTargetName || '');
+  }
+  await fetch(`/api/skip?node=${encodeURIComponent(nodeName)}&target_type=${encodeURIComponent(targetType)}&target_name=${encodeURIComponent(targetName)}`, {method: 'DELETE'});
   await loadDashboard();
 }
 
@@ -745,7 +779,7 @@ function renderTaskList() {
     const badgeClass = t.status === 'succeeded' ? 'ok' : (t.status === 'rolled_back' || t.status === 'running') ? 'warn' : 'crit';
     const nodeLabel = t.node ? `[${escapeHtml(t.node)}] ` : '';
     return `
-      <div class="task-list-item" onclick='streamTaskLogs("${t.id}")'>
+      <div class="task-list-item" onclick='streamTaskLogs("${encodeNodeArg(t.id)}")'>
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <strong>${escapeHtml(t.id)} · ${nodeLabel}${escapeHtml(t.task_type)}</strong>
           <span class="badge ${badgeClass}">${escapeHtml(t.status)}</span>
@@ -756,7 +790,8 @@ function renderTaskList() {
   }).join('');
 }
 
-function streamTaskLogs(taskId) {
+function streamTaskLogs(encodedTaskId) {
+  const taskId = decodeURIComponent(encodedTaskId || '');
   if (activeEventSource) {
     activeEventSource.close();
   }
@@ -857,6 +892,10 @@ async function loginWithPasskey() {
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function isSafeHttpUrl(u) {
+  return /^https?:\/\//i.test(String(u || '').trim());
 }
 
 window.addEventListener('click', (e) => {

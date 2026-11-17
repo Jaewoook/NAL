@@ -7,6 +7,7 @@ type TargetType string
 const (
 	TargetDocker TargetType = "docker"
 	TargetBrew   TargetType = "brew"
+	TargetApt    TargetType = "apt"
 	TargetDaemon TargetType = "daemon"
 	TargetMacOS  TargetType = "macos"
 )

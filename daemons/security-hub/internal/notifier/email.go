@@ -187,11 +187,18 @@ func (a *Alerter) NotifyScanFindings(ctx context.Context, scan *models.ScanResul
 	var findings []pendingFinding
 
 	for _, item := range scan.Items {
+		nodePrefix := ""
+		nodeLabel := ""
+		if item.Node != "" {
+			nodePrefix = item.Node + ":"
+			nodeLabel = "[" + item.Node + "] "
+		}
+
 		for _, v := range item.Vulnerabilities {
 			if v.Severity != models.SeverityCritical && v.Severity != models.SeverityHigh {
 				continue
 			}
-			fp := fmt.Sprintf("cve:%s:%s:%s", item.TargetType, item.Name, v.ID)
+			fp := fmt.Sprintf("%scve:%s:%s:%s", nodePrefix, item.TargetType, item.Name, v.ID)
 			if a.store != nil {
 				if sent, _ := a.store.HasAlertBeenSent(ctx, fp); sent {
 					continue
@@ -204,12 +211,12 @@ func (a *Alerter) NotifyScanFindings(ctx context.Context, scan *models.ScanResul
 			findings = append(findings, pendingFinding{
 				fingerprint: fp,
 				alertType:   "cve",
-				line:        fmt.Sprintf("- [VULNERABILITY - %s] %s (%s): %s — %s%s", v.Severity, item.Name, item.CurrentVersion, v.ID, v.Summary, fix),
+				line:        fmt.Sprintf("- [VULNERABILITY - %s] %s%s (%s): %s — %s%s", v.Severity, nodeLabel, item.Name, item.CurrentVersion, v.ID, v.Summary, fix),
 			})
 		}
 
 		if item.EoL.Status == models.EoLExpired || item.EoL.Status == models.EoLExpiringSoon {
-			fp := fmt.Sprintf("eol:%s:%s:%s:%s", item.TargetType, item.Name, item.EoL.Cycle, item.EoL.Status)
+			fp := fmt.Sprintf("%seol:%s:%s:%s:%s", nodePrefix, item.TargetType, item.Name, item.EoL.Cycle, item.EoL.Status)
 			if a.store != nil {
 				if sent, _ := a.store.HasAlertBeenSent(ctx, fp); sent {
 					continue
@@ -218,21 +225,25 @@ func (a *Alerter) NotifyScanFindings(ctx context.Context, scan *models.ScanResul
 			findings = append(findings, pendingFinding{
 				fingerprint: fp,
 				alertType:   "eol",
-				line:        fmt.Sprintf("- [LTS/EoL - %s] %s (%s %s): EoL date %s (%d days remaining)", strings.ToUpper(string(item.EoL.Status)), item.Name, item.EoL.Product, item.EoL.Cycle, item.EoL.EoLDate, item.EoL.DaysRemaining),
+				line:        fmt.Sprintf("- [LTS/EoL - %s] %s%s (%s %s): EoL date %s (%d days remaining)", strings.ToUpper(string(item.EoL.Status)), nodeLabel, item.Name, item.EoL.Product, item.EoL.Cycle, item.EoL.EoLDate, item.EoL.DaysRemaining),
 			})
 		}
 
 		if item.BrokenLinkage {
-			fp := fmt.Sprintf("linkage:%s:%s:%s", item.TargetType, item.Name, item.CurrentVersion)
+			fp := fmt.Sprintf("%slinkage:%s:%s:%s", nodePrefix, item.TargetType, item.Name, item.CurrentVersion)
 			if a.store != nil {
 				if sent, _ := a.store.HasAlertBeenSent(ctx, fp); sent {
 					continue
 				}
 			}
+			label := "HOMEBREW BROKEN LINKAGE"
+			if item.TargetType == models.TargetApt {
+				label = "APT BROKEN DEPENDENCY"
+			}
 			findings = append(findings, pendingFinding{
 				fingerprint: fp,
 				alertType:   "linkage",
-				line:        fmt.Sprintf("- [HOMEBREW BROKEN LINKAGE] %s (%s): %s", item.Name, item.CurrentVersion, item.LinkageDetails),
+				line:        fmt.Sprintf("- [%s] %s%s (%s): %s", label, nodeLabel, item.Name, item.CurrentVersion, item.LinkageDetails),
 			})
 		}
 	}

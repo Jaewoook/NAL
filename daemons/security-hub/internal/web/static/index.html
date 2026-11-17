@@ -99,7 +99,7 @@
         <div class="stat-card warning">
           <div class="stat-label">Outdated Packages</div>
           <div class="stat-value" id="stat-outdated">0 Updates</div>
-          <div class="stat-sub" id="stat-outdated-sub">Docker Services &amp; Homebrew Formulas</div>
+          <div class="stat-sub" id="stat-outdated-sub">Docker Services &amp; System Packages (`brew` / `apt`)</div>
         </div>
         <div class="stat-card healthy">
           <div class="stat-label">Task Logs &amp; Snapshots</div>
@@ -119,7 +119,7 @@
           Docker Services (`services/*`) <span class="count-badge" id="badge-docker">0</span>
         </div>
         <div class="nav-tab" id="tab-btn-brew" onclick="switchTab('brew')">
-          Homebrew Packages (`brew`) <span class="count-badge" id="badge-brew">0</span>
+          System Packages (`brew` / `apt`) <span class="count-badge" id="badge-brew">0</span>
         </div>
         <div class="nav-tab" id="tab-btn-daemons" onclick="switchTab('daemons')">
           Host Daemons &amp; macOS <span class="count-badge" id="badge-daemons">0</span>
@@ -171,11 +171,11 @@
         <p id="modal-desc" class="muted" style="margin: 10px 0 16px;"></p>
 
         <div class="modal-options">
-          <label>
+          <label id="lbl-snapshot">
             <input type="checkbox" checked disabled />
             <span><strong>Save Rollback Snapshot</strong> (records current image digest &amp; compose/env files)</span>
           </label>
-          <label>
+          <label id="lbl-deadman">
             <input type="checkbox" id="chk-deadman" checked />
             <span><strong>60s Automatic Dead-Man's Rollback</strong> if container healthcheck fails</span>
           </label>
@@ -186,7 +186,7 @@
         </div>
 
         <div style="display:flex; gap:10px; margin-top:16px;">
-          <button class="btn btn-primary" onclick="confirmAndStartUpdate()">Pull &amp; Apply Update</button>
+          <button id="btn-confirm-update" class="btn btn-primary" onclick="confirmAndStartUpdate()">Pull &amp; Apply Update</button>
           <button class="btn btn-ghost" onclick="closeUpdateModal()">Cancel</button>
         </div>
       </div>
@@ -235,7 +235,7 @@
           <span class="badge crit" id="modal-linkage-pkg" style="margin-left:8px;">Package</span>
         </h3>
         <p class="muted" style="margin: 10px 0 14px;">
-          Dynamic linker dependencies or shared libraries (.dylib) are missing or unsatisfied:
+          Dynamic linker dependencies, shared libraries (.dylib / .so), or package dependencies are missing or unsatisfied:
         </p>
         <div class="terminal-box" id="modal-linkage-body" style="height:auto; max-height:260px; margin-bottom:16px; white-space:pre-wrap; word-break:break-all;"></div>
         <div style="display:flex; justify-content:flex-end; gap:10px;">

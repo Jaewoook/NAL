@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"sort"
@@ -90,11 +91,14 @@ func (r *RegistryClient) fetchToken(ctx context.Context, tokenURL string) string
 		return ""
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
 	var body struct {
 		Token       string `json:"token"`
 		AccessToken string `json:"access_token"`
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&body)
+	_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body)
 	if body.Token != "" {
 		return body.Token
 	}
@@ -133,10 +137,13 @@ func (r *RegistryClient) fetchTagsList(ctx context.Context, host, repo, token st
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("registry returned HTTP %d", resp.StatusCode)
+	}
 	var payload struct {
 		Tags []string `json:"tags"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&payload); err != nil {
 		return nil, err
 	}
 	return payload.Tags, nil
