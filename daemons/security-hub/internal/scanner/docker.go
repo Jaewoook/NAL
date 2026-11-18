@@ -137,13 +137,14 @@ func ParseComposeImageRefs(composeDir string) ([]ComposeImageRef, error) {
 		}
 		expanded := ExpandEnvWithMap(svc.Image, envMap)
 		repo, tag := SplitImageRepoAndTag(expanded)
-		dedupKey := repo + ":" + tag
+		// Deduplicate only when both resolved repo:tag AND raw image expression match
+		dedupKey := repo + ":" + tag + "\x00" + svc.Image
 		if seenRepo[dedupKey] {
 			continue
 		}
 		seenRepo[dedupKey] = true
 
-		cName := svc.ContainerName
+		cName := strings.TrimSpace(ExpandEnvWithMap(svc.ContainerName, envMap))
 		if cName == "" {
 			cName = k
 		}

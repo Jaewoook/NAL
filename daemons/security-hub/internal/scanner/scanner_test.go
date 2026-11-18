@@ -697,6 +697,308 @@ func TestAptScanner_OutdatedManualAndBrokenDependencies(t *testing.T) {
 	}
 }
 
+func TestScanner_HardeningChecks(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. cleanUpstreamVersion strips epoch before leading v
+	if got := cleanUpstreamVersion("1:v2.0.1-1~deb12u1"); got != "2.0.1" {
+		t.Fatalf("expected '2.0.1' from epoch+v version, got %q", got)
+	}
+
+	// 2. Live OSV querybatch minimal items hydrate from /v1/vulns/{id} preserving CRITICAL severity & FixedVersion
+	osvClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			switch req.URL.Path {
+			case "/v1/querybatch":
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(strings.NewReader(`{"results":[{"vulns":[{"id":"GHSA-crit-999","modified":"2026-11-01T00:00:00Z"}]}]}`)),
+					Header:     make(http.Header),
+				}, nil
+			case "/v1/vulns/GHSA-crit-999":
+				return &http.Response{
+					StatusCode: 200,
+					Body: io.NopCloser(strings.NewReader(`{
+						"id":"GHSA-crit-999",
+						"summary":"Hydrated Critical Bug",
+						"database_specific":{"severity":"CRITICAL"},
+						"affected":[{"ranges":[{"events":[{"fixed":"2026.11.0"}]}]}]
+					}`)),
+					Header: make(http.Header),
+				}, nil
+			default:
+				return &http.Response{StatusCode: 404, Body: http.NoBody, Header: make(http.Header)}, nil
+			}
+		}),
+	}
+	vs := NewVulnScanner("https://api.osv.dev/v1/querybatch", osvClient, nil)
+	vItems := []models.ManagedItem{
+		{TargetType: models.TargetDocker, Name: "cloudflare-tunnel", ImageRef: "cloudflare/cloudflared:2026.8.0", CurrentVersion: "2026.8.0"},
+	}
+	_ = vs.CheckVulnerabilities(ctx, vItems)
+	if vItems[0].CritCount != 1 || len(vItems[0].Vulnerabilities) != 1 || vItems[0].Vulnerabilities[0].FixedVersion != "2026.11.0" {
+		t.Fatalf("expected hydrated CRITICAL CVE with fixed version 2026.11.0, got %+v", vItems[0])
+	}
+
+	// 3. EoLChecker sets EoLUnknown on API outage / unmapped, truncates cloudflared UTC midnight, preserves Apt held notice
+	failEoLClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 503, Body: http.NoBody, Header: make(http.Header)}, nil
+		}),
+	}
+	ec := NewEoLChecker("https://endoflife.date/api/v1/products", failEoLClient)
+	eolItems := []models.ManagedItem{
+		{TargetType: models.TargetDocker, Name: "unmapped-svc", CurrentVersion: "1.0.0"},
+		{TargetType: models.TargetApt, Name: "openssl", CurrentVersion: "3.0.11", EoL: models.EoLInfo{Status: models.EoLSupported, Message: "Held via apt-mark (pinned)"}},
+		{TargetType: models.TargetDocker, Name: "cloudflare-tunnel", CurrentVersion: "2025.11.0"},
+	}
+	nowLate := time.Date(2026, 11, 14, 23, 30, 0, 0, time.UTC) // eol is 2026-11-15 -> should be 1 day remaining!
+	_ = ec.CheckEoL(ctx, eolItems, nowLate, 30)
+	if eolItems[0].EoL.Status != models.EoLUnknown {
+		t.Fatalf("expected EoLUnknown for unmapped product, got %+v", eolItems[0].EoL)
+	}
+	if eolItems[1].EoL.Status != models.EoLUnknown || !strings.Contains(eolItems[1].EoL.Message, "Held via apt-mark") {
+		t.Fatalf("expected EoLUnknown preserving Held notice on API 503, got %+v", eolItems[1].EoL)
+	}
+	if eolItems[2].EoL.DaysRemaining != 1 {
+		t.Fatalf("expected cloudflared UTC midnight diff = 1 day remaining, got %d", eolItems[2].EoL.DaysRemaining)
+	}
+
+	// 4. DaemonScanner skips ollama when runner nil, skips server-monitor when dir missing, skips macOS on sw_vers error
+	linuxRunner := &fakeRunner{
+		handler: func(name string, args ...string) ([]byte, error) {
+			return nil, errors.New("command not found")
+		},
+	}
+	if items, _ := NewDaemonScanner(t.TempDir(), nil).ScanDaemonsAndOS(ctx); len(items) != 0 {
+		t.Fatalf("expected 0 daemon items when runner is nil and server-monitor missing, got %+v", items)
+	}
+	if items, _ := NewDaemonScanner(t.TempDir(), linuxRunner).ScanDaemonsAndOS(ctx); len(items) != 0 {
+		t.Fatalf("expected 0 daemon/macOS items when sw_vers/ollama/server-monitor absent, got %+v", items)
+	}
+
+	// 5. RegistryClient supports generic hosts (quay.io), Link pagination, non-semver safety, and error propagation
+	regClient := NewRegistryClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			u := req.URL.String()
+			switch {
+			case strings.Contains(u, "quay.io/v2/org/app/tags/list") && strings.Contains(u, "page=2"):
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(strings.NewReader(`{"tags":["1.2.0","bookworm"]}`)),
+					Header:     make(http.Header),
+				}, nil
+			case strings.Contains(u, "quay.io/v2/org/app/tags/list"):
+				h := make(http.Header)
+				h.Set("Link", `</v2/org/app/tags/list?page=2>; rel="next"`)
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(strings.NewReader(`{"tags":["1.0.0"]}`)),
+					Header:     h,
+				}, nil
+			default:
+				return &http.Response{StatusCode: 500, Body: http.NoBody, Header: make(http.Header)}, nil
+			}
+		}),
+	})
+	latest, _, _, outdated, err := regClient.CheckImageUpdates(ctx, "quay.io/org/app:1.0.0", "")
+	if err != nil || !outdated || latest != "1.2.0" {
+		t.Fatalf("expected quay.io paginated upgrade 1.0.0->1.2.0, got latest=%q outdated=%v err=%v", latest, outdated, err)
+	}
+	_, _, _, flavorOutdated, _ := regClient.CheckImageUpdates(ctx, "quay.io/org/app:bookworm", "")
+	if flavorOutdated {
+		t.Fatal("expected non-semver flavor tag bookworm not to be flagged outdated")
+	}
+	if _, _, _, _, err := regClient.CheckImageUpdates(ctx, "quay.io/missing/app:1.0.0", ""); err == nil {
+		t.Fatal("expected registry HTTP 500 to propagate error when digest & tags both failed")
+	}
+
+	// 6. BrewScanner does not flag pinned formula outdated
+	pinnedBrew := NewBrewScanner(&fakeRunner{
+		handler: func(name string, args ...string) ([]byte, error) {
+			if len(args) > 0 && args[0] == "info" {
+				return []byte(`{"formulae":[{"name":"node","versions":{"stable":"22.0.0"},"installed":[{"version":"20.0.0"}],"pinned":true}],"casks":[]}`), nil
+			}
+			if len(args) > 0 && args[0] == "outdated" {
+				return nil, errors.New("exit 1")
+			}
+			return []byte(""), nil
+		},
+	})
+	brewItems, _ := pinnedBrew.ScanBrew(ctx)
+	if len(brewItems) != 1 || brewItems[0].Outdated {
+		t.Fatalf("expected pinned brew formula not marked Outdated, got %+v", brewItems)
+	}
+
+	// 7. ApplySkippedAndSummarize restores unskipped item to Outdated=true
+	unskipped := []models.ManagedItem{
+		{TargetType: models.TargetDocker, Name: "auth", CurrentVersion: "1.0", LatestVersion: "2.0", Skipped: true, SkippedVersion: "2.0", Outdated: false},
+	}
+	res := ApplySkippedAndSummarize(unskipped, map[string]string{})
+	if res.Items[0].Skipped || !res.Items[0].Outdated || res.Items[0].SkippedVersion != "" {
+		t.Fatalf("expected unskipped item restored to Skipped=false Outdated=true, got %+v", res.Items[0])
+	}
+
+	// 8. Orchestrator.fetchRemoteAgentScan blocks redirects
+	redirected := false
+	redirTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirected = true
+	}))
+	defer redirTarget.Close()
+	redirAgent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirTarget.URL, http.StatusTemporaryRedirect)
+	}))
+	defer redirAgent.Close()
+	orch := NewOrchestrator(nil, nil, nil, redirAgent.Client())
+	if _, err := orch.fetchRemoteAgentScan(ctx, models.NodeInfo{Name: "n", URL: redirAgent.URL, Token: "sec"}); err == nil {
+		t.Fatal("expected error when agent returns redirect")
+	}
+	if redirected {
+		t.Fatal("fetchRemoteAgentScan followed redirect and leaked token")
+	}
+}
+
+func TestRegistryAndOrchestrator_Round2Regressions(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. CheckImageUpdates preserves currentTag when latest candidate has equal semver (e.g. v1.2.3 vs 1.2.3),
+	// and always includes same-major latestVersion in availableTags even when >=12 newer-major tags exist.
+	reg := NewRegistryClient(&http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			u := req.URL.String()
+			switch {
+			case strings.Contains(u, "/v2/org/vprefix/tags/list"):
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(strings.NewReader(`{"tags":["1.2.3","v1.1.0"]}`)),
+					Header:     make(http.Header),
+				}, nil
+			case strings.Contains(u, "/v2/org/manymajor/tags/list"):
+				tags := []string{
+					"2.0.12", "2.0.11", "2.0.10", "2.0.9", "2.0.8", "2.0.7",
+					"2.0.6", "2.0.5", "2.0.4", "2.0.3", "2.0.2", "2.0.1", "2.0.0",
+					"1.5.0", "1.0.0",
+				}
+				b, _ := json.Marshal(map[string][]string{"tags": tags})
+				return &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(bytes.NewReader(b)),
+					Header:     make(http.Header),
+				}, nil
+			default:
+				return &http.Response{StatusCode: 404, Body: http.NoBody, Header: make(http.Header)}, nil
+			}
+		}),
+	})
+
+	latest, _, _, outdated, err := reg.CheckImageUpdates(ctx, "quay.io/org/vprefix:v1.2.3", "")
+	if err != nil {
+		t.Fatalf("vprefix CheckImageUpdates error: %v", err)
+	}
+	if outdated || latest != "v1.2.3" {
+		t.Fatalf("expected equal semver v1.2.3 vs 1.2.3 to stay latestVersion='v1.2.3' outdated=false, got latest=%q outdated=%v", latest, outdated)
+	}
+
+	latest2, avail2, _, outdated2, err := reg.CheckImageUpdates(ctx, "quay.io/org/manymajor:1.0.0", "")
+	if err != nil {
+		t.Fatalf("manymajor CheckImageUpdates error: %v", err)
+	}
+	if !outdated2 || latest2 != "1.5.0" {
+		t.Fatalf("expected latestVersion='1.5.0' outdated=true, got latest=%q outdated=%v", latest2, outdated2)
+	}
+	foundInAvail := false
+	for _, tg := range avail2 {
+		if tg == "1.5.0" {
+			foundInAvail = true
+			break
+		}
+	}
+	if !foundInAvail {
+		t.Fatalf("expected availableTags to include same-major target '1.5.0', got %v", avail2)
+	}
+
+	// 2. Orchestrator.RunFullScanWithTask uses UpdateNodeHealth so concurrent RemoveNode or RejectNode
+	// during remote scan is neither resurrected nor overwritten back to approved.
+	store, err := db.NewSpoolStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var agentDelSrv, agentRejSrv *httptest.Server
+	agentDelSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = store.RemoveNode(ctx, "node-del")
+		_, _ = w.Write([]byte(`{"node":"node-del","items":[{"target_type":"apt","name":"curl","current_version":"1.0"}]}`))
+	}))
+	defer agentDelSrv.Close()
+
+	agentRejSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = store.RejectNode(ctx, "node-rej")
+		_, _ = w.Write([]byte(`{"node":"node-rej","items":[]}`))
+	}))
+	defer agentRejSrv.Close()
+
+	_ = store.UpsertNode(ctx, models.NodeInfo{Name: "node-del", URL: agentDelSrv.URL, Status: models.NodeStatusApproved, Online: true})
+	_ = store.UpsertNode(ctx, models.NodeInfo{Name: "node-rej", URL: agentRejSrv.URL, Status: models.NodeStatusApproved, Online: true})
+
+	cfg := config.DefaultConfig()
+	cfg.NodeName = "hub"
+	cfg.Scanner.ServicesDir = t.TempDir()
+	cfg.Scanner.DaemonsDir = t.TempDir()
+	cfg.Scanner.EoLAPIURL = "http://127.0.0.1:0"
+	cfg.Scanner.OSVAPIURL = "http://127.0.0.1:0"
+
+	runner := &fakeRunner{handler: func(name string, args ...string) ([]byte, error) {
+		return nil, errors.New("not installed in unit test")
+	}}
+	orch := NewOrchestrator(cfg, store, runner, agentDelSrv.Client())
+	res, err := orch.RunFullScanWithTask(ctx, "")
+	if err != nil {
+		t.Fatalf("RunFullScanWithTask error: %v", err)
+	}
+	if _, err := store.GetNode(ctx, "node-del"); err == nil {
+		t.Fatal("expected deleted node-del not to be resurrected by scan completion")
+	}
+	rejNode, err := store.GetNode(ctx, "node-rej")
+	if err != nil {
+		t.Fatalf("expected node-rej to still exist: %v", err)
+	}
+	if rejNode.Status != models.NodeStatusRejected {
+		t.Fatalf("expected node-rej status to remain rejected, got %q", rejNode.Status)
+	}
+	for _, n := range res.Nodes {
+		if n.Name == "node-del" {
+			t.Fatalf("expected deleted node-del omitted from scan Nodes, got %+v", res.Nodes)
+		}
+		if n.Name == "node-rej" && n.Status != models.NodeStatusRejected {
+			t.Fatalf("expected res.Nodes entry for node-rej to have rejected status, got %q", n.Status)
+		}
+	}
+}
+
+func TestParseComposeImageRefs_ContainerNameEnvExpansion(t *testing.T) {
+	dir := t.TempDir()
+	compose := "services:\n  web:\n    image: nginx:1.25.0\n    container_name: ${APP_PREFIX:-nal}_web_1\n  worker:\n    image: alpine:3.19\n"
+	if err := os.WriteFile(filepath.Join(dir, "compose.yml"), []byte(compose), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("APP_PREFIX=prod\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	refs, err := ParseComposeImageRefs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 2 {
+		t.Fatalf("expected 2 compose refs, got %d", len(refs))
+	}
+	if refs[0].ServiceKey != "web" || refs[0].ContainerName != "prod_web_1" {
+		t.Fatalf("expected expanded container_name 'prod_web_1', got %+v", refs[0])
+	}
+	if refs[1].ServiceKey != "worker" || refs[1].ContainerName != "worker" {
+		t.Fatalf("expected omitted container_name to default to service key 'worker', got %+v", refs[1])
+	}
+}
+
 
 
 

@@ -1,12 +1,17 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
+
+var cmdRunner = func(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
+}
 
 const LaunchdLabel = "me.jaewook.nal.security-hub"
 
@@ -42,16 +47,29 @@ func isDirWritable(dir string) bool {
 		return false
 	}
 	tmpFile := filepath.Join(dir, fmt.Sprintf(".perm_test_%d", os.Getpid()))
-	if err := os.WriteFile(tmpFile, []byte(""), 0644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte(""), 0600); err != nil {
 		return false
 	}
 	_ = os.Remove(tmpFile)
 	return true
 }
 
+func validateNoControlChars(field, val string) error {
+	for i := 0; i < len(val); i++ {
+		if val[i] == '\n' || val[i] == '\r' || val[i] == 0 {
+			return fmt.Errorf("%s contains disallowed control character", field)
+		}
+	}
+	return nil
+}
+
+func stripControlChars(val string) string {
+	return strings.NewReplacer("\r", "", "\n", "", "\x00", "").Replace(val)
+}
+
 func GenerateLaunchdPlist(binaryPath, workingDir string) string {
-	escapedBin := escapeXML(binaryPath)
-	escapedDir := escapeXML(workingDir)
+	escapedBin := escapeXML(stripControlChars(binaryPath))
+	escapedDir := escapeXML(stripControlChars(workingDir))
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -83,53 +101,163 @@ func GenerateLaunchdPlist(binaryPath, workingDir string) string {
 `, LaunchdLabel, escapedBin, escapedDir, escapedDir, escapedDir)
 }
 
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmpFile, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp.*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmpFile.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Chmod(perm); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
+}
+
 func InstallPlist(destPath, binaryPath, workingDir string) error {
+	binaryPath = strings.TrimSpace(binaryPath)
+	if binaryPath == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("failed to resolve executable path: %w", err)
+		}
+		binaryPath = exe
+	}
+	if err := validateNoControlChars("binaryPath", binaryPath); err != nil {
+		return err
+	}
+	absBin, err := filepath.Abs(binaryPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve binaryPath %q: %w", binaryPath, err)
+	}
+
+	workingDir = strings.TrimSpace(workingDir)
+	if workingDir == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to resolve working directory: %w", err)
+		}
+		workingDir = wd
+	}
+	if err := validateNoControlChars("workingDir", workingDir); err != nil {
+		return err
+	}
+	absWD, err := filepath.Abs(workingDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve workingDir %q: %w", workingDir, err)
+	}
+
 	if destPath == "" {
 		destPath = DefaultPlistPath()
 	}
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return err
 	}
-	content := GenerateLaunchdPlist(binaryPath, workingDir)
-	return os.WriteFile(destPath, []byte(content), 0644)
+	content := GenerateLaunchdPlist(absBin, absWD)
+	return writeFileAtomic(destPath, []byte(content), 0600)
 }
 
-func Start() error {
-	plist := DefaultPlistPath()
+func startLaunchdService(plist, label, installCmd string) error {
 	if _, err := os.Stat(plist); os.IsNotExist(err) {
-		return fmt.Errorf("launchd plist not found at %s; run 'security-hub service install' first", plist)
+		return fmt.Errorf("launchd plist not found at %s; run '%s' first", plist, installCmd)
 	}
-	_ = exec.Command("launchctl", "unload", "-w", plist).Run()
-	if err := exec.Command("launchctl", "load", "-w", plist).Run(); err != nil {
-		return fmt.Errorf("failed to load launchd service: %w", err)
+	if err := stopLaunchdService(plist, label); err != nil {
+		return err
 	}
-	return exec.Command("launchctl", "start", LaunchdLabel).Run()
-}
-
-func Stop() error {
-	plist := DefaultPlistPath()
-	// Unload the launchd plist so KeepAlive does not immediately respawn the process
-	if _, err := os.Stat(plist); err == nil {
-		_ = exec.Command("launchctl", "unload", "-w", plist).Run()
+	if out, err := cmdRunner("launchctl", "load", "-w", plist); err != nil {
+		return fmt.Errorf("failed to load launchd service: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
-	_ = exec.Command("launchctl", "stop", LaunchdLabel).Run()
+	if out, err := cmdRunner("launchctl", "start", label); err != nil {
+		return fmt.Errorf("failed to start launchd service: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
 	return nil
 }
 
+func Start() error {
+	return startLaunchdService(DefaultPlistPath(), LaunchdLabel, "security-hub service install")
+}
+
+func isLaunchctlNotLoaded(err error, out string) bool {
+	var coded interface{ ExitCode() int }
+	if errors.As(err, &coded) {
+		code := coded.ExitCode()
+		if code == 3 || code == 113 {
+			return true
+		}
+	}
+	lower := strings.ToLower(out)
+	return strings.Contains(lower, "could not find specified service") ||
+		strings.Contains(lower, "could not find service") ||
+		strings.Contains(lower, "no such process") ||
+		strings.Contains(lower, "unload failed: 5:")
+}
+
+func stopLaunchdService(plist, label string) error {
+	if out, err := cmdRunner("launchctl", "list", label); err != nil {
+		if isLaunchctlNotLoaded(err, string(out)) {
+			return nil
+		}
+		return fmt.Errorf("launchctl list failed: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	if _, err := os.Stat(plist); err == nil {
+		if out, err := cmdRunner("launchctl", "unload", "-w", plist); err != nil && !isLaunchctlNotLoaded(err, string(out)) {
+			return fmt.Errorf("launchctl unload failed: %w (%s)", err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+	if out, err := cmdRunner("launchctl", "remove", label); err != nil && !isLaunchctlNotLoaded(err, string(out)) {
+		return fmt.Errorf("launchctl remove failed: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func Stop() error {
+	return stopLaunchdService(DefaultPlistPath(), LaunchdLabel)
+}
+
 func Restart() error {
-	_ = Stop()
+	if err := Stop(); err != nil {
+		return err
+	}
 	return Start()
 }
 
-func Status() (string, error) {
-	out, err := exec.Command("launchctl", "list").CombinedOutput()
+func launchdStatus(label string) (string, error) {
+	out, err := cmdRunner("launchctl", "list")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("launchctl list failed: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 	for _, line := range strings.Split(string(out), "\n") {
-		if strings.Contains(line, LaunchdLabel) {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && fields[len(fields)-1] == label {
 			return strings.TrimSpace(line), nil
 		}
 	}
 	return "not running / not loaded", nil
+}
+
+func Status() (string, error) {
+	return launchdStatus(LaunchdLabel)
 }

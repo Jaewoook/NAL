@@ -16,6 +16,7 @@ import (
 	"path"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jaewoook/security-hub/internal/auth"
@@ -31,28 +32,126 @@ import (
 var staticEmbedFS embed.FS
 
 type Server struct {
-	cfg        *config.Config
-	store      db.Store
-	orch       *scanner.Orchestrator
-	updMgr     *updater.Manager
-	authMgr    *auth.Manager
-	alerter    *notifier.Alerter
-	httpClient *http.Client
+	cfg          *config.Config
+	store        db.Store
+	orch         *scanner.Orchestrator
+	updMgr       *updater.Manager
+	authMgr      *auth.Manager
+	alerter      *notifier.Alerter
+	httpClient   *http.Client
+	shutdownOnce sync.Once
+	shutdownCh   chan struct{}
+	scanWG       sync.WaitGroup
 }
 
 func NewServer(cfg *config.Config, store db.Store, orch *scanner.Orchestrator, updMgr *updater.Manager, authMgr *auth.Manager, alerter *notifier.Alerter) *Server {
 	return &Server{
-		cfg:     cfg,
-		store:   store,
-		orch:    orch,
-		updMgr:  updMgr,
-		authMgr: authMgr,
-		alerter: alerter,
+		cfg:        cfg,
+		store:      store,
+		orch:       orch,
+		updMgr:     updMgr,
+		authMgr:    authMgr,
+		alerter:    alerter,
+		shutdownCh: make(chan struct{}),
 	}
+}
+
+// Wait blocks until all background manual scans started by Server finish or ctx expires.
+func (s *Server) Wait(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	done := make(chan struct{})
+	go func() {
+		s.scanWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// IsValidAgentHTTPURL validates that a normalized agent URL uses http or https with a non-empty host.
+func IsValidAgentHTTPURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	return (strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")) && u.Hostname() != ""
+}
+
+// NotifyShutdown closes the server shutdown channel so active SSE streams exit immediately.
+func (s *Server) NotifyShutdown() {
+	if s == nil {
+		return
+	}
+	s.shutdownOnce.Do(func() {
+		if s.shutdownCh != nil {
+			close(s.shutdownCh)
+		}
+	})
+}
+
+func (s *Server) shutdownChan() <-chan struct{} {
+	if s == nil {
+		return nil
+	}
+	return s.shutdownCh
 }
 
 func (s *Server) SetHTTPClient(client *http.Client) {
 	s.httpClient = client
+}
+
+func (s *Server) localNodeName() string {
+	if s.cfg != nil && s.cfg.NodeName != "" {
+		return s.cfg.NodeName
+	}
+	return config.DefaultNodeName()
+}
+
+func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.authMgr == nil {
+			auth.WriteJSONError(w, http.StatusServiceUnavailable, "authentication manager is not configured")
+			return
+		}
+		s.authMgr.RequireAuth(next)(w, r)
+	}
+}
+
+func (s *Server) requireAuthCSRF(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.authMgr == nil {
+			auth.WriteJSONError(w, http.StatusServiceUnavailable, "authentication manager is not configured")
+			return
+		}
+		s.authMgr.RequireAuthCSRF(next)(w, r)
+	}
+}
+
+func (s *Server) requireAuthMgr(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.authMgr == nil {
+			auth.WriteJSONError(w, http.StatusServiceUnavailable, "authentication manager is not configured")
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) sessionClaims(r *http.Request) *auth.SessionClaims {
+	if s.authMgr == nil {
+		return nil
+	}
+	claims, err := s.authMgr.VerifyRequest(r)
+	if err != nil {
+		return nil
+	}
+	return claims
 }
 
 func (s *Server) Handler() http.Handler {
@@ -60,30 +159,30 @@ func (s *Server) Handler() http.Handler {
 
 	// Public / Auth endpoints
 	mux.HandleFunc("/api/auth/session", s.handleSession)
-	mux.HandleFunc("/api/auth/oidc/login", s.authMgr.StartOIDCLogin)
-	mux.HandleFunc("/api/auth/oidc/callback", s.authMgr.HandleOIDCCallback)
+	mux.HandleFunc("/api/auth/oidc/login", s.requireAuthMgr(func(w http.ResponseWriter, r *http.Request) { s.authMgr.StartOIDCLogin(w, r) }))
+	mux.HandleFunc("/api/auth/oidc/callback", s.requireAuthMgr(func(w http.ResponseWriter, r *http.Request) { s.authMgr.HandleOIDCCallback(w, r) }))
 	mux.HandleFunc("/api/auth/token-login", s.handleTokenLogin)
 	mux.HandleFunc("/api/auth/logout", s.handleLogout)
-	mux.HandleFunc("/api/auth/passkey/register/begin", s.authMgr.BeginPasskeyRegistration)
-	mux.HandleFunc("/api/auth/passkey/register/finish", s.authMgr.FinishPasskeyRegistration)
-	mux.HandleFunc("/api/auth/passkey/login/begin", s.authMgr.BeginPasskeyLogin)
-	mux.HandleFunc("/api/auth/passkey/login/finish", s.authMgr.FinishPasskeyLogin)
+	mux.HandleFunc("/api/auth/passkey/register/begin", s.requireAuthMgr(func(w http.ResponseWriter, r *http.Request) { s.authMgr.BeginPasskeyRegistration(w, r) }))
+	mux.HandleFunc("/api/auth/passkey/register/finish", s.requireAuthMgr(func(w http.ResponseWriter, r *http.Request) { s.authMgr.FinishPasskeyRegistration(w, r) }))
+	mux.HandleFunc("/api/auth/passkey/login/begin", s.requireAuthMgr(func(w http.ResponseWriter, r *http.Request) { s.authMgr.BeginPasskeyLogin(w, r) }))
+	mux.HandleFunc("/api/auth/passkey/login/finish", s.requireAuthMgr(func(w http.ResponseWriter, r *http.Request) { s.authMgr.FinishPasskeyLogin(w, r) }))
 
 	// Agent announcement (authenticated via AgentToken in payload)
 	mux.HandleFunc("/api/nodes/announce", s.handleNodeAnnounce)
 
-	// Protected API endpoints
-	mux.HandleFunc("/api/dashboard", s.authMgr.RequireAuth(s.handleDashboard))
-	mux.HandleFunc("/api/nodes", s.authMgr.RequireAuth(s.handleNodes))
-	mux.HandleFunc("/api/nodes/approve", s.authMgr.RequireAuth(s.handleNodeApprove))
-	mux.HandleFunc("/api/nodes/reject", s.authMgr.RequireAuth(s.handleNodeReject))
-	mux.HandleFunc("/api/nodes/test", s.authMgr.RequireAuth(s.handleNodeTest))
-	mux.HandleFunc("/api/scan", s.authMgr.RequireAuth(s.handleScan))
-	mux.HandleFunc("/api/update", s.authMgr.RequireAuth(s.handleUpdate))
-	mux.HandleFunc("/api/rollback", s.authMgr.RequireAuth(s.handleRollback))
-	mux.HandleFunc("/api/skip", s.authMgr.RequireAuth(s.handleSkip))
-	mux.HandleFunc("/api/tasks", s.authMgr.RequireAuth(s.handleTasksList))
-	mux.HandleFunc("/api/tasks/", s.authMgr.RequireAuth(s.handleTaskDetailOrStream))
+	// Protected API endpoints (read routes require session; mutations also enforce CSRF)
+	mux.HandleFunc("/api/dashboard", s.requireAuth(s.handleDashboard))
+	mux.HandleFunc("/api/nodes", s.requireAuthCSRF(s.handleNodes))
+	mux.HandleFunc("/api/nodes/approve", s.requireAuthCSRF(s.handleNodeApprove))
+	mux.HandleFunc("/api/nodes/reject", s.requireAuthCSRF(s.handleNodeReject))
+	mux.HandleFunc("/api/nodes/test", s.requireAuthCSRF(s.handleNodeTest))
+	mux.HandleFunc("/api/scan", s.requireAuthCSRF(s.handleScan))
+	mux.HandleFunc("/api/update", s.requireAuthCSRF(s.handleUpdate))
+	mux.HandleFunc("/api/rollback", s.requireAuthCSRF(s.handleRollback))
+	mux.HandleFunc("/api/skip", s.requireAuthCSRF(s.handleSkip))
+	mux.HandleFunc("/api/tasks", s.requireAuth(s.handleTasksList))
+	mux.HandleFunc("/api/tasks/", s.requireAuth(s.handleTaskDetailOrStream))
 
 	// Remote Agent LAN endpoints (authenticated via X-NAL-Node-Token)
 	mux.HandleFunc("/api/agent/info", s.requireAgentToken(s.handleAgentInfo))
@@ -98,14 +197,34 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
+// AgentHandler returns a restricted HTTP handler exposing only authenticated remote agent endpoints.
+func (s *Server) AgentHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/agent/info", s.requireAgentToken(s.handleAgentInfo))
+	mux.HandleFunc("/api/agent/scan", s.requireAgentToken(s.handleAgentScan))
+	mux.HandleFunc("/api/agent/update", s.requireAgentToken(s.handleAgentUpdate))
+	mux.HandleFunc("/api/agent/rollback", s.requireAgentToken(s.handleAgentRollback))
+	return mux
+}
+
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	oidcConfigured := s.cfg != nil && s.cfg.Auth.OIDCIssuer != ""
+	hasPasskeys := s.authMgr != nil && s.authMgr.HasRegisteredPasskeys()
+	if s.authMgr == nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"authenticated":   false,
+			"oidc_configured": oidcConfigured,
+			"has_passkeys":    hasPasskeys,
+		})
+		return
+	}
 	claims, err := s.authMgr.VerifyRequest(r)
 	if err != nil {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"authenticated":   false,
-			"oidc_configured": s.cfg.Auth.OIDCIssuer != "",
-			"has_passkeys":    s.authMgr.HasRegisteredPasskeys(),
+			"oidc_configured": oidcConfigured,
+			"has_passkeys":    hasPasskeys,
 		})
 		return
 	}
@@ -118,33 +237,53 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		"subject":         claims.Subject,
 		"username":        username,
 		"method":          claims.Method,
-		"has_passkeys":    s.authMgr.HasRegisteredPasskeys(),
-		"oidc_configured": s.cfg.Auth.OIDCIssuer != "",
+		"has_passkeys":    hasPasskeys,
+		"oidc_configured": oidcConfigured,
+		"csrf_token":      s.authMgr.CSRFTokenForRequest(r),
 	})
 }
 
 func (s *Server) handleTokenLogin(w http.ResponseWriter, r *http.Request) {
+	if s.authMgr == nil {
+		auth.WriteJSONError(w, http.StatusServiceUnavailable, "authentication manager is not configured")
+		return
+	}
 	tok := r.URL.Query().Get("token")
 	ok, err := s.authMgr.ConsumeBreakGlassToken(tok)
 	if err != nil || !ok {
 		http.Error(w, "Invalid or expired break-glass login token", http.StatusUnauthorized)
 		return
 	}
-	_ = s.authMgr.IssueSessionCookie(w, "cli-break-glass-admin", "cli")
+	if err := s.authMgr.IssueSessionCookie(w, "cli-break-glass-admin", "cli"); err != nil {
+		http.Error(w, "Failed to issue session cookie", http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	s.authMgr.ClearSessionCookie(w)
+	if r.Method != http.MethodPost {
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.authMgr != nil {
+		if _, err := s.authMgr.VerifyRequest(r); err == nil {
+			if err := s.authMgr.VerifyCSRF(r); err != nil {
+				auth.WriteJSONError(w, http.StatusForbidden, "csrf validation failed")
+				return
+			}
+		} else if err := s.authMgr.VerifyOriginAndFetchSite(r); err != nil {
+			auth.WriteJSONError(w, http.StatusForbidden, "origin check failed")
+			return
+		}
+		s.authMgr.ClearSessionCookie(w)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "logged_out"})
 }
 
 func (s *Server) buildNodesOverview(ctx context.Context) []models.NodeInfo {
-	hubName := config.DefaultNodeName()
-	if s.cfg != nil && s.cfg.NodeName != "" {
-		hubName = s.cfg.NodeName
-	}
+	hubName := s.localNodeName()
 	out := []models.NodeInfo{
 		{
 			Name:       hubName,
@@ -168,35 +307,38 @@ func (s *Server) buildNodesOverview(ctx context.Context) []models.NodeInfo {
 }
 
 func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "store is not configured")
+		return
+	}
 	ctx := r.Context()
-	w.Header().Set("Content-Type", "application/json")
 	switch r.Method {
 	case http.MethodGet:
+		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(s.buildNodesOverview(ctx))
 	case http.MethodPost:
 		var req models.NodeInfo
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.URL) == "" {
-			http.Error(w, `{"error":"name and url are required"}`, http.StatusBadRequest)
+			auth.WriteJSONError(w, http.StatusBadRequest, "name and url are required")
 			return
 		}
 		req.Name = strings.TrimSpace(req.Name)
 		req.URL = config.NormalizeURL(req.URL)
-		hubName := ""
-		if s.cfg != nil && s.cfg.NodeName != "" {
-			hubName = s.cfg.NodeName
+		if !IsValidAgentHTTPURL(req.URL) {
+			auth.WriteJSONError(w, http.StatusBadRequest, "invalid agent url: must use http:// or https:// with a valid host")
+			return
 		}
-		if hubName == "" {
-			hubName = config.DefaultNodeName()
-		}
+		hubName := s.localNodeName()
 		if strings.EqualFold(req.Name, hubName) {
-			http.Error(w, `{"error":"agent node name conflicts with hub node name"}`, http.StatusBadRequest)
+			auth.WriteJSONError(w, http.StatusBadRequest, "agent node name conflicts with hub node name")
 			return
 		}
 		req.Role = "agent"
 		if err := s.store.UpsertNode(ctx, req); err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status": "saved",
 			"nodes":  s.buildNodesOverview(ctx),
@@ -204,16 +346,20 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		name := strings.TrimSpace(r.URL.Query().Get("name"))
 		if name == "" {
-			http.Error(w, `{"error":"name query parameter required"}`, http.StatusBadRequest)
+			auth.WriteJSONError(w, http.StatusBadRequest, "name query parameter required")
 			return
 		}
-		_ = s.store.RemoveNode(ctx, name)
+		if err := s.store.RemoveNode(ctx, name); err != nil {
+			auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status": "removed",
 			"nodes":  s.buildNodesOverview(ctx),
 		})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
@@ -225,16 +371,18 @@ type nodeAnnounceRequest struct {
 }
 
 func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.store == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "store is not configured")
 		return
 	}
 
 	var req nodeAnnounceRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid json"})
+		auth.WriteJSONError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
 
@@ -245,89 +393,52 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 	h1 := sha256.Sum256([]byte(req.Token))
 	h2 := sha256.Sum256([]byte(expected))
 	if expected == "" || req.Token == "" || subtle.ConstantTimeCompare(h1[:], h2[:]) != 1 {
-		w.WriteHeader(http.StatusUnauthorized)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		auth.WriteJSONError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
 	req.Name = strings.TrimSpace(req.Name)
 	req.URL = config.NormalizeURL(req.URL)
 	if req.Name == "" || req.URL == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "name and url required"})
+		auth.WriteJSONError(w, http.StatusBadRequest, "name and url required")
+		return
+	}
+	if !IsValidAgentHTTPURL(req.URL) {
+		auth.WriteJSONError(w, http.StatusBadRequest, "invalid agent url: must use http:// or https:// with a valid host")
 		return
 	}
 
-	hubName := ""
-	if s.cfg != nil && s.cfg.NodeName != "" {
-		hubName = s.cfg.NodeName
-	}
-	if hubName == "" {
-		hubName = config.DefaultNodeName()
-	}
+	hubName := s.localNodeName()
 	if strings.EqualFold(req.Name, hubName) {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "agent node name conflicts with hub node name"})
+		auth.WriteJSONError(w, http.StatusBadRequest, "agent node name conflicts with hub node name")
 		return
 	}
 
-	ctx := r.Context()
-	existing, err := s.store.GetNode(ctx, req.Name)
-	if err == nil && existing != nil {
-		if existing.Status == models.NodeStatusRejected {
-			w.WriteHeader(http.StatusForbidden)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "node rejected"})
-			return
-		}
-
-		// Security: If an already-approved node announces a changed URL, revert to pending so operator must re-approve
-		existingURL := strings.TrimRight(existing.URL, "/")
-		if existing.Status == models.NodeStatusApproved && existingURL != "" && existingURL != req.URL {
-			existing.Status = models.NodeStatusPending
-		}
-
-		existing.URL = req.URL
-		existing.Online = true
-		existing.LastSeenAt = time.Now().UTC()
-		if req.OSVersion != "" {
-			existing.OSVersion = req.OSVersion
-		}
-		if req.Token != "" {
-			existing.Token = req.Token
-		}
-		_ = s.store.UpsertNode(ctx, *existing)
-
-		status := string(existing.Status)
-		if status == "" {
-			status = string(models.NodeStatusApproved)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": status})
+	status, err := s.store.AnnounceNode(r.Context(), models.NodeInfo{
+		Name:      req.Name,
+		URL:       req.URL,
+		Token:     req.Token,
+		OSVersion: req.OSVersion,
+	})
+	if err != nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	newNode := models.NodeInfo{
-		Name:       req.Name,
-		URL:        req.URL,
-		Token:      req.Token,
-		Role:       "agent",
-		Status:     models.NodeStatusPending,
-		Online:     true,
-		LastSeenAt: time.Now().UTC(),
-		OSVersion:  req.OSVersion,
-	}
-	if err := s.store.UpsertNode(ctx, newNode); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	if status == models.NodeStatusRejected {
+		auth.WriteJSONError(w, http.StatusForbidden, "node rejected")
 		return
 	}
-
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "pending"})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": string(status)})
 }
 
 func (s *Server) handleNodeApprove(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.store == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "store is not configured")
 		return
 	}
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
@@ -339,15 +450,16 @@ func (s *Server) handleNodeApprove(w http.ResponseWriter, r *http.Request) {
 		name = strings.TrimSpace(req.Name)
 	}
 	if name == "" {
-		http.Error(w, `{"error":"name parameter required"}`, http.StatusBadRequest)
+		auth.WriteJSONError(w, http.StatusBadRequest, "name parameter required")
 		return
 	}
 
 	ctx := r.Context()
 	if err := s.store.ApproveNode(ctx, name); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+		auth.WriteJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status": "approved",
 		"name":   name,
@@ -356,9 +468,12 @@ func (s *Server) handleNodeApprove(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleNodeReject(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.store == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "store is not configured")
 		return
 	}
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
@@ -370,15 +485,16 @@ func (s *Server) handleNodeReject(w http.ResponseWriter, r *http.Request) {
 		name = strings.TrimSpace(req.Name)
 	}
 	if name == "" {
-		http.Error(w, `{"error":"name parameter required"}`, http.StatusBadRequest)
+		auth.WriteJSONError(w, http.StatusBadRequest, "name parameter required")
 		return
 	}
 
 	ctx := r.Context()
 	if err := s.store.RejectNode(ctx, name); err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+		auth.WriteJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status": "rejected",
 		"name":   name,
@@ -402,7 +518,7 @@ type nodeTestResponse struct {
 func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	var req nodeTestRequest
@@ -416,8 +532,7 @@ func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	targetURL := config.NormalizeURL(req.URL)
-	parsedURL, pErr := url.Parse(targetURL)
-	if pErr != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
+	if !IsValidAgentHTTPURL(targetURL) {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(nodeTestResponse{
 			OK:    false,
@@ -425,6 +540,7 @@ func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	parsedURL, _ := url.Parse(targetURL)
 	parsedURL.Path = path.Join(parsedURL.Path, "/api/agent/info")
 	parsedURL.RawQuery = ""
 	parsedURL.Fragment = ""
@@ -521,9 +637,7 @@ func (s *Server) requireAgentToken(next http.HandlerFunc) http.HandlerFunc {
 		hGot := sha256.Sum256([]byte(got))
 		hExp := sha256.Sum256([]byte(expected))
 		if expected == "" || got == "" || subtle.ConstantTimeCompare(hGot[:], hExp[:]) != 1 {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid or missing X-NAL-Node-Token"})
+			auth.WriteJSONError(w, http.StatusUnauthorized, "invalid or missing X-NAL-Node-Token")
 			return
 		}
 		next(w, r)
@@ -531,13 +645,9 @@ func (s *Server) requireAgentToken(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) handleAgentInfo(w http.ResponseWriter, r *http.Request) {
-	nodeName := config.DefaultNodeName()
-	if s.cfg != nil && s.cfg.NodeName != "" {
-		nodeName = s.cfg.NodeName
-	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(models.NodeInfo{
-		Name:       nodeName,
+		Name:       s.localNodeName(),
 		Role:       "agent",
 		Online:     true,
 		LastSeenAt: time.Now().UTC(),
@@ -547,17 +657,34 @@ func (s *Server) handleAgentInfo(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAgentScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost && r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.orch == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "orchestrator not configured")
 		return
 	}
 	items, err := s.orch.ScanLocalNode(r.Context())
-	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+	if err != nil && len(items) == 0 {
+		auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	nodeName := config.DefaultNodeName()
-	if s.cfg != nil && s.cfg.NodeName != "" {
-		nodeName = s.cfg.NodeName
+	nodeName := s.localNodeName()
+	if s.store != nil {
+		if snapshots, sErr := s.store.ListSnapshots(r.Context()); sErr == nil {
+			for i := range items {
+				if items[i].TargetType != models.TargetDocker {
+					continue
+				}
+				if snap, ok := snapshots[items[i].Name]; ok {
+					items[i].HasRollback = true
+					items[i].RollbackVersion = snap.PreviousVersion
+				} else if snap, ok := snapshots[nodeName+":"+items[i].Name]; ok {
+					items[i].HasRollback = true
+					items[i].RollbackVersion = snap.PreviousVersion
+				}
+			}
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -568,17 +695,34 @@ func (s *Server) handleAgentScan(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.store == nil || s.updMgr == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "updater not configured")
 		return
 	}
 	var req updater.UpdateRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		auth.WriteJSONError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	req.Node = s.cfg.NodeName
-	task, err := s.store.CreateTask(r.Context(), &models.Task{
-		Node:        s.cfg.NodeName,
+	nodeName := s.localNodeName()
+	req.Node = nodeName
+	req.TargetType = strings.TrimSpace(req.TargetType)
+	if req.TargetType == "" {
+		req.TargetType = string(models.TargetDocker)
+	}
+	req.TargetName = strings.TrimSpace(req.TargetName)
+	req.TargetVersion = strings.TrimSpace(req.TargetVersion)
+	if err := updater.ValidateUpdateRequest(req); err != nil {
+		auth.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updCtx, updCancel := context.WithTimeout(context.WithoutCancel(r.Context()), 15*time.Minute)
+	defer updCancel()
+	task, err := s.store.CreateTask(updCtx, &models.Task{
+		Node:        nodeName,
 		TaskType:    "agent_update",
 		TargetType:  req.TargetType,
 		TargetName:  req.TargetName,
@@ -587,13 +731,55 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		Status:      "running",
 	})
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = s.updMgr.RunUpdateSync(r.Context(), task.ID, req)
-	finalTask, logs, _ := s.store.GetTaskWithLogs(r.Context(), task.ID)
+	_ = s.updMgr.RunUpdateSync(updCtx, task.ID, req)
+	finalTask, logs, _ := s.store.GetTaskWithLogs(updCtx, task.ID)
 	status := "succeeded"
 	errMsg := ""
+	if finalTask != nil {
+		status = finalTask.Status
+		errMsg = finalTask.ErrorMsg
+	} else {
+		status = task.Status
+		errMsg = task.ErrorMsg
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":    status,
+		"error_msg": errMsg,
+		"logs":      logs,
+	})
+}
+
+func (s *Server) handleAgentRollback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.store == nil || s.updMgr == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "updater not configured")
+		return
+	}
+	var req struct {
+		ServiceName string `json:"service_name"`
+		TriggeredBy string `json:"triggered_by"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || req.ServiceName == "" {
+		auth.WriteJSONError(w, http.StatusBadRequest, "service_name required")
+		return
+	}
+	rbCtx, rbCancel := context.WithTimeout(context.WithoutCancel(r.Context()), 15*time.Minute)
+	defer rbCancel()
+	task, err := s.updMgr.RollbackService(rbCtx, req.ServiceName, req.TriggeredBy)
+	if err != nil && task == nil {
+		auth.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	finalTask, logs, _ := s.store.GetTaskWithLogs(rbCtx, task.ID)
+	status := task.Status
+	errMsg := task.ErrorMsg
 	if finalTask != nil {
 		status = finalTask.Status
 		errMsg = finalTask.ErrorMsg
@@ -606,34 +792,11 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleAgentRollback(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var req struct {
-		ServiceName string `json:"service_name"`
-		TriggeredBy string `json:"triggered_by"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || req.ServiceName == "" {
-		http.Error(w, `{"error":"service_name required"}`, http.StatusBadRequest)
-		return
-	}
-	task, err := s.updMgr.RollbackService(r.Context(), req.ServiceName, req.TriggeredBy)
-	if err != nil && task == nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
-		return
-	}
-	finalTask, logs, _ := s.store.GetTaskWithLogs(r.Context(), task.ID)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"status":    finalTask.Status,
-		"error_msg": finalTask.ErrorMsg,
-		"logs":      logs,
-	})
-}
-
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "store is not configured")
+		return
+	}
 	ctx := r.Context()
 	scan, err := s.store.LoadLatestScanResult(ctx)
 	if err != nil || scan == nil {
@@ -641,15 +804,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	skipped, _ := s.store.ListSkippedVersions(ctx)
 	snapshots, _ := s.store.ListSnapshots(ctx)
-	hubName := config.DefaultNodeName()
-	if s.cfg != nil && s.cfg.NodeName != "" {
-		hubName = s.cfg.NodeName
-	}
+	hubName := s.localNodeName()
 	for i := range scan.Items {
 		if scan.Items[i].Node == "" {
 			scan.Items[i].Node = hubName
 		}
-		if scan.Items[i].TargetType != models.TargetDocker {
+		if scan.Items[i].TargetType != models.TargetDocker || scan.Items[i].HasRollback {
 			continue
 		}
 		if snap, ok := snapshots[scan.Items[i].Node+":"+scan.Items[i].Name]; ok {
@@ -679,12 +839,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-
 	if s.orch == nil {
-		http.Error(w, `{"error":"orchestrator not configured"}`, http.StatusInternalServerError)
+		auth.WriteJSONError(w, http.StatusInternalServerError, "orchestrator not configured")
 		return
 	}
 
@@ -698,15 +857,10 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hubName := config.DefaultNodeName()
-	if s.cfg != nil && s.cfg.NodeName != "" {
-		hubName = s.cfg.NodeName
-	}
+	hubName := s.localNodeName()
 	actor := "web"
-	if s.authMgr != nil {
-		if claims, _ := s.authMgr.VerifyRequest(r); claims != nil {
-			actor = claims.Method + ":" + claims.Subject
-		}
+	if claims := s.sessionClaims(r); claims != nil {
+		actor = claims.Method + ":" + claims.Subject
 	}
 
 	var taskID string
@@ -720,7 +874,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			Status:      "running",
 		})
 		if err != nil {
-			http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+			auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		taskID = task.ID
@@ -744,16 +898,29 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.scanWG.Add(1)
 	go func(tid string) {
+		defer s.scanWG.Done()
 		defer s.orch.FinishScan()
 
 		scanCtx, scanCancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer scanCancel()
+		if shutCh := s.shutdownChan(); shutCh != nil {
+			go func() {
+				select {
+				case <-shutCh:
+					scanCancel()
+				case <-scanCtx.Done():
+				}
+			}()
+		}
 
 		scan, err := s.orch.RunFullScanWithTask(scanCtx, tid)
 		if err != nil {
 			if s.store != nil {
-				_ = s.store.FinishTask(scanCtx, tid, "failed", err.Error())
+				finishCtx, finishCancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer finishCancel()
+				_ = s.store.FinishTask(finishCtx, tid, "failed", err.Error())
 			}
 			return
 		}
@@ -778,13 +945,21 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	claims, _ := s.authMgr.VerifyRequest(r)
+	if s.updMgr == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "updater not configured")
+		return
+	}
+	claims := s.sessionClaims(r)
 	var req updater.UpdateRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		auth.WriteJSONError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if err := updater.ValidateUpdateRequest(req); err != nil {
+		auth.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if claims != nil {
@@ -792,7 +967,11 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	task, err := s.updMgr.TriggerUpdate(r.Context(), req)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		if errors.Is(err, updater.ErrUpdateInProgress) {
+			auth.WriteJSONError(w, http.StatusConflict, err.Error())
+			return
+		}
+		auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -801,16 +980,20 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	claims, _ := s.authMgr.VerifyRequest(r)
+	if s.updMgr == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "updater not configured")
+		return
+	}
+	claims := s.sessionClaims(r)
 	var req struct {
 		Node        string `json:"node"`
 		ServiceName string `json:"service_name"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || req.ServiceName == "" {
-		http.Error(w, `{"error":"service_name required"}`, http.StatusBadRequest)
+		auth.WriteJSONError(w, http.StatusBadRequest, "service_name required")
 		return
 	}
 	actor := "web"
@@ -819,7 +1002,11 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 	}
 	task, err := s.updMgr.RollbackServiceOnNode(r.Context(), req.Node, req.ServiceName, actor)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		if errors.Is(err, updater.ErrUpdateInProgress) {
+			auth.WriteJSONError(w, http.StatusConflict, err.Error())
+			return
+		}
+		auth.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -827,7 +1014,11 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSkip(w http.ResponseWriter, r *http.Request) {
-	claims, _ := s.authMgr.VerifyRequest(r)
+	if s.store == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "store is not configured")
+		return
+	}
+	claims := s.sessionClaims(r)
 	actor := "web"
 	if claims != nil {
 		actor = claims.Method + ":" + claims.Subject
@@ -841,14 +1032,17 @@ func (s *Server) handleSkip(w http.ResponseWriter, r *http.Request) {
 			Version    string `json:"version"`
 		}
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-			http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+			auth.WriteJSONError(w, http.StatusBadRequest, "invalid request")
 			return
 		}
 		tt := strings.TrimSpace(req.TargetType)
 		if n := strings.TrimSpace(req.Node); n != "" {
 			tt = n + ":" + tt
 		}
-		_ = s.store.SetSkippedVersion(r.Context(), tt, req.TargetName, req.Version, actor)
+		if err := s.store.SetSkippedVersion(r.Context(), tt, req.TargetName, req.Version, actor); err != nil {
+			auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "skipped"})
 	case http.MethodDelete:
@@ -856,21 +1050,31 @@ func (s *Server) handleSkip(w http.ResponseWriter, r *http.Request) {
 		tt := strings.TrimSpace(r.URL.Query().Get("target_type"))
 		tn := r.URL.Query().Get("target_name")
 		if node != "" {
-			_ = s.store.RemoveSkippedVersion(r.Context(), node+":"+tt, tn)
+			if err := s.store.RemoveSkippedVersion(r.Context(), node+":"+tt, tn); err != nil {
+				auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
 		}
-		_ = s.store.RemoveSkippedVersion(r.Context(), tt, tn)
+		if err := s.store.RemoveSkippedVersion(r.Context(), tt, tn); err != nil {
+			auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "unskipped"})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
 func (s *Server) handleTasksList(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "store is not configured")
+		return
+	}
 	filter := r.URL.Query().Get("type")
 	tasks, err := s.store.ListTasks(r.Context(), filter, 50)
 	if err != nil {
-		http.Error(w, `{"error":"failed to list tasks"}`, http.StatusInternalServerError)
+		auth.WriteJSONError(w, http.StatusInternalServerError, "failed to list tasks")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -878,11 +1082,15 @@ func (s *Server) handleTasksList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTaskDetailOrStream(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		auth.WriteJSONError(w, http.StatusInternalServerError, "store is not configured")
+		return
+	}
 	trimmed := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
 	parts := strings.Split(trimmed, "/")
 	taskID := parts[0]
 	if taskID == "" || taskID == "." || taskID == ".." || strings.ContainsAny(taskID, `/\`) {
-		http.NotFound(w, r)
+		auth.WriteJSONError(w, http.StatusNotFound, "task not found")
 		return
 	}
 
@@ -890,7 +1098,7 @@ func (s *Server) handleTaskDetailOrStream(w http.ResponseWriter, r *http.Request
 		logPath := s.store.GetRawLogPath(taskID)
 		raw, err := os.ReadFile(logPath)
 		if err != nil {
-			http.Error(w, "Log file not found", http.StatusNotFound)
+			auth.WriteJSONError(w, http.StatusNotFound, "Log file not found")
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -906,7 +1114,7 @@ func (s *Server) handleTaskDetailOrStream(w http.ResponseWriter, r *http.Request
 
 	task, logs, err := s.store.GetTaskWithLogs(r.Context(), taskID)
 	if err != nil {
-		http.Error(w, `{"error":"task not found"}`, http.StatusNotFound)
+		auth.WriteJSONError(w, http.StatusNotFound, "task not found")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -919,20 +1127,27 @@ func (s *Server) handleTaskDetailOrStream(w http.ResponseWriter, r *http.Request
 func (s *Server) streamTaskLogsSSE(w http.ResponseWriter, r *http.Request, taskID string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		auth.WriteJSONError(w, http.StatusInternalServerError, "streaming unsupported")
 		return
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
+	if _, _, err := s.store.GetTaskWithLogs(r.Context(), taskID); err != nil {
+		auth.WriteJSONError(w, http.StatusNotFound, "task not found")
+		return
+	}
 
 	ch, unsub := s.store.SubscribeTaskLogs(taskID)
 	defer unsub()
 
 	task, existingLogs, err := s.store.GetTaskWithLogs(r.Context(), taskID)
 	if err != nil {
+		auth.WriteJSONError(w, http.StatusNotFound, "task not found")
 		return
 	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
 	lastSentSeq := 0
 	for _, line := range existingLogs {
 		raw, _ := json.Marshal(line)
@@ -949,9 +1164,12 @@ func (s *Server) streamTaskLogsSSE(w http.ResponseWriter, r *http.Request, taskI
 		return
 	}
 
+	shutCh := s.shutdownChan()
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-shutCh:
 			return
 		case line, ok := <-ch:
 			if !ok {

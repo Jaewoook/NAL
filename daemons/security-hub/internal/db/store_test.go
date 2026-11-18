@@ -732,6 +732,287 @@ func TestSpoolStore_NodeZeroLastSeenAndMetadataPreservation(t *testing.T) {
 	}
 }
 
+func TestSpoolStore_CorruptState_NumericSort_LogPermissions_And_PostgresSafety(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. Corrupt spool_state.json returns error instead of silently clobbering
+	corruptDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(corruptDir, "spool_state.json"), []byte("{not-json"), 0600)
+	if _, err := NewSpoolStore(corruptDir, nil); err == nil {
+		t.Fatal("expected NewSpoolStore to fail on corrupt spool_state.json")
+	}
+
+	// 2. Numeric task ID sorting (task-100000 > task-99999) + 0600 log file + subscriber cleanup
+	store, err := NewSpoolStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	store.state.NextTaskNum = 99999
+	store.mu.Unlock()
+	t99999, _ := store.CreateTask(ctx, &models.Task{TaskType: "brew_upgrade", TargetName: "a"})
+	t100000, _ := store.CreateTask(ctx, &models.Task{TaskType: "brew_upgrade", TargetName: "b"})
+	tasks, _ := store.ListTasks(ctx, "", 10)
+	if len(tasks) != 2 || tasks[0].ID != t100000.ID || tasks[1].ID != t99999.ID {
+		t.Fatalf("expected numeric sort [%s, %s], got %+v", t100000.ID, t99999.ID, tasks)
+	}
+
+	_, unsub := store.SubscribeTaskLogs(t100000.ID)
+	_, _ = store.AppendTaskLog(ctx, t100000.ID, "stdout", "line1")
+	unsub()
+	store.mu.RLock()
+	_, subsExist := store.subscribers[t100000.ID]
+	store.mu.RUnlock()
+	if subsExist {
+		t.Fatal("expected empty subscriber map entry to be cleaned up on unsubscribe")
+	}
+	st, err := os.Stat(store.GetRawLogPath(t100000.ID))
+	if err != nil || st.Mode().Perm() != 0600 {
+		t.Fatalf("expected 0600 raw log file permissions, got err=%v perm=%v", err, st)
+	}
+
+	// 3. PostgresBackend sanitizes NUL / invalid UTF-8 bytes and includes node in UpsertTask concurrently without race
+	var sqlQueries []string
+	var sqlMu sync.Mutex
+	pg := NewPostgresBackend("postgresql", "security_hub_db", "security_hub", func(name string, args ...string) ([]byte, error) {
+		sqlMu.Lock()
+		sqlQueries = append(sqlQueries, args[len(args)-1])
+		sqlMu.Unlock()
+		return []byte("ok"), nil
+	})
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_ = pg.UpsertTask(ctx, models.Task{ID: "task-00001", Node: "RPi-01", TaskType: "apt", TargetType: "apt", TargetName: "openssl", Status: "running", StartedAt: time.Now().UTC()})
+			_ = pg.InsertTaskLogsBatch(ctx, []models.TaskLogLine{{TaskID: "task-00001", Seq: idx + 1, LoggedAt: time.Now().UTC(), Stream: "stdout", Line: "bad\x00bytes\xffhere"}})
+		}(i)
+	}
+	wg.Wait()
+	joined := strings.Join(sqlQueries, "\n")
+	if !strings.Contains(joined, "node") {
+		t.Fatalf("expected tasks SQL to include node column, got:\n%s", joined)
+	}
+	if !strings.Contains(joined, "WHERE tasks.finished_at IS NULL OR EXCLUDED.finished_at IS NOT NULL") {
+		t.Fatalf("expected UpsertTask SQL to guard finished tasks, got:\n%s", joined)
+	}
+}
+
+func TestSpoolStore_AtomicNodeHealth_Announce_And_RemoveTombstones(t *testing.T) {
+	ctx := context.Background()
+	memPG := newFakePGBackend()
+	store, err := NewSpoolStore(t.TempDir(), memPG)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. AnnounceNode: new node starts pending, approved URL change demotes to pending, rejected rejects
+	st, err := store.AnnounceNode(ctx, models.NodeInfo{
+		Name:      "edge-1",
+		URL:       "http://10.0.0.21:10248",
+		Token:     "tok-1",
+		OSVersion: "debian/12",
+	})
+	if err != nil || st != models.NodeStatusPending {
+		t.Fatalf("expected initial announce status pending, got %q err=%v", st, err)
+	}
+	if err := store.ApproveNode(ctx, "edge-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// UpdateNodeHealth preserves approved Status, URL, Token while updating online/lastError
+	seenAt := time.Now().UTC().Truncate(time.Second)
+	if err := store.UpdateNodeHealth(ctx, "edge-1", false, seenAt, "dial tcp timeout"); err != nil {
+		t.Fatal(err)
+	}
+	n, err := store.GetNode(ctx, "edge-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.Status != models.NodeStatusApproved || n.URL != "http://10.0.0.21:10248" || n.Token != "tok-1" {
+		t.Fatalf("UpdateNodeHealth clobbered operator fields: %+v", n)
+	}
+	if n.Online || n.LastError != "dial tcp timeout" || !n.LastSeenAt.Equal(seenAt) {
+		t.Fatalf("UpdateNodeHealth did not persist health fields: %+v", n)
+	}
+
+	// Announcing from a new URL demotes approved -> pending
+	st, err = store.AnnounceNode(ctx, models.NodeInfo{
+		Name: "edge-1",
+		URL:  "http://10.0.0.99:10248",
+	})
+	if err != nil || st != models.NodeStatusPending {
+		t.Fatalf("expected URL change to demote to pending, got %q err=%v", st, err)
+	}
+	if err := store.RejectNode(ctx, "edge-1"); err != nil {
+		t.Fatal(err)
+	}
+	st, err = store.AnnounceNode(ctx, models.NodeInfo{
+		Name: "edge-1",
+		URL:  "http://10.0.0.99:10248",
+	})
+	if err != nil || st != models.NodeStatusRejected {
+		t.Fatalf("expected rejected node to stay rejected on announce, got %q err=%v", st, err)
+	}
+
+	// 2. RemoveNode while PG is offline records tombstone and FlushPending deletes from PG when online;
+	// UpdateNodeHealth on removed node is a no-op (must NOT resurrect deleted node).
+	memPG.setOnline(false)
+	if err := store.RemoveNode(ctx, "edge-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateNodeHealth(ctx, "edge-1", true, time.Now().UTC(), ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetNode(ctx, "edge-1"); err == nil {
+		t.Fatal("expected UpdateNodeHealth on removed node to remain a no-op")
+	}
+	memPG.setOnline(true)
+	if err := store.FlushPending(ctx); err != nil {
+		t.Fatal(err)
+	}
+	memPG.mu.Lock()
+	_, stillInPG := memPG.nodes["edge-1"]
+	memPG.mu.Unlock()
+	if stillInPG {
+		t.Fatal("expected FlushPending to flush node deletion tombstone to Postgres")
+	}
+}
+
+func TestSpoolStore_Round3_CLICoexistenceAndPostgresSnapshotColumns(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	// 1. NewCLISpoolStore does NOT abort daemon's running tasks, and syncs mutations cleanly via flock
+	daemonStore, err := NewSpoolStore(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runningTask, err := daemonStore.CreateTask(ctx, &models.Task{
+		TaskType:   "security_scan",
+		TargetType: "system",
+		TargetName: "all",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = daemonStore.AppendTaskLog(ctx, runningTask.ID, "info", "scanning packages...")
+
+	cliStore, err := NewCLISpoolStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewCLISpoolStore failed: %v", err)
+	}
+	gotFromCLI, _, err := cliStore.GetTaskWithLogs(ctx, runningTask.ID)
+	if err != nil || gotFromCLI.Status != "running" {
+		t.Fatalf("expected NewCLISpoolStore to leave daemon running task intact, got status=%v err=%v", gotFromCLI, err)
+	}
+
+	// CLI adds a node; daemon sees it on ListNodes without clobbering it when finishing task
+	if err := cliStore.UpsertNode(ctx, models.NodeInfo{
+		Name:   "rpi-cli",
+		URL:    "http://10.0.0.88:10247",
+		Status: models.NodeStatusApproved,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	nodesOnDaemon, err := daemonStore.ListNodes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundNode := false
+	for _, n := range nodesOnDaemon {
+		if n.Name == "rpi-cli" {
+			foundNode = true
+		}
+	}
+	if !foundNode {
+		t.Fatalf("expected daemon store to observe CLI-added node via disk sync, got %+v", nodesOnDaemon)
+	}
+
+	if err := daemonStore.FinishTask(ctx, runningTask.ID, "succeeded", ""); err != nil {
+		t.Fatal(err)
+	}
+	// Verify daemon didn't clobber CLI's node on disk
+	cliStore2, err := NewCLISpoolStore(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cliStore2.GetNode(ctx, "rpi-cli"); err != nil {
+		t.Fatalf("expected CLI-added node to survive daemon FinishTask: %v", err)
+	}
+
+	// 2. PostgresBackend.UpsertSnapshot updates all metadata columns on conflict
+	var snapSQL string
+	pg := NewPostgresBackend("postgresql", "security_hub_db", "security_hub", func(name string, args ...string) ([]byte, error) {
+		snapSQL = args[len(args)-1]
+		return []byte("ok"), nil
+	})
+	if err := pg.UpsertSnapshot(ctx, models.RollbackSnapshot{
+		ServiceName:     "db",
+		ServiceKey:      "db",
+		ImageRepo:       "postgres",
+		PreviousVersion: "16.4",
+		ComposePath:     "/srv/db/compose.yml",
+		EnvPath:         "/srv/db/.env",
+		CreatedAt:       time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, col := range []string{
+		"service_key = EXCLUDED.service_key",
+		"image_repo = EXCLUDED.image_repo",
+		"compose_path = EXCLUDED.compose_path",
+		"env_path = EXCLUDED.env_path",
+	} {
+		if !strings.Contains(snapSQL, col) {
+			t.Fatalf("expected UpsertSnapshot SQL to include %q, got:\n%s", col, snapSQL)
+		}
+	}
+
+	// 3. CLI RemoveNode (pg=nil) persists DeletedNodes tombstone across subsequent disk reloads until daemon FlushPending runs
+	tombDir := t.TempDir()
+	memPG := newFakePGBackend()
+	daemon2, err := NewSpoolStore(tombDir, memPG)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := daemon2.UpsertNode(ctx, models.NodeInfo{Name: "rpi-old", URL: "http://10.0.0.10:10247", Status: models.NodeStatusApproved}); err != nil {
+		t.Fatal(err)
+	}
+	if err := daemon2.UpsertNode(ctx, models.NodeInfo{Name: "rpi-keep", URL: "http://10.0.0.11:10247", Status: models.NodeStatusApproved}); err != nil {
+		t.Fatal(err)
+	}
+
+	cliNoPG, err := NewCLISpoolStore(tombDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cliNoPG.RemoveNode(ctx, "rpi-old"); err != nil {
+		t.Fatal(err)
+	}
+	// Reload daemon state from disk, then apply an unrelated CLI mutation before FlushPending
+	if _, err := daemon2.ListNodes(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := cliNoPG.UpsertNode(ctx, models.NodeInfo{Name: "rpi-extra", URL: "http://10.0.0.12:10247", Status: models.NodeStatusApproved}); err != nil {
+		t.Fatal(err)
+	}
+	if err := daemon2.FlushPending(ctx); err != nil {
+		t.Fatal(err)
+	}
+	memPG.mu.Lock()
+	_, oldStillInPG := memPG.nodes["rpi-old"]
+	_, extraInPG := memPG.nodes["rpi-extra"]
+	memPG.mu.Unlock()
+	if oldStillInPG {
+		t.Fatal("expected DeletedNodes tombstone from pg=nil CLI RemoveNode to survive disk reload and delete from Postgres on FlushPending")
+	}
+	if !extraInPG {
+		t.Fatal("expected rpi-extra added by CLI to sync to Postgres")
+	}
+}
+
 
 
 

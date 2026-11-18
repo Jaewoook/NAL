@@ -286,3 +286,55 @@ func TestResolveAdvertiseURL_ExplicitAndBindHost(t *testing.T) {
 	}
 }
 
+func TestStartAnnouncer_NilConfigAndRedirectSafety(t *testing.T) {
+	// 1. Nil config exits cleanly without panic
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := service.StartAnnouncer(ctx, nil, nil, 10*time.Millisecond)
+	select {
+	case _, open := <-errCh:
+		if open {
+			t.Fatal("expected errCh to close for nil config")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for errCh close on nil config")
+	}
+
+	// 2. Redirects do NOT leak AgentToken to redirect target
+	redirected := false
+	redirTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirected = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer redirTarget.Close()
+
+	hubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirTarget.URL, http.StatusTemporaryRedirect)
+	}))
+	defer hubSrv.Close()
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	errCh2 := service.StartAnnouncer(ctx2, &config.Config{
+		NodeName:          "Node1",
+		AgentToken:        "secret-cluster-token",
+		HubURL:            hubSrv.URL,
+		AgentAdvertiseURL: "http://127.0.0.1:10247",
+	}, hubSrv.Client(), 50*time.Millisecond)
+
+	select {
+	case err := <-errCh2:
+		if err == nil || !strings.Contains(err.Error(), "307") {
+			t.Fatalf("expected 307 error instead of following redirect, got: %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for announcer error on 307")
+	}
+	if redirected {
+		t.Fatal("announcer followed 307 redirect and leaked AgentToken")
+	}
+	cancel2()
+	for range errCh2 {
+	}
+}
+

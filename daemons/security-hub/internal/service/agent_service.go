@@ -3,10 +3,12 @@ package service
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -15,17 +17,48 @@ import (
 
 // AgentServiceOptions defines metadata used to render agent service files or plists.
 type AgentServiceOptions struct {
-	BinaryPath   string
-	WorkingDir   string
-	Name         string
-	Host         string
-	Port         int
-	Token        string
-	HubURL       string
-	AdvertiseURL string
-	CustomPath   string
-	User         string
-	IsUser       bool
+	BinaryPath      string
+	WorkingDir      string
+	Name            string
+	Host            string
+	Port            int
+	Token           string
+	EnvironmentFile string
+	HubURL          string
+	AdvertiseURL    string
+	CustomPath      string
+	User            string
+	IsUser          bool
+}
+
+var validPOSIXUserRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.-]{0,31}\$?$`)
+
+// ValidateAgentServiceOptions rejects newline/control-char directive injection and invalid service users.
+func ValidateAgentServiceOptions(opts AgentServiceOptions) error {
+	checks := []struct {
+		name string
+		val  string
+	}{
+		{"BinaryPath", opts.BinaryPath},
+		{"WorkingDir", opts.WorkingDir},
+		{"Name", opts.Name},
+		{"Host", opts.Host},
+		{"Token", opts.Token},
+		{"EnvironmentFile", opts.EnvironmentFile},
+		{"HubURL", opts.HubURL},
+		{"AdvertiseURL", opts.AdvertiseURL},
+		{"CustomPath", opts.CustomPath},
+		{"User", opts.User},
+	}
+	for _, c := range checks {
+		if err := validateNoControlChars(c.name, c.val); err != nil {
+			return err
+		}
+	}
+	if opts.User != "" && !validPOSIXUserRe.MatchString(opts.User) {
+		return fmt.Errorf("invalid systemd User %q", opts.User)
+	}
+	return nil
 }
 
 // AgentServiceManager provides method-based dispatch for agent daemon service operations.
@@ -89,25 +122,24 @@ func applyAgentDefaults(opts AgentServiceOptions) AgentServiceOptions {
 	return opts
 }
 
+// buildAgentArgs emits non-secret agent flags for process invocation.
+// Secrets like AgentToken are deliberately kept out of CLI arguments to avoid exposure in ps / /proc/pid/cmdline.
 func buildAgentArgs(opts AgentServiceOptions) []string {
 	var args []string
 	if opts.Host != "" {
-		args = append(args, "-host", opts.Host)
+		args = append(args, "-host", stripControlChars(opts.Host))
 	}
 	if opts.Port > 0 {
 		args = append(args, "-port", strconv.Itoa(opts.Port))
 	}
-	if opts.Token != "" {
-		args = append(args, "-token", opts.Token)
-	}
 	if opts.HubURL != "" {
-		args = append(args, "-hub", opts.HubURL)
+		args = append(args, "-hub", stripControlChars(opts.HubURL))
 	}
 	if opts.Name != "" {
-		args = append(args, "-name", opts.Name)
+		args = append(args, "-name", stripControlChars(opts.Name))
 	}
 	if opts.AdvertiseURL != "" {
-		args = append(args, "-advertise-url", opts.AdvertiseURL)
+		args = append(args, "-advertise-url", stripControlChars(opts.AdvertiseURL))
 	}
 	return args
 }
@@ -140,6 +172,10 @@ const agentLaunchdTemplate = `<?xml version="1.0" encoding="UTF-8"?>
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+{{- if .Token }}
+        <key>SECURITY_HUB_AGENT_TOKEN</key>
+        <string>{{ .Token }}</string>
+{{- end }}
     </dict>
 </dict>
 </plist>
@@ -165,11 +201,13 @@ func GenerateAgentLaunchdPlist(opts AgentServiceOptions) string {
 		BinaryPath string
 		WorkingDir string
 		Args       []string
+		Token      string
 	}{
 		Label:      AgentLaunchdLabel,
-		BinaryPath: escapeXML(opts.BinaryPath),
-		WorkingDir: escapeXML(opts.WorkingDir),
+		BinaryPath: escapeXML(stripControlChars(opts.BinaryPath)),
+		WorkingDir: escapeXML(stripControlChars(opts.WorkingDir)),
 		Args:       escapedArgs,
+		Token:      escapeXML(stripControlChars(opts.Token)),
 	}
 
 	tmpl := template.Must(template.New("agent-launchd").Parse(agentLaunchdTemplate))
@@ -192,6 +230,11 @@ ExecStart={{ .BinaryPath }} agent{{ range .Args }} {{ . }}{{ end }}
 Restart=always
 RestartSec=5s
 Environment=PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+{{- if .EnvironmentFile }}
+EnvironmentFile={{ .EnvironmentFile }}
+{{- else if .EnvToken }}
+Environment={{ .EnvToken }}
+{{- end }}
 
 [Install]
 {{- if .IsUser }}
@@ -201,17 +244,24 @@ WantedBy=multi-user.target
 {{- end }}
 `
 
-// quoteSystemdArg wraps an argument in double quotes and escapes backslashes and double quotes
-// if it contains whitespace, quotes, or is empty, ensuring safe word splitting by systemd ExecStart.
-// It also escapes $ as $$ to prevent systemd from treating it as an environment variable reference.
+// quoteSystemdArg strips control characters, escapes $ as $$, and wraps arguments
+// containing whitespace, quotes, or backslashes in double quotes for systemd directives.
 func quoteSystemdArg(s string) string {
-	escaped := strings.ReplaceAll(s, "$", "$$")
-	if escaped == "" || strings.ContainsAny(escaped, " \t\n\r\"'\\") {
+	clean := stripControlChars(s)
+	escaped := strings.ReplaceAll(clean, "$", "$$")
+	if escaped == "" || strings.ContainsAny(escaped, " \t\"'\\") {
 		escaped = strings.ReplaceAll(escaped, `\`, `\\`)
 		escaped = strings.ReplaceAll(escaped, `"`, `\"`)
 		return `"` + escaped + `"`
 	}
 	return escaped
+}
+
+func formatSystemdEnvLine(key, val string) string {
+	clean := stripControlChars(val)
+	clean = strings.ReplaceAll(clean, `\`, `\\`)
+	clean = strings.ReplaceAll(clean, `"`, `\"`)
+	return fmt.Sprintf("%s=\"%s\"\n", key, clean)
 }
 
 // GenerateAgentSystemdUnit renders a systemd service unit for the Security Hub agent.
@@ -223,18 +273,32 @@ func GenerateAgentSystemdUnit(opts AgentServiceOptions) string {
 		quotedArgs[i] = quoteSystemdArg(arg)
 	}
 
+	user := ""
+	if opts.User != "" && validPOSIXUserRe.MatchString(opts.User) {
+		user = opts.User
+	}
+
+	envToken := ""
+	if opts.EnvironmentFile == "" && opts.Token != "" {
+		envToken = quoteSystemdArg("SECURITY_HUB_AGENT_TOKEN=" + opts.Token)
+	}
+
 	data := struct {
-		BinaryPath string
-		WorkingDir string
-		User       string
-		Args       []string
-		IsUser     bool
+		BinaryPath      string
+		WorkingDir      string
+		User            string
+		Args            []string
+		EnvironmentFile string
+		EnvToken        string
+		IsUser          bool
 	}{
-		BinaryPath: quoteSystemdArg(opts.BinaryPath),
-		WorkingDir: quoteSystemdArg(opts.WorkingDir),
-		User:       opts.User,
-		Args:       quotedArgs,
-		IsUser:     opts.IsUser,
+		BinaryPath:      quoteSystemdArg(opts.BinaryPath),
+		WorkingDir:      quoteSystemdArg(opts.WorkingDir),
+		User:            user,
+		Args:            quotedArgs,
+		EnvironmentFile: quoteSystemdArgIfNonEmpty(opts.EnvironmentFile),
+		EnvToken:        envToken,
+		IsUser:          opts.IsUser,
 	}
 
 	tmpl := template.Must(template.New("agent-systemd").Parse(agentSystemdTemplate))
@@ -243,13 +307,66 @@ func GenerateAgentSystemdUnit(opts AgentServiceOptions) string {
 	return buf.String()
 }
 
+func quoteSystemdArgIfNonEmpty(s string) string {
+	if s == "" {
+		return ""
+	}
+	return quoteSystemdArg(s)
+}
+
 // GenerateSystemdUnit is an alias to GenerateAgentSystemdUnit.
 func GenerateSystemdUnit(opts AgentServiceOptions) string {
 	return GenerateAgentSystemdUnit(opts)
 }
 
-// InstallAgent installs the agent service file for the current OS.
+func systemdEnvPathForUnit(unitPath string) string {
+	if strings.Contains(unitPath, ".config/systemd/user") {
+		return filepath.Join(filepath.Dir(unitPath), "security-hub-agent.env")
+	}
+	return "/etc/security-hub/agent.env"
+}
+
+func runSystemctl(isUser bool, args ...string) ([]byte, error) {
+	if isUser {
+		args = append([]string{"--user"}, args...)
+	}
+	return cmdRunner("systemctl", args...)
+}
+
+func isSystemdNotLoaded(err error, out string) bool {
+	var coded interface{ ExitCode() int }
+	if errors.As(err, &coded) && coded.ExitCode() == 5 {
+		return true
+	}
+	lower := strings.ToLower(out)
+	return strings.Contains(lower, "not loaded") ||
+		strings.Contains(lower, "could not be found") ||
+		strings.Contains(lower, "no such file or directory") ||
+		strings.Contains(lower, "does not exist")
+}
+
+func isKnownSystemdState(st string) bool {
+	switch st {
+	case "inactive", "failed", "deactivating", "activating", "reloading", "unknown", "maintenance", "not-found":
+		return true
+	default:
+		return false
+	}
+}
+
+func writeSystemdTokenEnvFile(envPath, token string) error {
+	if err := os.MkdirAll(filepath.Dir(envPath), 0700); err != nil {
+		return err
+	}
+	line := formatSystemdEnvLine("SECURITY_HUB_AGENT_TOKEN", token)
+	return writeFileAtomic(envPath, []byte(line), 0600)
+}
+
+// InstallAgent installs the agent service file for the current OS using restricted 0600 permissions.
 func InstallAgent(opts AgentServiceOptions) error {
+	if err := ValidateAgentServiceOptions(opts); err != nil {
+		return err
+	}
 	opts = applyAgentDefaults(opts)
 
 	targetOS := runtime.GOOS
@@ -258,15 +375,22 @@ func InstallAgent(opts AgentServiceOptions) error {
 			return err
 		}
 		var content string
-		if targetOS == "darwin" || strings.HasSuffix(opts.CustomPath, ".plist") {
+		if strings.HasSuffix(opts.CustomPath, ".plist") || (targetOS == "darwin" && !strings.HasSuffix(opts.CustomPath, ".service")) {
 			content = GenerateAgentLaunchdPlist(opts)
 		} else {
 			if strings.Contains(opts.CustomPath, ".config/systemd/user") || strings.Contains(opts.CustomPath, "/user/") {
 				opts.IsUser = true
 			}
+			if opts.Token != "" && opts.EnvironmentFile == "" {
+				envPath := opts.CustomPath + ".env"
+				if err := writeSystemdTokenEnvFile(envPath, opts.Token); err != nil {
+					return err
+				}
+				opts.EnvironmentFile = envPath
+			}
 			content = GenerateAgentSystemdUnit(opts)
 		}
-		return os.WriteFile(opts.CustomPath, []byte(content), 0644)
+		return writeFileAtomic(opts.CustomPath, []byte(content), 0600)
 	}
 
 	switch targetOS {
@@ -276,7 +400,7 @@ func InstallAgent(opts AgentServiceOptions) error {
 			return err
 		}
 		content := GenerateAgentLaunchdPlist(opts)
-		return os.WriteFile(destPath, []byte(content), 0644)
+		return writeFileAtomic(destPath, []byte(content), 0600)
 
 	case "linux":
 		destPath := DefaultAgentSystemdPath()
@@ -285,19 +409,22 @@ func InstallAgent(opts AgentServiceOptions) error {
 		}
 		isUser := strings.Contains(destPath, ".config/systemd/user")
 		opts.IsUser = isUser
+		if opts.Token != "" && opts.EnvironmentFile == "" {
+			envPath := systemdEnvPathForUnit(destPath)
+			if err := writeSystemdTokenEnvFile(envPath, opts.Token); err != nil {
+				return err
+			}
+			opts.EnvironmentFile = envPath
+		}
 		content := GenerateAgentSystemdUnit(opts)
-		if err := os.WriteFile(destPath, []byte(content), 0644); err != nil {
+		if err := writeFileAtomic(destPath, []byte(content), 0600); err != nil {
 			return err
 		}
-		sysArgs := []string{"systemctl"}
-		if isUser {
-			sysArgs = append(sysArgs, "--user")
-		}
 		if _, lErr := exec.LookPath("systemctl"); lErr == nil {
-			if out, err := exec.Command(sysArgs[0], append(sysArgs[1:], "daemon-reload")...).CombinedOutput(); err != nil {
+			if out, err := runSystemctl(isUser, "daemon-reload"); err != nil {
 				return fmt.Errorf("systemctl daemon-reload failed: %w (%s)", err, strings.TrimSpace(string(out)))
 			}
-			if out, err := exec.Command(sysArgs[0], append(sysArgs[1:], "enable", AgentSystemdUnit)...).CombinedOutput(); err != nil {
+			if out, err := runSystemctl(isUser, "enable", AgentSystemdUnit); err != nil {
 				return fmt.Errorf("systemctl enable failed: %w (%s)", err, strings.TrimSpace(string(out)))
 			}
 		}
@@ -313,7 +440,9 @@ func UninstallAgent() error {
 	switch runtime.GOOS {
 	case "darwin":
 		plist := DefaultAgentPlistPath()
-		_ = exec.Command("launchctl", "unload", "-w", plist).Run()
+		if err := stopLaunchdService(plist, AgentLaunchdLabel); err != nil {
+			return err
+		}
 		if err := os.Remove(plist); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove launchd plist %s: %w", plist, err)
 		}
@@ -322,16 +451,27 @@ func UninstallAgent() error {
 	case "linux":
 		unitPath := DefaultAgentSystemdPath()
 		isUser := strings.Contains(unitPath, ".config/systemd/user")
-		sysArgs := []string{"systemctl"}
-		if isUser {
-			sysArgs = append(sysArgs, "--user")
+		_, lookErr := exec.LookPath("systemctl")
+		if lookErr == nil {
+			if out, err := runSystemctl(isUser, "stop", AgentSystemdUnit); err != nil && !isSystemdNotLoaded(err, string(out)) {
+				return fmt.Errorf("systemctl stop failed: %w (%s)", err, strings.TrimSpace(string(out)))
+			}
+			if out, err := runSystemctl(isUser, "disable", AgentSystemdUnit); err != nil && !isSystemdNotLoaded(err, string(out)) {
+				return fmt.Errorf("systemctl disable failed: %w (%s)", err, strings.TrimSpace(string(out)))
+			}
 		}
-		_ = exec.Command(sysArgs[0], append(sysArgs[1:], "stop", AgentSystemdUnit)...).Run()
-		_ = exec.Command(sysArgs[0], append(sysArgs[1:], "disable", AgentSystemdUnit)...).Run()
 		if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove systemd unit %s: %w", unitPath, err)
 		}
-		_ = exec.Command(sysArgs[0], append(sysArgs[1:], "daemon-reload")...).Run()
+		envPath := systemdEnvPathForUnit(unitPath)
+		if err := os.Remove(envPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove systemd env file %s: %w", envPath, err)
+		}
+		if lookErr == nil {
+			if out, err := runSystemctl(isUser, "daemon-reload"); err != nil {
+				return fmt.Errorf("systemctl daemon-reload failed: %w (%s)", err, strings.TrimSpace(string(out)))
+			}
+		}
 		return nil
 
 	default:
@@ -343,15 +483,7 @@ func UninstallAgent() error {
 func StartAgent() error {
 	switch runtime.GOOS {
 	case "darwin":
-		plist := DefaultAgentPlistPath()
-		if _, err := os.Stat(plist); os.IsNotExist(err) {
-			return fmt.Errorf("launchd plist not found at %s; run 'security-hub agent service install' first", plist)
-		}
-		_ = exec.Command("launchctl", "unload", "-w", plist).Run()
-		if err := exec.Command("launchctl", "load", "-w", plist).Run(); err != nil {
-			return fmt.Errorf("failed to load launchd agent service: %w", err)
-		}
-		return exec.Command("launchctl", "start", AgentLaunchdLabel).Run()
+		return startLaunchdService(DefaultAgentPlistPath(), AgentLaunchdLabel, "security-hub agent service install")
 
 	case "linux":
 		unitPath := DefaultAgentSystemdPath()
@@ -359,15 +491,11 @@ func StartAgent() error {
 			return fmt.Errorf("systemd unit not found at %s; run 'security-hub agent service install' first", unitPath)
 		}
 		isUser := strings.Contains(unitPath, ".config/systemd/user")
-		sysArgs := []string{"systemctl"}
-		if isUser {
-			sysArgs = append(sysArgs, "--user")
+		if out, err := runSystemctl(isUser, "daemon-reload"); err != nil {
+			return fmt.Errorf("failed to reload systemd daemon: %w (%s)", err, strings.TrimSpace(string(out)))
 		}
-		if err := exec.Command(sysArgs[0], append(sysArgs[1:], "daemon-reload")...).Run(); err != nil {
-			return fmt.Errorf("failed to reload systemd daemon: %w", err)
-		}
-		if err := exec.Command(sysArgs[0], append(sysArgs[1:], "enable", "--now", AgentSystemdUnit)...).Run(); err != nil {
-			return fmt.Errorf("failed to enable and start agent service: %w", err)
+		if out, err := runSystemctl(isUser, "enable", "--now", AgentSystemdUnit); err != nil {
+			return fmt.Errorf("failed to enable and start agent service: %w (%s)", err, strings.TrimSpace(string(out)))
 		}
 		return nil
 
@@ -380,21 +508,15 @@ func StartAgent() error {
 func StopAgent() error {
 	switch runtime.GOOS {
 	case "darwin":
-		plist := DefaultAgentPlistPath()
-		if _, err := os.Stat(plist); err == nil {
-			_ = exec.Command("launchctl", "unload", "-w", plist).Run()
-		}
-		_ = exec.Command("launchctl", "stop", AgentLaunchdLabel).Run()
-		return nil
+		return stopLaunchdService(DefaultAgentPlistPath(), AgentLaunchdLabel)
 
 	case "linux":
 		unitPath := DefaultAgentSystemdPath()
 		isUser := strings.Contains(unitPath, ".config/systemd/user")
-		sysArgs := []string{"systemctl"}
-		if isUser {
-			sysArgs = append(sysArgs, "--user")
+		if out, err := runSystemctl(isUser, "stop", AgentSystemdUnit); err != nil && !isSystemdNotLoaded(err, string(out)) {
+			return fmt.Errorf("systemctl stop failed: %w (%s)", err, strings.TrimSpace(string(out)))
 		}
-		return exec.Command(sysArgs[0], append(sysArgs[1:], "stop", AgentSystemdUnit)...).Run()
+		return nil
 
 	default:
 		return fmt.Errorf("unsupported operating system %q", runtime.GOOS)
@@ -403,7 +525,9 @@ func StopAgent() error {
 
 // RestartAgent restarts the agent service.
 func RestartAgent() error {
-	_ = StopAgent()
+	if err := StopAgent(); err != nil {
+		return err
+	}
 	return StartAgent()
 }
 
@@ -411,33 +535,20 @@ func RestartAgent() error {
 func StatusAgent() (string, error) {
 	switch runtime.GOOS {
 	case "darwin":
-		out, err := exec.Command("launchctl", "list").CombinedOutput()
-		if err != nil {
-			return "", err
-		}
-		for _, line := range strings.Split(string(out), "\n") {
-			if strings.Contains(line, AgentLaunchdLabel) {
-				return strings.TrimSpace(line), nil
-			}
-		}
-		return "not running / not loaded", nil
+		return launchdStatus(AgentLaunchdLabel)
 
 	case "linux":
 		unitPath := DefaultAgentSystemdPath()
 		isUser := strings.Contains(unitPath, ".config/systemd/user")
-		sysArgs := []string{"systemctl"}
-		if isUser {
-			sysArgs = append(sysArgs, "--user")
-		}
-		out, err := exec.Command(sysArgs[0], append(sysArgs[1:], "status", AgentSystemdUnit)...).CombinedOutput()
-		trimmed := strings.TrimSpace(string(out))
+		out, err := runSystemctl(isUser, "is-active", AgentSystemdUnit)
+		status := strings.TrimSpace(string(out))
 		if err != nil {
-			if trimmed == "" {
-				return "inactive / not loaded", nil
+			if isKnownSystemdState(status) {
+				return status, nil
 			}
-			return trimmed, nil
+			return "", fmt.Errorf("systemctl is-active failed: %w (%s)", err, status)
 		}
-		return trimmed, nil
+		return status, nil
 
 	default:
 		return "", fmt.Errorf("unsupported operating system %q", runtime.GOOS)

@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jaewoook/security-hub/internal/config"
@@ -18,6 +20,8 @@ import (
 	"github.com/jaewoook/security-hub/internal/notifier"
 	"github.com/jaewoook/security-hub/internal/scanner"
 )
+
+var ErrUpdateInProgress = errors.New("update or rollback already in progress for target")
 
 type UpdateRequest struct {
 	Node          string `json:"node,omitempty"`
@@ -31,12 +35,17 @@ type UpdateRequest struct {
 }
 
 type Manager struct {
-	cfg          *config.Config
-	store        db.Store
-	runner       scanner.CommandRunner
-	alerter      *notifier.Alerter
-	httpClient   *http.Client
-	pollInterval time.Duration
+	cfg           *config.Config
+	store         db.Store
+	runner        scanner.CommandRunner
+	alerter       *notifier.Alerter
+	httpClient    *http.Client
+	pollInterval  time.Duration
+	mu            sync.Mutex
+	activeTargets map[string]struct{}
+	pkgMu         sync.Mutex
+	gitMu         sync.Mutex
+	wg            sync.WaitGroup
 }
 
 func NewManager(cfg *config.Config, store db.Store, runner scanner.CommandRunner, alerter *notifier.Alerter) *Manager {
@@ -44,12 +53,18 @@ func NewManager(cfg *config.Config, store db.Store, runner scanner.CommandRunner
 		runner = scanner.NewOSCommandRunner()
 	}
 	return &Manager{
-		cfg:          cfg,
-		store:        store,
-		runner:       runner,
-		alerter:      alerter,
-		httpClient:   &http.Client{Timeout: 5 * time.Minute},
-		pollInterval: 2 * time.Second,
+		cfg:   cfg,
+		store: store,
+		runner: runner,
+		alerter: alerter,
+		httpClient: &http.Client{
+			Timeout: 5 * time.Minute,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+		pollInterval:  2 * time.Second,
+		activeTargets: make(map[string]struct{}),
 	}
 }
 
@@ -59,7 +74,184 @@ func (m *Manager) SetHTTPClient(c *http.Client) {
 	}
 }
 
+func (m *Manager) safeHTTPClient() *http.Client {
+	var c http.Client
+	if m.httpClient != nil {
+		c = *m.httpClient
+	}
+	if c.Timeout <= 0 {
+		c.Timeout = 5 * time.Minute
+	}
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &c
+}
+
+func (m *Manager) localNodeName() string {
+	if m.cfg != nil && m.cfg.NodeName != "" {
+		return m.cfg.NodeName
+	}
+	return config.DefaultNodeName()
+}
+
+func (m *Manager) targetLockKey(node, targetType, targetName string) string {
+	n := strings.TrimSpace(node)
+	local := m.localNodeName()
+	if n == "" || strings.EqualFold(n, "local") || strings.EqualFold(n, local) {
+		n = local
+	}
+	tt := strings.TrimSpace(targetType)
+	if tt == "" {
+		tt = string(models.TargetDocker)
+	}
+	tn := strings.TrimSpace(targetName)
+	if strings.EqualFold(tt, string(models.TargetDocker)) {
+		if svcDir, _, ok := splitDockerTarget(tn); ok {
+			tn = svcDir
+		}
+	}
+	return strings.ToLower(n) + ":" + strings.ToLower(tt) + ":" + tn
+}
+
+func (m *Manager) acquireTarget(key string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.activeTargets == nil {
+		m.activeTargets = make(map[string]struct{})
+	}
+	if _, busy := m.activeTargets[key]; busy {
+		return false
+	}
+	m.activeTargets[key] = struct{}{}
+	return true
+}
+
+func (m *Manager) releaseTarget(key string) {
+	m.mu.Lock()
+	delete(m.activeTargets, key)
+	m.mu.Unlock()
+}
+
+// Wait blocks until all background updates launched via TriggerUpdate finish or ctx expires.
+func (m *Manager) Wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		m.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func isASCIIAlphaNum(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+func isValidBrewPackageName(name string) bool {
+	if name == "" || len(name) > 128 {
+		return false
+	}
+	if !isASCIIAlphaNum(name[0]) {
+		return false
+	}
+	if strings.Contains(name, "..") || strings.Contains(name, "//") || strings.HasSuffix(name, "/") {
+		return false
+	}
+	if strings.Count(name, "/") > 2 {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if !isASCIIAlphaNum(c) && c != '@' && c != '.' && c != '_' && c != '+' && c != '/' && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+func isValidServiceDirName(name string) bool {
+	if name == "" || name == "." || name == ".." || len(name) > 128 {
+		return false
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return false
+	}
+	return filepath.Base(name) == name
+}
+
+func splitDockerTarget(targetName string) (svcName, svcKey string, ok bool) {
+	trimmed := strings.TrimSpace(targetName)
+	if trimmed == "" {
+		return "", "", false
+	}
+	if idx := strings.IndexByte(trimmed, '/'); idx >= 0 {
+		svcName = trimmed[:idx]
+		svcKey = trimmed[idx+1:]
+		if !isValidServiceDirName(svcName) || !isValidServiceDirName(svcKey) {
+			return "", "", false
+		}
+		return svcName, svcKey, true
+	}
+	if !isValidServiceDirName(trimmed) {
+		return "", "", false
+	}
+	return trimmed, "", true
+}
+
+func normalizeUpdateRequest(req UpdateRequest) UpdateRequest {
+	req.Node = strings.TrimSpace(req.Node)
+	req.TargetType = strings.TrimSpace(req.TargetType)
+	if req.TargetType == "" {
+		req.TargetType = string(models.TargetDocker)
+	}
+	req.TargetName = strings.TrimSpace(req.TargetName)
+	req.TargetVersion = strings.TrimSpace(req.TargetVersion)
+	return req
+}
+
+// ValidateUpdateRequest checks that an incoming update request uses allowed target types and safe identifiers/tags.
+func ValidateUpdateRequest(req UpdateRequest) error {
+	req = normalizeUpdateRequest(req)
+	tt := req.TargetType
+	name := req.TargetName
+	ver := req.TargetVersion
+
+	switch tt {
+	case string(models.TargetDocker):
+		if _, _, ok := splitDockerTarget(name); !ok {
+			return fmt.Errorf("invalid docker service name %q", req.TargetName)
+		}
+		if ver != "" && !IsValidDockerTag(ver) {
+			return fmt.Errorf("invalid docker target version tag %q", req.TargetVersion)
+		}
+		return nil
+	case string(models.TargetBrew):
+		if !isValidBrewPackageName(name) {
+			return fmt.Errorf("invalid brew package name %q", req.TargetName)
+		}
+		return nil
+	case string(models.TargetApt):
+		if !isValidAptPackageName(name) {
+			return fmt.Errorf("invalid apt package name %q", req.TargetName)
+		}
+		return nil
+	case string(models.TargetDaemon):
+		if name != "ollama" {
+			return fmt.Errorf("unsupported daemon update target %q", req.TargetName)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported target_type %q", req.TargetType)
+	}
+}
+
 func (m *Manager) newTaskModel(req UpdateRequest, fromVer string) *models.Task {
+	req = normalizeUpdateRequest(req)
 	taskType := "docker_update"
 	if req.TargetType == string(models.TargetBrew) {
 		taskType = "brew_upgrade"
@@ -69,8 +261,8 @@ func (m *Manager) newTaskModel(req UpdateRequest, fromVer string) *models.Task {
 		taskType = "daemon_upgrade"
 	}
 	nodeName := req.Node
-	if nodeName == "" && m.cfg != nil {
-		nodeName = m.cfg.NodeName
+	if nodeName == "" {
+		nodeName = m.localNodeName()
 	}
 	return &models.Task{
 		Node:        nodeName,
@@ -85,12 +277,30 @@ func (m *Manager) newTaskModel(req UpdateRequest, fromVer string) *models.Task {
 }
 
 func (m *Manager) TriggerUpdate(ctx context.Context, req UpdateRequest) (*models.Task, error) {
-	task, err := m.store.CreateTask(ctx, m.newTaskModel(req, ""))
-	if err != nil {
+	if m.store == nil {
+		return nil, errors.New("store is not configured")
+	}
+	req = normalizeUpdateRequest(req)
+	if err := ValidateUpdateRequest(req); err != nil {
 		return nil, err
 	}
+	key := m.targetLockKey(req.Node, req.TargetType, req.TargetName)
+	if !m.acquireTarget(key) {
+		return nil, fmt.Errorf("%w: %s", ErrUpdateInProgress, req.TargetName)
+	}
+
+	task, err := m.store.CreateTask(ctx, m.newTaskModel(req, ""))
+	if err != nil {
+		m.releaseTarget(key)
+		return nil, err
+	}
+	m.wg.Add(1)
 	go func() {
-		_ = m.RunUpdateSync(context.Background(), task.ID, req)
+		defer m.wg.Done()
+		defer m.releaseTarget(key)
+		updCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+		_ = m.runUpdateSyncOwned(updCtx, task.ID, req)
 	}()
 	return task, nil
 }
@@ -102,10 +312,29 @@ func (m *Manager) logStep(ctx context.Context, taskID, stream, msg string) {
 }
 
 func (m *Manager) RunUpdateSync(ctx context.Context, taskID string, req UpdateRequest) error {
-	localNode := config.DefaultNodeName()
-	if m.cfg != nil && m.cfg.NodeName != "" {
-		localNode = m.cfg.NodeName
+	req = normalizeUpdateRequest(req)
+	if err := ValidateUpdateRequest(req); err != nil {
+		errMsg := err.Error()
+		m.logStep(ctx, taskID, "error", errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return err
 	}
+	key := m.targetLockKey(req.Node, req.TargetType, req.TargetName)
+	if !m.acquireTarget(key) {
+		err := fmt.Errorf("%w: %s", ErrUpdateInProgress, req.TargetName)
+		m.logStep(ctx, taskID, "error", err.Error())
+		m.finishTask(ctx, taskID, "failed", err.Error())
+		return err
+	}
+	m.wg.Add(1)
+	defer m.wg.Done()
+	defer m.releaseTarget(key)
+	return m.runUpdateSyncOwned(ctx, taskID, req)
+}
+
+func (m *Manager) runUpdateSyncOwned(ctx context.Context, taskID string, req UpdateRequest) error {
+	req = normalizeUpdateRequest(req)
+	localNode := m.localNodeName()
 	if req.Node != "" && !strings.EqualFold(req.Node, "local") && !strings.EqualFold(req.Node, localNode) {
 		return m.forwardUpdateToAgent(ctx, taskID, req)
 	}
@@ -119,6 +348,9 @@ func (m *Manager) RunUpdateSync(ctx context.Context, taskID string, req UpdateRe
 }
 
 func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req UpdateRequest) error {
+	if m.store == nil {
+		return errors.New("store is not configured")
+	}
 	nodeInfo, err := m.store.GetNode(ctx, req.Node)
 	if err != nil {
 		errMsg := fmt.Sprintf("unknown remote node %q: %v", req.Node, err)
@@ -150,7 +382,7 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 	if tok != "" {
 		httpReq.Header.Set("X-NAL-Node-Token", tok)
 	}
-	resp, err := m.httpClient.Do(httpReq)
+	resp, err := m.safeHTTPClient().Do(httpReq)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to contact remote agent %s: %v", nodeInfo.Name, err)
 		m.logStep(ctx, taskID, "error", errMsg)
@@ -162,6 +394,7 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 	var payload struct {
 		Status   string               `json:"status"`
 		ErrorMsg string               `json:"error_msg"`
+		Error    string               `json:"error"`
 		Logs     []models.TaskLogLine `json:"logs"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&payload); err != nil {
@@ -173,17 +406,28 @@ func (m *Manager) forwardUpdateToAgent(ctx context.Context, taskID string, req U
 	for _, l := range payload.Logs {
 		m.logStep(ctx, taskID, l.Stream, fmt.Sprintf("[%s] %s", nodeInfo.Name, l.Line))
 	}
+	errMsg := payload.ErrorMsg
+	if errMsg == "" {
+		errMsg = payload.Error
+	}
 	status := payload.Status
 	if status == "" {
-		if resp.StatusCode == http.StatusOK {
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			status = "succeeded"
 		} else {
 			status = "failed"
 		}
+	} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if status == "succeeded" {
+			status = "failed"
+		}
 	}
-	m.finishTask(ctx, taskID, status, payload.ErrorMsg)
+	if status != "succeeded" && errMsg == "" {
+		errMsg = fmt.Sprintf("remote agent %s returned HTTP %d", nodeInfo.Name, resp.StatusCode)
+	}
+	m.finishTask(ctx, taskID, status, errMsg)
 	if status != "succeeded" {
-		return fmt.Errorf("remote agent %s task finished with status %s: %s", nodeInfo.Name, status, payload.ErrorMsg)
+		return fmt.Errorf("remote agent %s task finished with status %s: %s", nodeInfo.Name, status, errMsg)
 	}
 	return nil
 }
@@ -194,33 +438,6 @@ func (m *Manager) finishTask(ctx context.Context, taskID, status, errMsg string)
 	}
 }
 
-func isValidBrewPackageName(name string) bool {
-	if name == "" || len(name) > 128 {
-		return false
-	}
-	if name[0] == '-' || name[0] == '.' || strings.Contains(name, "..") {
-		return false
-	}
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		isAlphaNum := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-		if !isAlphaNum && c != '@' && c != '.' && c != '_' && c != '+' && c != '/' && c != '-' {
-			return false
-		}
-	}
-	return true
-}
-
-func isValidServiceDirName(name string) bool {
-	if name == "" || name == "." || name == ".." || len(name) > 128 {
-		return false
-	}
-	if strings.ContainsAny(name, `/\`) {
-		return false
-	}
-	return filepath.Base(name) == name
-}
-
 func (m *Manager) runBrewUpgrade(ctx context.Context, taskID string, req UpdateRequest) error {
 	pkgName := strings.TrimSpace(req.TargetName)
 	if !isValidBrewPackageName(pkgName) {
@@ -229,6 +446,10 @@ func (m *Manager) runBrewUpgrade(ctx context.Context, taskID string, req UpdateR
 		m.finishTask(ctx, taskID, "failed", errMsg)
 		return fmt.Errorf("%s", errMsg)
 	}
+
+	m.pkgMu.Lock()
+	defer m.pkgMu.Unlock()
+
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("Starting Homebrew upgrade for %s -> %s", pkgName, req.TargetVersion))
 	action := "upgrade"
 	if req.BrokenLinkage {
@@ -246,17 +467,35 @@ func (m *Manager) runBrewUpgrade(ctx context.Context, taskID string, req UpdateR
 		m.finishTask(ctx, taskID, "failed", err.Error())
 		return err
 	}
-	// Verify linkage post-upgrade
+	// Verify linkage post-upgrade (skip cleanly for casks since brew linkage only inspects formulae)
 	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ brew linkage --test %s", pkgName))
+	isCask := false
 	if linkOut, linkErr := m.runner.Run(ctx, "brew", "linkage", "--test", pkgName); linkErr != nil {
-		errMsg := fmt.Sprintf("post-upgrade linkage check failed: %s", strings.TrimSpace(string(linkOut)))
-		m.logStep(ctx, taskID, "error", errMsg)
-		m.finishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf("%s", errMsg)
+		if m.isBrewCask(ctx, pkgName, linkOut) {
+			isCask = true
+			m.logStep(ctx, taskID, "info", fmt.Sprintf("Skipping linkage check for Homebrew cask %s.", pkgName))
+		} else {
+			errMsg := fmt.Sprintf("post-upgrade linkage check failed: %s", strings.TrimSpace(string(linkOut)))
+			m.logStep(ctx, taskID, "error", errMsg)
+			m.finishTask(ctx, taskID, "failed", errMsg)
+			return fmt.Errorf("%s", errMsg)
+		}
 	}
-	m.logStep(ctx, taskID, "info", fmt.Sprintf("Homebrew formula %s is healthy and linked.", pkgName))
+	if isCask {
+		m.logStep(ctx, taskID, "info", fmt.Sprintf("Homebrew cask %s upgrade completed.", pkgName))
+	} else {
+		m.logStep(ctx, taskID, "info", fmt.Sprintf("Homebrew formula %s is healthy and linked.", pkgName))
+	}
 	m.finishTask(ctx, taskID, "succeeded", "")
 	return nil
+}
+
+func (m *Manager) isBrewCask(ctx context.Context, pkgName string, linkOut []byte) bool {
+	if strings.Contains(string(linkOut), "No available formula") {
+		return true
+	}
+	out, err := m.runner.Run(ctx, "brew", "list", "--cask", "--versions", pkgName)
+	return err == nil && strings.Contains(string(out), pkgName)
 }
 
 func isValidAptToken(s string, minLen, maxLen int) bool {
@@ -268,11 +507,10 @@ func isValidAptToken(s string, minLen, maxLen int) bool {
 	}
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		isAlphaNum := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-		if i == 0 && !isAlphaNum {
+		if i == 0 && !isASCIIAlphaNum(c) {
 			return false
 		}
-		if !isAlphaNum && c != '.' && c != '+' && c != '-' && c != '_' {
+		if !isASCIIAlphaNum(c) && c != '.' && c != '+' && c != '-' && c != '_' {
 			return false
 		}
 	}
@@ -308,6 +546,9 @@ func (m *Manager) runAptUpgrade(ctx context.Context, taskID string, req UpdateRe
 		return fmt.Errorf("%s", errMsg)
 	}
 
+	m.pkgMu.Lock()
+	defer m.pkgMu.Unlock()
+
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("Starting APT upgrade for %s -> %s", pkgName, req.TargetVersion))
 	aptArgs := []string{"install", "--only-upgrade", "-y", "-o", "DPkg::Lock::Timeout=60", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold", "--", pkgName}
 	if req.BrokenLinkage {
@@ -335,7 +576,7 @@ func (m *Manager) runAptUpgrade(ctx context.Context, taskID string, req UpdateRe
 		return err
 	}
 
-	// Verify package installation state post-upgrade (mirroring brew linkage check)
+	// Verify package installation state post-upgrade
 	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ dpkg -s -- %s", pkgName))
 	if statusOut, statusErr := m.runner.Run(ctx, "dpkg", "-s", "--", pkgName); statusErr != nil || !isDpkgStatusHealthy(statusOut) {
 		errMsg := fmt.Sprintf("post-upgrade package check failed: %s", strings.TrimSpace(string(statusOut)))
@@ -350,20 +591,32 @@ func (m *Manager) runAptUpgrade(ctx context.Context, taskID string, req UpdateRe
 }
 
 func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req UpdateRequest) error {
-	svcName := strings.TrimSpace(req.TargetName)
-	svcKey := ""
-	if idx := strings.IndexByte(svcName, '/'); idx >= 0 {
-		svcKey = svcName[idx+1:]
-		svcName = svcName[:idx]
-	}
-	if !isValidServiceDirName(svcName) {
+	svcName, svcKey, ok := splitDockerTarget(req.TargetName)
+	if !ok {
 		errMsg := fmt.Sprintf("invalid service name %q", req.TargetName)
 		m.logStep(ctx, taskID, "error", errMsg)
 		m.finishTask(ctx, taskID, "failed", errMsg)
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	composeDir := filepath.Join(m.cfg.Scanner.ServicesDir, svcName)
+	servicesDir := "../../services"
+	batchDir := "../../batch"
+	deadManTimeout := 60
+	var statefulVolumes map[string]string
+	if m.cfg != nil {
+		if m.cfg.Scanner.ServicesDir != "" {
+			servicesDir = m.cfg.Scanner.ServicesDir
+		}
+		if m.cfg.Updater.BatchDir != "" {
+			batchDir = m.cfg.Updater.BatchDir
+		}
+		if m.cfg.Updater.DeadManTimeoutSeconds > 0 {
+			deadManTimeout = m.cfg.Updater.DeadManTimeoutSeconds
+		}
+		statefulVolumes = m.cfg.Updater.StatefulVolumes
+	}
+
+	composeDir := filepath.Join(servicesDir, svcName)
 	refs, err := scanner.ParseComposeImageRefs(composeDir)
 	if err != nil || len(refs) == 0 {
 		errMsg := fmt.Sprintf("failed to inspect compose service %s: %v", svcName, err)
@@ -374,19 +627,44 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 
 	ref := refs[0]
 	if svcKey != "" {
+		matched := false
 		for _, r := range refs {
 			if r.ServiceKey == svcKey {
 				ref = r
+				matched = true
 				break
 			}
 		}
+		if !matched {
+			errMsg := fmt.Sprintf("service key %q not found in compose service %s", svcKey, svcName)
+			m.logStep(ctx, taskID, "error", errMsg)
+			m.finishTask(ctx, taskID, "failed", errMsg)
+			return fmt.Errorf("%s", errMsg)
+		}
+	}
+
+	targetTag := strings.TrimSpace(req.TargetVersion)
+	if targetTag == "" {
+		targetTag = ref.Tag
+	}
+	if !IsValidDockerTag(targetTag) {
+		errMsg := fmt.Sprintf("invalid target image tag %q", targetTag)
+		m.logStep(ctx, taskID, "error", errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	// Step 1: Save Rollback Snapshot
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 1/6: Saving rollback snapshot for %s (%s:%s)...", req.TargetName, ref.ImageRepo, ref.Tag))
-	composeBytes, _ := os.ReadFile(ref.ComposePath)
+	composeBytes, readErr := os.ReadFile(ref.ComposePath)
+	if readErr != nil {
+		errMsg := fmt.Sprintf("failed to read compose file for snapshot: %v", readErr)
+		m.logStep(ctx, taskID, "error", errMsg)
+		m.finishTask(ctx, taskID, "failed", errMsg)
+		return fmt.Errorf("%s", errMsg)
+	}
 	envBytes, _ := os.ReadFile(ref.EnvPath)
-	prevDigest := m.inspectDigest(ctx, ref.ContainerName, ref.ImageRepo+":"+ref.Tag)
+	prevDigest := m.inspectDigest(ctx, composeDir, ref.ServiceKey, ref.ContainerName, ref.ImageRepo+":"+ref.Tag)
 
 	snap := &models.RollbackSnapshot{
 		ID:              fmt.Sprintf("snap-%s-%d", svcName, time.Now().Unix()),
@@ -401,13 +679,15 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 		EnvBackup:       envBytes,
 		CreatedAt:       time.Now().UTC(),
 	}
-	_ = m.store.SaveSnapshot(ctx, snap)
+	if m.store != nil {
+		_ = m.store.SaveSnapshot(ctx, snap)
+	}
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("Snapshot saved: version=%s digest=%s", snap.PreviousVersion, snap.PreviousDigest))
 
 	// Step 2: Optional Pre-Update Volume Backup
 	if req.RunBackup {
-		volName := m.cfg.Updater.StatefulVolumes[svcName]
-		backupScript := filepath.Join(m.cfg.Updater.BatchDir, "backup-volumes.sh")
+		volName := statefulVolumes[svcName]
+		backupScript := filepath.Join(batchDir, "backup-volumes.sh")
 		var args []string
 		if volName != "" {
 			args = append(args, volName)
@@ -428,10 +708,6 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	}
 
 	// Step 3: Pre-pull target image BEFORE stopping running container
-	targetTag := req.TargetVersion
-	if targetTag == "" {
-		targetTag = ref.Tag
-	}
 	targetImage := ref.ImageRepo + ":" + targetTag
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 3/6: Pre-pulling target image %s before stopping container...", targetImage))
 	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ docker pull %s", targetImage))
@@ -462,27 +738,35 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	}
 
 	// Step 5: Post-Update Health Verification & 60s Dead-Man's Rollback
-	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 5/6: Verifying container health (Dead-Man's Rollback armed=%v, timeout=%ds)...", req.EnableDeadMan, m.cfg.Updater.DeadManTimeoutSeconds))
+	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 5/6: Verifying container health (Dead-Man's Rollback armed=%v, timeout=%ds)...", req.EnableDeadMan, deadManTimeout))
 	verifyErr := upErr
 	if verifyErr == nil {
-		verifyErr = m.verifyContainerHealthy(ctx, ref.ContainerName, svcName)
+		verifyErr = m.verifyContainerHealthy(ctx, composeDir, ref.ServiceKey, ref.ContainerName, svcName)
 	}
 
 	if verifyErr != nil {
+		rbCtx, rbCancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		defer rbCancel()
 		reason := fmt.Sprintf("post-update verification failed: %v", verifyErr)
-		m.logStep(ctx, taskID, "error", reason)
+		m.logStep(rbCtx, taskID, "error", reason)
 		if req.EnableDeadMan || m.isCriticalService(svcName) {
-			m.logStep(ctx, taskID, "info", "Executing Automatic Dead-Man's Rollback to previous snapshot...")
-			if rbErr := m.restoreSnapshot(ctx, taskID, snap, composeDir); rbErr != nil {
-				m.logStep(ctx, taskID, "error", fmt.Sprintf("Rollback failed: %v", rbErr))
+			m.logStep(rbCtx, taskID, "info", "Executing Automatic Dead-Man's Rollback to previous snapshot...")
+			if rbErr := m.restoreSnapshot(rbCtx, taskID, snap, composeDir); rbErr != nil {
+				failMsg := fmt.Sprintf("%s; automatic rollback failed: %v", reason, rbErr)
+				m.logStep(rbCtx, taskID, "error", failMsg)
+				m.finishTask(rbCtx, taskID, "failed", failMsg)
+				if m.alerter != nil {
+					_ = m.alerter.NotifyDeadManRollback(rbCtx, req.TargetName, snap.PreviousVersion, targetTag, failMsg)
+				}
+				return fmt.Errorf("%s", failMsg)
 			}
-			m.finishTask(ctx, taskID, "rolled_back", reason)
+			m.finishTask(rbCtx, taskID, "rolled_back", reason)
 			if m.alerter != nil {
-				_ = m.alerter.NotifyDeadManRollback(ctx, req.TargetName, snap.PreviousVersion, targetTag, reason)
+				_ = m.alerter.NotifyDeadManRollback(rbCtx, req.TargetName, snap.PreviousVersion, targetTag, reason)
 			}
 			return fmt.Errorf("update failed and was automatically rolled back: %w", verifyErr)
 		}
-		m.finishTask(ctx, taskID, "failed", reason)
+		m.finishTask(rbCtx, taskID, "failed", reason)
 		return verifyErr
 	}
 
@@ -500,6 +784,8 @@ func (m *Manager) commitComposeFile(ctx context.Context, taskID, stepPrefix, com
 		m.logStep(ctx, taskID, "info", stepPrefix+"Git auto-commit disabled; skipping.")
 		return
 	}
+	m.gitMu.Lock()
+	defer m.gitMu.Unlock()
 	gitCfg := m.cfg.Updater.Git
 	botName := strings.TrimSpace(gitCfg.BotName)
 	if botName == "" {
@@ -565,19 +851,42 @@ func (m *Manager) RollbackService(ctx context.Context, serviceName, triggeredBy 
 }
 
 func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceName, triggeredBy string) (*models.Task, error) {
-	localNode := config.DefaultNodeName()
-	if m.cfg != nil && m.cfg.NodeName != "" {
-		localNode = m.cfg.NodeName
+	if m.store == nil {
+		return nil, errors.New("store is not configured")
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	nodeName = strings.TrimSpace(nodeName)
+	serviceName = strings.TrimSpace(serviceName)
+	svcDirName, _, ok := splitDockerTarget(serviceName)
+	if !ok {
+		return nil, fmt.Errorf("invalid service name %q", serviceName)
+	}
+
+	lockKey := m.targetLockKey(nodeName, string(models.TargetDocker), serviceName)
+	if !m.acquireTarget(lockKey) {
+		return nil, fmt.Errorf("%w: %s", ErrUpdateInProgress, serviceName)
+	}
+	m.wg.Add(1)
+	defer m.wg.Done()
+	defer m.releaseTarget(lockKey)
+
+	// Detach from caller HTTP cancellation once validated so self-restarting services
+	// (e.g. cloudflare-tunnel, nginx-proxy) complete rollback cleanly.
+	execCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Minute)
+	defer cancel()
+
+	localNode := m.localNodeName()
 	if nodeName != "" && !strings.EqualFold(nodeName, "local") && !strings.EqualFold(nodeName, localNode) {
-		nodeInfo, err := m.store.GetNode(ctx, nodeName)
+		nodeInfo, err := m.store.GetNode(execCtx, nodeName)
 		if err != nil {
 			return nil, err
 		}
 		if nodeInfo.Status != models.NodeStatusApproved {
 			return nil, fmt.Errorf("cannot rollback unapproved node %q (status: %s)", nodeName, nodeInfo.Status)
 		}
-		task, err := m.store.CreateTask(ctx, &models.Task{
+		task, err := m.store.CreateTask(execCtx, &models.Task{
 			Node:        nodeName,
 			TaskType:    "docker_rollback",
 			TargetType:  "docker",
@@ -595,9 +904,9 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 			"triggered_by": triggeredBy,
 		})
 		endpoint := strings.TrimRight(nodeInfo.URL, "/") + "/api/agent/rollback"
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+		httpReq, err := http.NewRequestWithContext(execCtx, http.MethodPost, endpoint, bytes.NewReader(body))
 		if err != nil {
-			m.finishTask(ctx, task.ID, "failed", err.Error())
+			m.finishTask(execCtx, task.ID, "failed", err.Error())
 			return task, err
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
@@ -608,20 +917,24 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 		if tok != "" {
 			httpReq.Header.Set("X-NAL-Node-Token", tok)
 		}
-		resp, err := m.httpClient.Do(httpReq)
+		resp, err := m.safeHTTPClient().Do(httpReq)
 		if err != nil {
-			m.finishTask(ctx, task.ID, "failed", err.Error())
+			m.finishTask(execCtx, task.ID, "failed", err.Error())
 			return task, err
 		}
 		defer resp.Body.Close()
 		var payload struct {
 			Status   string               `json:"status"`
 			ErrorMsg string               `json:"error_msg"`
+			Error    string               `json:"error"`
 			Logs     []models.TaskLogLine `json:"logs"`
 		}
 		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&payload)
 		for _, l := range payload.Logs {
-			m.logStep(ctx, task.ID, l.Stream, fmt.Sprintf("[%s] %s", nodeName, l.Line))
+			m.logStep(execCtx, task.ID, l.Stream, fmt.Sprintf("[%s] %s", nodeName, l.Line))
+		}
+		if payload.ErrorMsg == "" && payload.Error != "" {
+			payload.ErrorMsg = payload.Error
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			errMsg := fmt.Sprintf("remote agent %s returned HTTP %d", nodeName, resp.StatusCode)
@@ -630,37 +943,37 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 			}
 			payload.Status = "failed"
 			payload.ErrorMsg = errMsg
-			m.finishTask(ctx, task.ID, payload.Status, payload.ErrorMsg)
+			m.logStep(execCtx, task.ID, "error", errMsg)
+			m.finishTask(execCtx, task.ID, payload.Status, payload.ErrorMsg)
 			return task, fmt.Errorf("%s", errMsg)
 		}
 		if decodeErr != nil {
 			errMsg := fmt.Sprintf("failed to decode agent response from %s: %v", nodeName, decodeErr)
-			m.finishTask(ctx, task.ID, "failed", errMsg)
+			m.logStep(execCtx, task.ID, "error", errMsg)
+			m.finishTask(execCtx, task.ID, "failed", errMsg)
 			return task, fmt.Errorf("%s", errMsg)
 		}
 		if payload.Status == "" {
 			payload.Status = "succeeded"
 		}
-		m.finishTask(ctx, task.ID, payload.Status, payload.ErrorMsg)
 		if payload.Status != "succeeded" {
-			return task, fmt.Errorf("remote rollback on %s ended with status %q: %s", nodeName, payload.Status, payload.ErrorMsg)
+			errMsg := payload.ErrorMsg
+			if errMsg == "" {
+				errMsg = fmt.Sprintf("remote rollback on %s ended with status %q", nodeName, payload.Status)
+			}
+			m.logStep(execCtx, task.ID, "error", errMsg)
+			m.finishTask(execCtx, task.ID, payload.Status, errMsg)
+			return task, fmt.Errorf("remote rollback on %s ended with status %q: %s", nodeName, payload.Status, errMsg)
 		}
+		m.finishTask(execCtx, task.ID, payload.Status, payload.ErrorMsg)
 		return task, nil
 	}
 
-	svcDirName := strings.TrimSpace(serviceName)
-	if idx := strings.IndexByte(svcDirName, '/'); idx >= 0 {
-		svcDirName = svcDirName[:idx]
-	}
-	if !isValidServiceDirName(svcDirName) {
-		return nil, fmt.Errorf("invalid service name %q", serviceName)
-	}
-
-	snap, err := m.store.GetLatestSnapshot(ctx, serviceName)
+	snap, err := m.store.GetLatestSnapshot(execCtx, serviceName)
 	if err != nil {
 		return nil, err
 	}
-	task, err := m.store.CreateTask(ctx, &models.Task{
+	task, err := m.store.CreateTask(execCtx, &models.Task{
 		Node:        localNode,
 		TaskType:    "docker_rollback",
 		TargetType:  "docker",
@@ -674,36 +987,55 @@ func (m *Manager) RollbackServiceOnNode(ctx context.Context, nodeName, serviceNa
 		return nil, err
 	}
 
-	composeDir := filepath.Join(m.cfg.Scanner.ServicesDir, svcDirName)
+	servicesDir := "../../services"
+	if m.cfg != nil && m.cfg.Scanner.ServicesDir != "" {
+		servicesDir = m.cfg.Scanner.ServicesDir
+	}
+	composeDir := filepath.Join(servicesDir, svcDirName)
 
 	var preRollbackBytes []byte
 	if snap.ComposePath != "" {
 		preRollbackBytes, _ = os.ReadFile(snap.ComposePath)
 	}
-	if err := m.restoreSnapshot(ctx, task.ID, snap, composeDir); err != nil {
-		m.finishTask(ctx, task.ID, "failed", err.Error())
+	if err := m.restoreSnapshot(execCtx, task.ID, snap, composeDir); err != nil {
+		m.finishTask(execCtx, task.ID, "failed", err.Error())
 		return task, err
 	}
 	if snap.ComposePath != "" {
 		commitMsg := fmt.Sprintf("revert(services): roll back %s image to %s", serviceName, snap.PreviousVersion)
-		m.commitComposeFile(ctx, task.ID, "", snap.ComposePath, preRollbackBytes, commitMsg)
+		m.commitComposeFile(execCtx, task.ID, "", snap.ComposePath, preRollbackBytes, commitMsg)
 	}
-	m.finishTask(ctx, task.ID, "succeeded", "")
+	m.finishTask(execCtx, task.ID, "succeeded", "")
 	return task, nil
+}
+
+func existingFilePerm(path string, fallback os.FileMode) os.FileMode {
+	if st, err := os.Stat(path); err == nil && st.Mode().Perm() != 0 {
+		return st.Mode().Perm()
+	}
+	return fallback
 }
 
 func (m *Manager) restoreSnapshot(ctx context.Context, taskID string, snap *models.RollbackSnapshot, composeDir string) error {
 	if len(snap.ComposeBackup) > 0 && snap.ComposePath != "" {
-		_ = os.WriteFile(snap.ComposePath, snap.ComposeBackup, 0644)
+		perm := existingFilePerm(snap.ComposePath, 0644)
+		if err := writeFileAtomic(snap.ComposePath, snap.ComposeBackup, perm); err != nil {
+			return fmt.Errorf("failed to restore compose file %s: %w", snap.ComposePath, err)
+		}
 	}
 	if len(snap.EnvBackup) > 0 && snap.EnvPath != "" {
-		_ = os.WriteFile(snap.EnvPath, snap.EnvBackup, 0600)
+		perm := existingFilePerm(snap.EnvPath, 0600)
+		if err := writeFileAtomic(snap.EnvPath, snap.EnvBackup, perm); err != nil {
+			return fmt.Errorf("failed to restore env file %s: %w", snap.EnvPath, err)
+		}
 	}
 	if snap.PreviousDigest != "" && snap.ImageRepo != "" && snap.PreviousVersion != "" {
 		src := fmt.Sprintf("%s@%s", snap.ImageRepo, snap.PreviousDigest)
 		dst := fmt.Sprintf("%s:%s", snap.ImageRepo, snap.PreviousVersion)
 		m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ docker tag %s %s", src, dst))
-		_, _ = m.runner.Run(ctx, "docker", "tag", src, dst)
+		if tagOut, tagErr := m.runner.Run(ctx, "docker", "tag", src, dst); tagErr != nil {
+			m.logStep(ctx, taskID, "warn", fmt.Sprintf("docker tag warning (continuing compose restore): %v %s", tagErr, strings.TrimSpace(string(tagOut))))
+		}
 	}
 	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ docker compose --project-directory %s up -d", composeDir))
 	out, err := m.runner.Run(ctx, "docker", "compose", "--project-directory", composeDir, "up", "-d")
@@ -713,25 +1045,78 @@ func (m *Manager) restoreSnapshot(ctx context.Context, taskID string, snap *mode
 	return err
 }
 
-func (m *Manager) inspectDigest(ctx context.Context, containerName, imageRef string) string {
-	out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{json .Image}}", containerName)
-	if err == nil {
-		imgID := strings.Trim(strings.TrimSpace(string(out)), `"`)
-		if imgID != "" {
-			if dOut, err := m.runner.Run(ctx, "docker", "image", "inspect", "--format", "{{json .RepoDigests}}", imgID); err == nil {
-				var digests []string
-				if json.Unmarshal(dOut, &digests) == nil && len(digests) > 0 {
-					if idx := strings.Index(digests[0], "sha256:"); idx >= 0 {
-						return digests[0][idx:]
-					}
-				}
+func isHexContainerID(s string) bool {
+	if len(s) < 12 || len(s) > 64 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *Manager) resolveComposeContainer(ctx context.Context, composeDir, serviceKey string) string {
+	if composeDir == "" || serviceKey == "" {
+		return ""
+	}
+	out, err := m.runner.Run(ctx, "docker", "compose", "--project-directory", composeDir, "ps", "-a", "-q", serviceKey)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		cand := strings.TrimSpace(line)
+		if isHexContainerID(cand) {
+			return cand
+		}
+	}
+	return ""
+}
+
+func extractRepoDigest(dOut []byte) string {
+	var digests []string
+	if json.Unmarshal(dOut, &digests) == nil && len(digests) > 0 {
+		if idx := strings.Index(digests[0], "sha256:"); idx >= 0 {
+			return digests[0][idx:]
+		}
+	}
+	return ""
+}
+
+func (m *Manager) inspectDigest(ctx context.Context, composeDir, serviceKey, containerName, imageRef string) string {
+	var imgID string
+	if containerName != "" {
+		if out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{json .Image}}", containerName); err == nil {
+			imgID = strings.Trim(strings.TrimSpace(string(out)), `"`)
+		}
+	}
+	if imgID == "" && composeDir != "" && serviceKey != "" {
+		if cid := m.resolveComposeContainer(ctx, composeDir, serviceKey); cid != "" {
+			if out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{json .Image}}", cid); err == nil {
+				imgID = strings.Trim(strings.TrimSpace(string(out)), `"`)
+			}
+		}
+	}
+	if imgID != "" {
+		if dOut, err := m.runner.Run(ctx, "docker", "image", "inspect", "--format", "{{json .RepoDigests}}", imgID); err == nil {
+			if dig := extractRepoDigest(dOut); dig != "" {
+				return dig
+			}
+		}
+	}
+	if imageRef != "" {
+		if dOut, err := m.runner.Run(ctx, "docker", "image", "inspect", "--format", "{{json .RepoDigests}}", imageRef); err == nil {
+			if dig := extractRepoDigest(dOut); dig != "" {
+				return dig
 			}
 		}
 	}
 	return ""
 }
 
-func (m *Manager) verifyContainerHealthy(ctx context.Context, containerName string, svcName string) error {
+func (m *Manager) verifyContainerHealthy(ctx context.Context, composeDir, serviceKey, containerName, svcName string) error {
 	timeoutSec := 60
 	if m.cfg != nil && m.cfg.Updater.DeadManTimeoutSeconds > 0 {
 		timeoutSec = m.cfg.Updater.DeadManTimeoutSeconds
@@ -743,10 +1128,17 @@ func (m *Manager) verifyContainerHealthy(ctx context.Context, containerName stri
 	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
 
 	for {
-		out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{json .State}}", containerName)
+		targetContainer := containerName
+		out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{json .State}}", targetContainer)
+		if err != nil && composeDir != "" && serviceKey != "" {
+			if cid := m.resolveComposeContainer(ctx, composeDir, serviceKey); cid != "" {
+				targetContainer = cid
+				out, err = m.runner.Run(ctx, "docker", "inspect", "--format", "{{json .State}}", targetContainer)
+			}
+		}
 		if err != nil {
 			if time.Now().After(deadline) {
-				return fmt.Errorf("failed to inspect container %s: %w", containerName, err)
+				return fmt.Errorf("failed to inspect container %s: %w", targetContainer, err)
 			}
 			select {
 			case <-ctx.Done():
@@ -769,14 +1161,14 @@ func (m *Manager) verifyContainerHealthy(ctx context.Context, containerName stri
 			if stateObj.Status == "created" {
 				// Container is still initializing; continue polling until deadline
 			} else if stateObj.Restarting || (stateObj.Status != "running" && stateObj.Status != "ok") {
-				return fmt.Errorf("container %s state is %q (restarting=%v)", containerName, stateObj.Status, stateObj.Restarting)
+				return fmt.Errorf("container %s state is %q (restarting=%v)", targetContainer, stateObj.Status, stateObj.Restarting)
 			} else {
 				health := stateObj.HealthStatus
 				if health == "" && stateObj.Health != nil {
 					health = stateObj.Health.Status
 				}
 				if health == "unhealthy" {
-					return fmt.Errorf("container %s healthcheck reported unhealthy", containerName)
+					return fmt.Errorf("container %s healthcheck reported unhealthy", targetContainer)
 				}
 				if health == "starting" {
 					// Container is still initializing its healthcheck; continue polling until deadline
@@ -788,14 +1180,14 @@ func (m *Manager) verifyContainerHealthy(ctx context.Context, containerName stri
 			if raw == "created" {
 				// Container is still initializing; continue polling until deadline
 			} else if raw != "running" && raw != "ok" {
-				return fmt.Errorf("container %s state is %q (expected running)", containerName, raw)
+				return fmt.Errorf("container %s state is %q (expected running)", targetContainer, raw)
 			} else {
 				return nil
 			}
 		}
 
 		if time.Now().After(deadline) {
-			return fmt.Errorf("container %s did not become healthy within %ds", containerName, timeoutSec)
+			return fmt.Errorf("container %s did not become healthy within %ds", targetContainer, timeoutSec)
 		}
 		select {
 		case <-ctx.Done():
@@ -806,6 +1198,9 @@ func (m *Manager) verifyContainerHealthy(ctx context.Context, containerName stri
 }
 
 func (m *Manager) isCriticalService(svcName string) bool {
+	if m.cfg == nil {
+		return false
+	}
 	for _, c := range m.cfg.Updater.CriticalServices {
 		if c == svcName {
 			return true

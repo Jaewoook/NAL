@@ -138,6 +138,9 @@ func TestNormalizeURL(t *testing.T) {
 		{"192.168.1.100:10311/", "http://192.168.1.100:10311"},
 		{"http://192.168.1.100:10311///", "http://192.168.1.100:10311"},
 		{"https://agent.corp.internal:10247", "https://agent.corp.internal:10247"},
+		{"HTTP://192.168.1.5:10247/", "http://192.168.1.5:10247"},
+		{"HTTPS://agent.corp.internal:10247/", "https://agent.corp.internal:10247"},
+		{"ftp://files.internal/pkg", "ftp://files.internal/pkg"},
 		{"agent.corp.internal:10247/", "http://agent.corp.internal:10247"},
 		{"  http://localhost:8080/  ", "http://localhost:8080"},
 	}
@@ -146,5 +149,57 @@ func TestNormalizeURL(t *testing.T) {
 		if got != tc.expected {
 			t.Errorf("NormalizeURL(%q) = %q; want %q", tc.input, got, tc.expected)
 		}
+	}
+}
+
+func TestConfig_PublicURLPropagationAndPlaceholderScrubbing(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "config.yml")
+	yamlData := `agent_token: "replace-with-shared-lan-agent-secret"
+web:
+  public_url: "https://hub.example.org"
+auth:
+  session_secret: "replace-with-openssl-rand-hex-32"
+  rp_id: ""
+`
+	if err := os.WriteFile(tmp, []byte(yamlData), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(tmp)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.AgentToken != "" {
+		t.Fatalf("expected placeholder agent_token to be cleared, got %q", cfg.AgentToken)
+	}
+	if cfg.Auth.SessionSecret == "" || cfg.Auth.SessionSecret == "replace-with-openssl-rand-hex-32" {
+		t.Fatalf("expected placeholder session_secret to be replaced with random hex, got %q", cfg.Auth.SessionSecret)
+	}
+	if cfg.Auth.PublicURL != "https://hub.example.org" {
+		t.Fatalf("expected Web.PublicURL propagated to Auth.PublicURL, got %q", cfg.Auth.PublicURL)
+	}
+	if cfg.Auth.RPID != "hub.example.org" {
+		t.Fatalf("expected RPID derived from PublicURL hostname, got %q", cfg.Auth.RPID)
+	}
+}
+
+func TestConfig_RPIDDerivedWithoutExplicitRPID(t *testing.T) {
+	// 1. YAML omitting rp_id inherits hostname from web.public_url instead of hardcoded "localhost"
+	tmp := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(tmp, []byte("web:\n  public_url: \"https://sec.internal.example:10311\"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfgYAML, err := LoadConfig(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfgYAML.Auth.RPID != "sec.internal.example" {
+		t.Fatalf("expected RPID derived from web.public_url when rp_id omitted, got %q", cfgYAML.Auth.RPID)
+	}
+
+	// 2. SECURITY_HUB_PUBLIC_URL env override drives RPID when SECURITY_HUB_RP_ID is unset
+	t.Setenv("SECURITY_HUB_PUBLIC_URL", "https://hub-env.jaewook.dev")
+	cfgEnv := DefaultConfigWithEnv()
+	if cfgEnv.Auth.RPID != "hub-env.jaewook.dev" {
+		t.Fatalf("expected RPID derived from SECURITY_HUB_PUBLIC_URL, got %q", cfgEnv.Auth.RPID)
 	}
 }

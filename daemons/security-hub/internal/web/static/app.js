@@ -4,16 +4,37 @@ let dashboardData = null;
 let pendingUpdateReq = null;
 let activeEventSource = null;
 let activeScanEventSource = null;
+let csrfToken = '';
+
+function getCsrfToken() {
+  const m = document.cookie.match(/(?:^|;\s*)nal_csrf_token=([^;]+)/);
+  if (m) return decodeURIComponent(m[1]);
+  return csrfToken || '';
+}
+
+function apiFetch(url, options = {}) {
+  const opts = {...options};
+  const method = String(opts.method || 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    const tok = getCsrfToken();
+    if (tok) {
+      opts.headers = {...(opts.headers || {}), 'X-CSRF-Token': tok};
+    }
+  }
+  return fetch(url, opts);
+}
 
 async function initApp() {
   const res = await fetch('/api/auth/session');
   const session = await res.json();
   if (!session.authenticated) {
+    csrfToken = '';
     document.getElementById('view-login').style.display = 'block';
     document.getElementById('view-dashboard').style.display = 'none';
     document.getElementById('header-actions').style.display = 'none';
     return;
   }
+  csrfToken = session.csrf_token || getCsrfToken();
   document.getElementById('view-login').style.display = 'none';
   document.getElementById('view-dashboard').style.display = 'block';
   document.getElementById('header-actions').style.display = 'flex';
@@ -149,7 +170,8 @@ function renderSummary() {
   document.getElementById('stat-outdated').textContent = `${outdated} Updates`;
   document.getElementById('stat-outdated-sub').textContent = `${skipped} Skipped · ${broken} Broken Linkage`;
   document.getElementById('stat-tasks').textContent = `${tasks.length} Runs`;
-  document.getElementById('stat-last-scan').textContent = scan.scanned_at ? `Last scan: ${new Date(scan.scanned_at).toLocaleString()}` : 'Last scan: Not yet run';
+  const hasScanTime = scan.scanned_at && !String(scan.scanned_at).startsWith('0001-');
+  document.getElementById('stat-last-scan').textContent = hasScanTime ? `Last scan: ${new Date(scan.scanned_at).toLocaleString()}` : 'Last scan: Not yet run';
 
   document.getElementById('badge-docker').textContent = items.filter(i => i.target_type === 'docker').length;
   document.getElementById('badge-brew').textContent = items.filter(i => i.target_type === 'brew' || i.target_type === 'apt').length;
@@ -255,6 +277,14 @@ function renderItemsTable() {
             <div class="tooltip-box">${escapeHtml(tooltipText)}</div>
           </div>
         `;
+      } else if (item.eol.status === 'unknown') {
+        const tooltipText = item.eol.message || 'Lifecycle track not mapped';
+        eolHtml = `
+          <div class="tooltip-wrapper">
+            <span class="badge skip">Not Tracked</span>
+            <div class="tooltip-box">${escapeHtml(tooltipText)}</div>
+          </div>
+        `;
       } else if (item.eol.eol_date) {
         eolHtml = `
           <div class="tooltip-wrapper">
@@ -340,6 +370,10 @@ function openUpdateModal(item, selectId) {
   document.getElementById('modal-desc').textContent = `Updating ${item.name} on ${nodeName} from ${item.current_version} → ${targetVer}`;
   document.getElementById('chk-backup').checked = !!item.stateful;
   document.getElementById('lbl-backup').style.display = isDocker ? 'flex' : 'none';
+  const chkSnapshot = document.getElementById('chk-snapshot');
+  if (chkSnapshot) chkSnapshot.checked = true;
+  const chkDeadman = document.getElementById('chk-deadman');
+  if (chkDeadman) chkDeadman.checked = true;
   const critBadge = document.getElementById('modal-crit-badge');
   if (critBadge) critBadge.style.display = isDocker ? 'inline-flex' : 'none';
   const lblSnapshot = document.getElementById('lbl-snapshot');
@@ -364,7 +398,7 @@ async function confirmAndStartUpdate() {
     enable_dead_man: document.getElementById('chk-deadman').checked
   };
   closeUpdateModal();
-  const res = await fetch('/api/update', {
+  const res = await apiFetch('/api/update', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(reqBody)
@@ -386,11 +420,16 @@ async function rollbackService(encodedNodeName, encodedServiceName) {
   const nodeName = decodeURIComponent(encodedNodeName || '');
   const serviceName = decodeURIComponent(encodedServiceName || '');
   if (!confirm(`Roll back ${serviceName} on ${nodeName} to its previous snapshot version and digest?`)) return;
-  const res = await fetch('/api/rollback', {
+  const res = await apiFetch('/api/rollback', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({node: nodeName, service_name: serviceName})
   });
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    alert(`Rollback failed: ${errData.error || res.statusText}`);
+    return;
+  }
   const task = await res.json();
   await loadDashboard();
   switchTab('logs');
@@ -493,7 +532,7 @@ function renderNodesModalList() {
 
 async function approveNode(encodedName) {
   const name = decodeURIComponent(encodedName || '');
-  const res = await fetch(`/api/nodes/approve?name=${encodeURIComponent(name)}`, {method: 'POST'});
+  const res = await apiFetch(`/api/nodes/approve?name=${encodeURIComponent(name)}`, {method: 'POST'});
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     alert(`Failed to approve node: ${data.error || res.statusText}`);
@@ -506,7 +545,7 @@ async function approveNode(encodedName) {
 async function rejectNode(encodedName) {
   const name = decodeURIComponent(encodedName || '');
   if (!confirm(`Dismiss registration for "${name}"?`)) return;
-  const res = await fetch(`/api/nodes/reject?name=${encodeURIComponent(name)}`, {method: 'POST'});
+  const res = await apiFetch(`/api/nodes/reject?name=${encodeURIComponent(name)}`, {method: 'POST'});
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     alert(`Failed to dismiss node: ${data.error || res.statusText}`);
@@ -544,7 +583,7 @@ async function testRemoteNodeConnection() {
   }
 
   try {
-    const res = await fetch('/api/nodes/test', {
+    const res = await apiFetch('/api/nodes/test', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({url, token})
@@ -602,7 +641,7 @@ async function saveRemoteNode() {
     alert('Please provide both the device name and the LAN Agent URL.');
     return;
   }
-  const res = await fetch('/api/nodes', {
+  const res = await apiFetch('/api/nodes', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({name, url, token})
@@ -627,7 +666,12 @@ async function saveRemoteNode() {
 async function deleteRemoteNode(encodedName) {
   const name = decodeURIComponent(encodedName || '');
   if (!confirm(`Remove compute node "${name}" from the registry?`)) return;
-  await fetch(`/api/nodes?name=${encodeURIComponent(name)}`, {method: 'DELETE'});
+  const res = await apiFetch(`/api/nodes?name=${encodeURIComponent(name)}`, {method: 'DELETE'});
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert(`Failed to remove node: ${data.error || res.statusText}`);
+    return;
+  }
   if (currentNodeFilter === name) currentNodeFilter = 'all';
   await loadDashboard();
   renderNodesModalList();
@@ -649,11 +693,16 @@ async function skipItem(encodedNode, encodedTargetType, encodedTargetName, selec
   }
   const sel = document.getElementById(selectId);
   const ver = sel ? sel.value : '';
-  await fetch('/api/skip', {
+  const res = await apiFetch('/api/skip', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({node: nodeName, target_type: targetType, target_name: targetName, version: ver})
   });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert(`Failed to skip version: ${data.error || res.statusText}`);
+    return;
+  }
   await loadDashboard();
 }
 
@@ -669,7 +718,12 @@ async function unskipItem(encodedNode, encodedTargetType, encodedTargetName) {
     targetType = decodeURIComponent(encodedTargetType || '');
     targetName = decodeURIComponent(encodedTargetName || '');
   }
-  await fetch(`/api/skip?node=${encodeURIComponent(nodeName)}&target_type=${encodeURIComponent(targetType)}&target_name=${encodeURIComponent(targetName)}`, {method: 'DELETE'});
+  const res = await apiFetch(`/api/skip?node=${encodeURIComponent(nodeName)}&target_type=${encodeURIComponent(targetType)}&target_name=${encodeURIComponent(targetName)}`, {method: 'DELETE'});
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    alert(`Failed to unskip version: ${data.error || res.statusText}`);
+    return;
+  }
   await loadDashboard();
 }
 
@@ -686,7 +740,7 @@ async function triggerScan() {
   if (progressText) progressText.textContent = 'Initializing scan...';
 
   try {
-    const res = await fetch('/api/scan', {method: 'POST'});
+    const res = await apiFetch('/api/scan', {method: 'POST'});
     const data = await res.json().catch(() => ({}));
 
     let taskId = data.task_id;
@@ -805,20 +859,44 @@ function streamTaskLogs(encodedTaskId) {
 
   activeEventSource = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/stream`);
   activeEventSource.onmessage = (e) => {
-    const line = JSON.parse(e.data);
-    const div = document.createElement('div');
-    div.innerHTML = `<span class="log-ts">[${new Date(line.logged_at).toLocaleTimeString()}]</span> <span class="log-${escapeHtml(line.stream)}">[${escapeHtml(line.stream.toUpperCase())}]</span> ${escapeHtml(line.line)}`;
-    term.appendChild(div);
-    term.scrollTop = term.scrollHeight;
+    try {
+      const line = JSON.parse(e.data);
+      const div = document.createElement('div');
+      div.innerHTML = `<span class="log-ts">[${new Date(line.logged_at).toLocaleTimeString()}]</span> <span class="log-${escapeHtml(line.stream)}">[${escapeHtml(String(line.stream || '').toUpperCase())}]</span> ${escapeHtml(line.line)}`;
+      term.appendChild(div);
+      term.scrollTop = term.scrollHeight;
+    } catch (_) {
+      const div = document.createElement('div');
+      div.textContent = e.data;
+      term.appendChild(div);
+    }
   };
   activeEventSource.addEventListener('done', () => {
-    activeEventSource.close();
+    if (activeEventSource) {
+      activeEventSource.close();
+      activeEventSource = null;
+    }
     loadDashboard();
   });
+  activeEventSource.onerror = () => {
+    if (activeEventSource) {
+      activeEventSource.close();
+      activeEventSource = null;
+    }
+  };
 }
 
 async function logout() {
-  await fetch('/api/auth/logout', {method: 'POST'});
+  if (activeEventSource) {
+    activeEventSource.close();
+    activeEventSource = null;
+  }
+  if (activeScanEventSource) {
+    activeScanEventSource.close();
+    activeScanEventSource = null;
+  }
+  await apiFetch('/api/auth/logout', {method: 'POST'});
+  csrfToken = '';
   initApp();
 }
 
@@ -837,33 +915,49 @@ function bufferToB64url(buf) {
 }
 
 async function registerPasskey() {
-  const beginRes = await fetch('/api/auth/passkey/register/begin', {method: 'POST'});
+  const beginRes = await apiFetch('/api/auth/passkey/register/begin', {method: 'POST'});
+  if (!beginRes.ok) {
+    const errData = await beginRes.json().catch(() => ({}));
+    alert(`Failed to start passkey registration: ${errData.error || beginRes.statusText}`);
+    return;
+  }
   const opts = await beginRes.json();
+  const userId = new Uint8Array(16);
+  crypto.getRandomValues(userId);
   const cred = await navigator.credentials.create({
     publicKey: {
       challenge: b64urlToUint8Array(opts.challenge),
-      rp: {name: 'NAL Security Hub', id: window.location.hostname},
-      user: {id: new Uint8Array([1, 2, 3, 4]), name: opts.user, displayName: opts.user},
+      rp: {name: 'NAL Security Hub', id: opts.rp_id || window.location.hostname},
+      user: {id: userId, name: opts.user, displayName: opts.user},
       pubKeyCredParams: [{type: 'public-key', alg: -7}],
       timeout: 60000
     }
   });
-  const spki = cred.response.getPublicKey();
-  const finRes = await fetch('/api/auth/passkey/register/finish', {
+  const finRes = await apiFetch('/api/auth/passkey/register/finish', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
       credential_id: cred.id,
       label: `${navigator.platform || 'Device'} Passkey`,
-      public_key_spki: bufferToB64url(spki),
-      challenge: opts.challenge
+      attestation_object: bufferToB64url(cred.response.attestationObject),
+      client_data_json: bufferToB64url(cred.response.clientDataJSON)
     })
   });
-  if (finRes.ok) alert('Passkey registered for offline emergency login!');
+  if (finRes.ok) {
+    alert('Passkey registered for offline emergency login!');
+  } else {
+    const errData = await finRes.json().catch(() => ({}));
+    alert(`Passkey registration failed: ${errData.error || finRes.statusText}`);
+  }
 }
 
 async function loginWithPasskey() {
   const beginRes = await fetch('/api/auth/passkey/login/begin', {method: 'POST'});
+  if (!beginRes.ok) {
+    const errData = await beginRes.json().catch(() => ({}));
+    alert(`Passkey login unavailable: ${errData.error || beginRes.statusText}`);
+    return;
+  }
   const opts = await beginRes.json();
   if (!opts.allow_credentials || opts.allow_credentials.length === 0) {
     alert('No Passkey registered yet. Sign in via SSO or run "./security-hub auth login-link" first.');
@@ -872,6 +966,7 @@ async function loginWithPasskey() {
   const assertion = await navigator.credentials.get({
     publicKey: {
       challenge: b64urlToUint8Array(opts.challenge),
+      rpId: opts.rp_id || window.location.hostname,
       allowCredentials: opts.allow_credentials.map(id => ({type: 'public-key', id: b64urlToUint8Array(id)})),
       timeout: 60000
     }
@@ -886,8 +981,12 @@ async function loginWithPasskey() {
       signature: bufferToB64url(assertion.response.signature)
     })
   });
-  if (finRes.ok) initApp();
-  else alert('Passkey verification failed.');
+  if (finRes.ok) {
+    initApp();
+  } else {
+    const errData = await finRes.json().catch(() => ({}));
+    alert(`Passkey verification failed: ${errData.error || finRes.statusText}`);
+  }
 }
 
 function escapeHtml(s) {

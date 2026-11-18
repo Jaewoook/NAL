@@ -31,6 +31,13 @@ func (n *noopRunner) Run(ctx context.Context, name string, args ...string) ([]by
 	return []byte("running"), nil
 }
 
+func addAuthAndCSRF(req *http.Request, sessionCookie *http.Cookie, mgr *auth.Manager) {
+	req.AddCookie(sessionCookie)
+	if tok := mgr.CSRFTokenForRequest(req); tok != "" {
+		req.Header.Set(auth.CSRFHeaderName, tok)
+	}
+}
+
 func TestServer_AuthDashboardSkipAndSSELogs(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.DefaultConfig()
@@ -100,7 +107,7 @@ func TestServer_AuthDashboardSkipAndSSELogs(t *testing.T) {
 		"version":     "2026.5.5",
 	})
 	skipReq := httptest.NewRequest(http.MethodPost, "/api/skip", bytes.NewReader(skipBody))
-	skipReq.AddCookie(sessionCookie)
+	addAuthAndCSRF(skipReq, sessionCookie, authMgr)
 	skipW := httptest.NewRecorder()
 	h.ServeHTTP(skipW, skipReq)
 	if skipW.Code != http.StatusOK {
@@ -112,7 +119,7 @@ func TestServer_AuthDashboardSkipAndSSELogs(t *testing.T) {
 	}
 
 	unskipReq := httptest.NewRequest(http.MethodDelete, "/api/skip?target_type=docker&target_name=auth", nil)
-	unskipReq.AddCookie(sessionCookie)
+	addAuthAndCSRF(unskipReq, sessionCookie, authMgr)
 	unskipW := httptest.NewRecorder()
 	h.ServeHTTP(unskipW, unskipReq)
 	if unskipW.Code != http.StatusOK {
@@ -175,7 +182,7 @@ func TestServer_AuthDashboardSkipAndSSELogs(t *testing.T) {
 		"token": "atlas-secret-token",
 	})
 	nodeAddReq := httptest.NewRequest(http.MethodPost, "/api/nodes", bytes.NewReader(nodeBody))
-	nodeAddReq.AddCookie(sessionCookie)
+	addAuthAndCSRF(nodeAddReq, sessionCookie, authMgr)
 	nodeAddW := httptest.NewRecorder()
 	h.ServeHTTP(nodeAddW, nodeAddReq)
 	if nodeAddW.Code != http.StatusOK {
@@ -428,7 +435,7 @@ func TestServer_NodeAnnounce_PendingAndApprovedTransitions(t *testing.T) {
 
 	// 3. Operator calls POST /api/nodes/approve?name=MacStudio -> 200 OK
 	approveReq := httptest.NewRequest(http.MethodPost, "/api/nodes/approve?name=MacStudio", nil)
-	approveReq.AddCookie(sessionCookie)
+	addAuthAndCSRF(approveReq, sessionCookie, srv.authMgr)
 	approveW := httptest.NewRecorder()
 	h.ServeHTTP(approveW, approveReq)
 	if approveW.Code != http.StatusOK {
@@ -503,7 +510,7 @@ func TestServer_NodeAnnounce_PendingAndApprovedTransitions(t *testing.T) {
 
 	// 5. Operator calls POST /api/nodes/reject?name=MacStudio -> 200 OK
 	rejectReq := httptest.NewRequest(http.MethodPost, "/api/nodes/reject?name=MacStudio", nil)
-	rejectReq.AddCookie(sessionCookie)
+	addAuthAndCSRF(rejectReq, sessionCookie, srv.authMgr)
 	rejectW := httptest.NewRecorder()
 	h.ServeHTTP(rejectW, rejectReq)
 	if rejectW.Code != http.StatusOK {
@@ -545,7 +552,7 @@ func TestServer_NodeTest_SuccessAndTimeout(t *testing.T) {
 		"token": "valid-agent-token",
 	})
 	testReq1 := httptest.NewRequest(http.MethodPost, "/api/nodes/test", bytes.NewReader(testBody1))
-	testReq1.AddCookie(sessionCookie)
+	addAuthAndCSRF(testReq1, sessionCookie, srv.authMgr)
 	testW1 := httptest.NewRecorder()
 	h.ServeHTTP(testW1, testReq1)
 	if testW1.Code != http.StatusOK {
@@ -571,7 +578,7 @@ func TestServer_NodeTest_SuccessAndTimeout(t *testing.T) {
 		"token": "wrong-token",
 	})
 	testReq2 := httptest.NewRequest(http.MethodPost, "/api/nodes/test", bytes.NewReader(testBody2))
-	testReq2.AddCookie(sessionCookie)
+	addAuthAndCSRF(testReq2, sessionCookie, srv.authMgr)
 	testW2 := httptest.NewRecorder()
 	h.ServeHTTP(testW2, testReq2)
 	if testW2.Code != http.StatusOK {
@@ -601,7 +608,7 @@ func TestServer_NodeTest_SuccessAndTimeout(t *testing.T) {
 		"token": "valid-agent-token",
 	})
 	testReq3 := httptest.NewRequest(http.MethodPost, "/api/nodes/test", bytes.NewReader(testBody3))
-	testReq3.AddCookie(sessionCookie)
+	addAuthAndCSRF(testReq3, sessionCookie, srv.authMgr)
 	testW3 := httptest.NewRecorder()
 	h.ServeHTTP(testW3, testReq3)
 	elapsed := time.Since(start)
@@ -780,7 +787,7 @@ func TestServer_AsyncScanAndConcurrencyMutex(t *testing.T) {
 
 	// 1. Trigger POST /api/scan: assert HTTP 202 with task_id
 	scanReq1 := httptest.NewRequest(http.MethodPost, "/api/scan", nil)
-	scanReq1.AddCookie(sessionCookie)
+	addAuthAndCSRF(scanReq1, sessionCookie, authMgr)
 	w1 := httptest.NewRecorder()
 	h.ServeHTTP(w1, scanReq1)
 	if w1.Code != http.StatusAccepted {
@@ -802,7 +809,7 @@ func TestServer_AsyncScanAndConcurrencyMutex(t *testing.T) {
 
 	// 2. Immediately trigger second POST /api/scan: assert HTTP 409 Conflict while first scan is running
 	scanReq2 := httptest.NewRequest(http.MethodPost, "/api/scan", nil)
-	scanReq2.AddCookie(sessionCookie)
+	addAuthAndCSRF(scanReq2, sessionCookie, authMgr)
 	w2 := httptest.NewRecorder()
 	h.ServeHTTP(w2, scanReq2)
 	if w2.Code != http.StatusConflict {
@@ -869,11 +876,18 @@ func TestServer_AsyncScanAndConcurrencyMutex(t *testing.T) {
 
 	// 4. After first scan completes, triggering POST /api/scan again succeeds (HTTP 202)
 	scanReq3 := httptest.NewRequest(http.MethodPost, "/api/scan", nil)
-	scanReq3.AddCookie(sessionCookie)
+	addAuthAndCSRF(scanReq3, sessionCookie, authMgr)
 	w3 := httptest.NewRecorder()
 	h.ServeHTTP(w3, scanReq3)
 	if w3.Code != http.StatusAccepted {
 		t.Fatalf("expected HTTP 202 on scan after completion, got %d: %s", w3.Code, w3.Body.String())
+	}
+
+	srv.NotifyShutdown()
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer waitCancel()
+	if err := srv.Wait(waitCtx); err != nil {
+		t.Fatalf("expected srv.Wait to finish cleanly after second scan trigger, got: %v", err)
 	}
 }
 
@@ -1051,7 +1065,7 @@ func TestNodeTest_ProbeClientSafety_NoRedirectAndLimitReader(t *testing.T) {
 
 	reqBody := fmt.Sprintf(`{"url":%q,"token":"secret"}`, agentServer.URL)
 	testReq := httptest.NewRequest(http.MethodPost, "/api/nodes/test", strings.NewReader(reqBody))
-	testReq.AddCookie(sessionCookie)
+	addAuthAndCSRF(testReq, sessionCookie, authMgr)
 	testW := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(testW, testReq)
 
@@ -1103,7 +1117,7 @@ func TestOrchestrator_ScheduledAndManualScanCoordination(t *testing.T) {
 
 	// Manual scan request from UI should receive HTTP 409 Conflict with the active task ID
 	req := httptest.NewRequest(http.MethodPost, "/api/scan", nil)
-	req.AddCookie(sessionCookie)
+	addAuthAndCSRF(req, sessionCookie, authMgr)
 	w := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w, req)
 
@@ -1127,7 +1141,7 @@ func TestOrchestrator_ScheduledAndManualScanCoordination(t *testing.T) {
 
 	// Now manual scan should succeed
 	req2 := httptest.NewRequest(http.MethodPost, "/api/scan", nil)
-	req2.AddCookie(sessionCookie)
+	addAuthAndCSRF(req2, sessionCookie, authMgr)
 	w2 := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(w2, req2)
 	if w2.Code != http.StatusAccepted {
@@ -1197,7 +1211,7 @@ func TestServer_AgentTokenPreHashedAndTrailingSlashNormalization(t *testing.T) {
 		"url":  "http://192.168.1.140:10247",
 	})
 	conflictReq := httptest.NewRequest(http.MethodPost, "/api/nodes", bytes.NewReader(hubConflictBody))
-	conflictReq.AddCookie(sessionCookie)
+	addAuthAndCSRF(conflictReq, sessionCookie, srv.authMgr)
 	conflictW := httptest.NewRecorder()
 	h.ServeHTTP(conflictW, conflictReq)
 	if conflictW.Code != http.StatusBadRequest {
@@ -1210,7 +1224,7 @@ func TestServer_AgentTokenPreHashedAndTrailingSlashNormalization(t *testing.T) {
 		"url":  "http://192.168.1.141:10247/",
 	})
 	manReq := httptest.NewRequest(http.MethodPost, "/api/nodes", bytes.NewReader(manualAddBody))
-	manReq.AddCookie(sessionCookie)
+	addAuthAndCSRF(manReq, sessionCookie, srv.authMgr)
 	manW := httptest.NewRecorder()
 	h.ServeHTTP(manW, manReq)
 	if manW.Code != http.StatusOK {
@@ -1252,7 +1266,7 @@ func TestNodeTest_TokenFallbackAndSchemeNormalization(t *testing.T) {
 		"url": rawTarget,
 	})
 	testReq := httptest.NewRequest(http.MethodPost, "/api/nodes/test", bytes.NewReader(testBody))
-	testReq.AddCookie(sessionCookie)
+	addAuthAndCSRF(testReq, sessionCookie, srv.authMgr)
 	testW := httptest.NewRecorder()
 	h.ServeHTTP(testW, testReq)
 
@@ -1444,7 +1458,7 @@ func TestRaspberryPiAgent_AptScanAndRemoteUpgrade(t *testing.T) {
 		"version":     "3.0.14-1~deb12u1",
 	})
 	skipReq := httptest.NewRequest(http.MethodPost, "/api/skip", bytes.NewReader(skipBody))
-	skipReq.AddCookie(cookie)
+	addAuthAndCSRF(skipReq, cookie, hubAuthMgr)
 	skipW := httptest.NewRecorder()
 	hubH.ServeHTTP(skipW, skipReq)
 	if skipW.Code != http.StatusOK {
@@ -1465,7 +1479,7 @@ func TestRaspberryPiAgent_AptScanAndRemoteUpgrade(t *testing.T) {
 	}
 
 	unskipReq := httptest.NewRequest(http.MethodDelete, "/api/skip?node=RPi-01&target_type=apt&target_name=openssl", nil)
-	unskipReq.AddCookie(cookie)
+	addAuthAndCSRF(unskipReq, cookie, hubAuthMgr)
 	unskipW := httptest.NewRecorder()
 	hubH.ServeHTTP(unskipW, unskipReq)
 	if unskipW.Code != http.StatusOK {
@@ -1474,6 +1488,281 @@ func TestRaspberryPiAgent_AptScanAndRemoteUpgrade(t *testing.T) {
 	skippedAfter, _ := hubStore.ListSkippedVersions(context.Background())
 	if _, stillExists := skippedAfter["RPi-01:apt:openssl"]; stillExists {
 		t.Fatalf("expected RPi-01:apt:openssl to be removed after DELETE /api/skip, got %v", skippedAfter)
+	}
+}
+
+func TestServer_SecurityHardening_CSRF_SyncValidation_SSE404_AgentHandler(t *testing.T) {
+	srv, sessionCookie, store, cfg := setupTestHubServer(t)
+	h := srv.Handler()
+
+	// 1. Logout rejects GET and blocks CSRF without X-CSRF-Token
+	getLogoutW := httptest.NewRecorder()
+	h.ServeHTTP(getLogoutW, httptest.NewRequest(http.MethodGet, "/api/auth/logout", nil))
+	if getLogoutW.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 on GET /api/auth/logout, got %d", getLogoutW.Code)
+	}
+
+	noCsrfReq := httptest.NewRequest(http.MethodPost, "/api/skip", strings.NewReader(`{"target_type":"docker","target_name":"db","version":"17"}`))
+	noCsrfReq.AddCookie(sessionCookie)
+	noCsrfW := httptest.NewRecorder()
+	h.ServeHTTP(noCsrfW, noCsrfReq)
+	if noCsrfW.Code != http.StatusForbidden || !strings.Contains(noCsrfW.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("expected 403 JSON on POST /api/skip without X-CSRF-Token, got %d ct=%q", noCsrfW.Code, noCsrfW.Header().Get("Content-Type"))
+	}
+
+	sameSiteReq := httptest.NewRequest(http.MethodPost, "/api/skip", strings.NewReader(`{"target_type":"docker","target_name":"db","version":"17"}`))
+	addAuthAndCSRF(sameSiteReq, sessionCookie, srv.authMgr)
+	sameSiteReq.Header.Set("Sec-Fetch-Site", "same-site")
+	sameSiteW := httptest.NewRecorder()
+	h.ServeHTTP(sameSiteW, sameSiteReq)
+	if sameSiteW.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 on Sec-Fetch-Site=same-site, got %d", sameSiteW.Code)
+	}
+
+	// 2. Synchronous /api/update validation rejects invalid tag before creating background task
+	badUpdateReq := httptest.NewRequest(http.MethodPost, "/api/update", strings.NewReader(`{"target_type":"docker","target_name":"db","target_version":"16.0\nprivileged: true"}`))
+	addAuthAndCSRF(badUpdateReq, sessionCookie, srv.authMgr)
+	badUpdateW := httptest.NewRecorder()
+	h.ServeHTTP(badUpdateW, badUpdateReq)
+	if badUpdateW.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request on invalid /api/update tag, got %d: %s", badUpdateW.Code, badUpdateW.Body.String())
+	}
+
+	// 3. SSE stream returns 404 JSON error on unknown taskID before setting text/event-stream headers
+	sse404Req := httptest.NewRequest(http.MethodGet, "/api/tasks/nonexistent-task/stream", nil)
+	sse404Req.AddCookie(sessionCookie)
+	sse404W := httptest.NewRecorder()
+	h.ServeHTTP(sse404W, sse404Req)
+	if sse404W.Code != http.StatusNotFound || !strings.Contains(sse404W.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("expected 404 JSON on unknown task stream, got %d ct=%q", sse404W.Code, sse404W.Header().Get("Content-Type"))
+	}
+
+	// 4. AgentHandler restricts routes exclusively to /api/agent/* and propagates Docker HasRollback
+	_ = store.SaveSnapshot(context.Background(), &models.RollbackSnapshot{
+		ID:              "snap-db-1",
+		ServiceName:     "db",
+		PreviousVersion: "16.4-alpine",
+	})
+	agentH := srv.AgentHandler()
+	for _, hubRoute := range []string{"/", "/api/dashboard", "/api/auth/session", "/api/update", "/api/nodes/announce"} {
+		w := httptest.NewRecorder()
+		agentH.ServeHTTP(w, httptest.NewRequest(http.MethodGet, hubRoute, nil))
+		if w.Code != http.StatusNotFound {
+			t.Errorf("expected 404 on hub route %s when using AgentHandler, got %d", hubRoute, w.Code)
+		}
+	}
+
+	// /api/agent/rollback nonexistent snapshot does not nil-panic
+	rbReq := httptest.NewRequest(http.MethodPost, "/api/agent/rollback", strings.NewReader(`{"service_name":"db"}`))
+	rbReq.Header.Set("X-NAL-Node-Token", cfg.AgentToken)
+	rbW := httptest.NewRecorder()
+	agentH.ServeHTTP(rbW, rbReq)
+	if rbW.Code != http.StatusOK && rbW.Code != http.StatusBadRequest {
+		t.Fatalf("expected clean response from /api/agent/rollback, got %d: %s", rbW.Code, rbW.Body.String())
+	}
+}
+
+func TestServer_Round2_AuthNil503_SSEShutdownWakeup_And_AtomicAnnounce(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. Server with nil authMgr serves Handler() cleanly and returns 503 JSON on protected/auth routes
+	store, err := db.NewSpoolStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.DefaultConfig()
+	cfg.AgentToken = "announce-secret"
+	nilAuthSrv := NewServer(cfg, store, nil, nil, nil, nil)
+	nilH := nilAuthSrv.Handler()
+
+	for _, tc := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/auth/oidc/login"},
+		{http.MethodGet, "/api/auth/oidc/callback"},
+		{http.MethodGet, "/api/auth/token-login?token=abc"},
+		{http.MethodPost, "/api/auth/passkey/login/begin"},
+		{http.MethodGet, "/api/dashboard"},
+		{http.MethodPost, "/api/update"},
+		{http.MethodPost, "/api/rollback"},
+		{http.MethodPost, "/api/skip"},
+	} {
+		w := httptest.NewRecorder()
+		nilH.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 on %s %s with nil authMgr, got %d (%s)", tc.method, tc.path, w.Code, w.Body.String())
+		}
+	}
+
+	// Direct calls with nil authMgr do not panic either
+	for _, fn := range []http.HandlerFunc{
+		nilAuthSrv.handleUpdate,
+		nilAuthSrv.handleRollback,
+		nilAuthSrv.handleSkip,
+	} {
+		w := httptest.NewRecorder()
+		fn(w, httptest.NewRequest(http.MethodPost, "/test", strings.NewReader("{}")))
+	}
+
+	// 2. handleNodeAnnounce uses atomic AnnounceNode (URL change demotes approved -> pending, rejected -> 403)
+	announceReq := func(payload string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/api/nodes/announce", strings.NewReader(payload))
+		nilH.ServeHTTP(w, r)
+		return w
+	}
+	w1 := announceReq(`{"name":"rpi-edge","url":"http://10.0.0.50:10247","token":"announce-secret","os_version":"debian/12"}`)
+	if w1.Code != http.StatusOK || !strings.Contains(w1.Body.String(), `"pending"`) {
+		t.Fatalf("expected initial announce 200 pending, got %d: %s", w1.Code, w1.Body.String())
+	}
+	if err := store.ApproveNode(ctx, "rpi-edge"); err != nil {
+		t.Fatal(err)
+	}
+	w2 := announceReq(`{"name":"rpi-edge","url":"http://10.0.0.99:10247","token":"announce-secret"}`)
+	if w2.Code != http.StatusOK || !strings.Contains(w2.Body.String(), `"pending"`) {
+		t.Fatalf("expected URL change announce 200 demoted to pending, got %d: %s", w2.Code, w2.Body.String())
+	}
+	if err := store.RejectNode(ctx, "rpi-edge"); err != nil {
+		t.Fatal(err)
+	}
+	w3 := announceReq(`{"name":"rpi-edge","url":"http://10.0.0.99:10247","token":"announce-secret"}`)
+	if w3.Code != http.StatusForbidden {
+		t.Fatalf("expected rejected node announce 403 Forbidden, got %d: %s", w3.Code, w3.Body.String())
+	}
+
+	// 3. NotifyShutdown registered on http.Server unblocks active SSE task log stream immediately
+	srv, sessionCookie, hubStore, _ := setupTestHubServer(t)
+	runningTask, err := hubStore.CreateTask(ctx, &models.Task{
+		Node:       "hub",
+		TaskType:   "docker_update",
+		TargetType: "docker",
+		TargetName: "db",
+		Status:     "running",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewUnstartedServer(srv.Handler())
+	ts.Config.RegisterOnShutdown(srv.NotifyShutdown)
+	ts.Start()
+	defer ts.Close()
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/tasks/"+runningTask.ID+"/stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(sessionCookie)
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("SSE GET failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	shutCtx, shutCancel := context.WithTimeout(ctx, 2*time.Second)
+	defer shutCancel()
+	if err := ts.Config.Shutdown(shutCtx); err != nil {
+		t.Fatalf("expected HTTP server Shutdown to complete promptly after NotifyShutdown unblocked SSE stream, got: %v", err)
+	}
+}
+
+type blockingScanRunner struct {
+	startedOnce sync.Once
+	started     chan struct{}
+}
+
+func (b *blockingScanRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	b.startedOnce.Do(func() {
+		close(b.started)
+	})
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestServer_Round3_AgentURLValidation_And_ManualScanShutdownWait(t *testing.T) {
+	srv, sessionCookie, _, cfg := setupTestHubServer(t)
+	h := srv.Handler()
+
+	// 1. POST /api/nodes and POST /api/nodes/announce reject non-HTTP/hostless agent URLs
+	for _, badURL := range []string{"ftp://files.internal/pkg", "http://:10247", "://bad"} {
+		body := fmt.Sprintf(`{"name":"bad-node","url":%q,"token":%q}`, badURL, cfg.AgentToken)
+		reqAdd := httptest.NewRequest(http.MethodPost, "/api/nodes", strings.NewReader(body))
+		addAuthAndCSRF(reqAdd, sessionCookie, srv.authMgr)
+		wAdd := httptest.NewRecorder()
+		h.ServeHTTP(wAdd, reqAdd)
+		if wAdd.Code != http.StatusBadRequest {
+			t.Fatalf("expected POST /api/nodes to reject %q with 400, got %d (%s)", badURL, wAdd.Code, wAdd.Body.String())
+		}
+
+		reqAnn := httptest.NewRequest(http.MethodPost, "/api/nodes/announce", strings.NewReader(body))
+		wAnn := httptest.NewRecorder()
+		h.ServeHTTP(wAnn, reqAnn)
+		if wAnn.Code != http.StatusBadRequest {
+			t.Fatalf("expected POST /api/nodes/announce to reject %q with 400, got %d (%s)", badURL, wAnn.Code, wAnn.Body.String())
+		}
+	}
+
+	// 2. Manual POST /api/scan goroutine cancels on NotifyShutdown and Wait completes cleanly
+	ctx := context.Background()
+	store, err := db.NewSpoolStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanCfg := config.DefaultConfig()
+	scanCfg.Auth.SessionSecret = cfg.Auth.SessionSecret
+	authMgr, err := auth.NewManager(scanCfg.Auth, filepath.Join(t.TempDir(), "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blockRunner := &blockingScanRunner{started: make(chan struct{})}
+	scanCfg.Scanner.ServicesDir = t.TempDir()
+	scanCfg.Scanner.DaemonsDir = t.TempDir()
+	orch := scanner.NewOrchestrator(scanCfg, store, blockRunner, nil)
+	scanSrv := NewServer(scanCfg, store, orch, nil, authMgr, nil)
+
+	recLogin := httptest.NewRecorder()
+	_ = authMgr.IssueSessionCookie(recLogin, "admin@example.com", "oidc")
+	var cookie *http.Cookie
+	for _, c := range recLogin.Result().Cookies() {
+		if c.Name == auth.SessionCookieName {
+			cookie = c
+			break
+		}
+	}
+
+	scanReq := httptest.NewRequest(http.MethodPost, "/api/scan", nil)
+	addAuthAndCSRF(scanReq, cookie, authMgr)
+	scanW := httptest.NewRecorder()
+	scanSrv.Handler().ServeHTTP(scanW, scanReq)
+	if scanW.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 Accepted for POST /api/scan, got %d: %s", scanW.Code, scanW.Body.String())
+	}
+
+	select {
+	case <-blockRunner.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("manual scan goroutine did not start runner")
+	}
+
+	scanSrv.NotifyShutdown()
+	waitCtx, waitCancel := context.WithTimeout(ctx, 3*time.Second)
+	defer waitCancel()
+	if err := scanSrv.Wait(waitCtx); err != nil {
+		t.Fatalf("expected Server.Wait to complete after NotifyShutdown cancelled manual scan, got: %v", err)
+	}
+
+	// 3. POST /api/nodes/test rejects hostless URL http://:10247 without probing loopback
+	badTestReq := httptest.NewRequest(http.MethodPost, "/api/nodes/test", strings.NewReader(`{"url":"http://:10247"}`))
+	addAuthAndCSRF(badTestReq, sessionCookie, srv.authMgr)
+	badTestW := httptest.NewRecorder()
+	h.ServeHTTP(badTestW, badTestReq)
+	if badTestW.Code != http.StatusOK {
+		t.Fatalf("expected 200 JSON nodeTestResponse, got %d", badTestW.Code)
+	}
+	var testResp nodeTestResponse
+	if err := json.Unmarshal(badTestW.Body.Bytes(), &testResp); err != nil || testResp.OK || !strings.Contains(testResp.Error, "invalid url") {
+		t.Fatalf("expected hostless URL rejected with OK=false invalid url, got %+v err=%v", testResp, err)
 	}
 }
 

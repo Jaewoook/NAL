@@ -1,11 +1,14 @@
 package db
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jaewoook/security-hub/internal/models"
@@ -19,20 +22,23 @@ func defaultRunner(name string, args ...string) ([]byte, error) {
 }
 
 // PostgresBackend syncs SpoolStore state and task logs into the shared NAL
-// PostgreSQL container (`services/db`) via psql over loopback or docker exec,
+// PostgreSQL container (`services/db`) via psql over docker exec,
 // requiring zero external C/Go driver dependencies.
 type PostgresBackend struct {
 	containerName string
 	dbName        string
 	dbUser        string
-	runner        CLIRunner
+	dbPass        string
+	customRunner  CLIRunner
+	schemaMu      sync.Mutex
 	schemaReady   bool
 }
 
 func NewPostgresBackend(containerName, dbName, dbUser string, runner CLIRunner) *PostgresBackend {
-	if runner == nil {
-		runner = defaultRunner
-	}
+	return NewPostgresBackendWithPassword(containerName, dbName, dbUser, "", runner)
+}
+
+func NewPostgresBackendWithPassword(containerName, dbName, dbUser, dbPass string, runner CLIRunner) *PostgresBackend {
 	if containerName == "" {
 		containerName = "postgresql"
 	}
@@ -46,26 +52,62 @@ func NewPostgresBackend(containerName, dbName, dbUser string, runner CLIRunner) 
 		containerName: containerName,
 		dbName:        dbName,
 		dbUser:        dbUser,
-		runner:        runner,
+		dbPass:        dbPass,
+		customRunner:  runner,
 	}
 }
 
-func (p *PostgresBackend) execSQL(sql string) error {
-	if !p.schemaReady {
-		if err := p.ensureSchema(); err != nil {
+func (p *PostgresBackend) runPSQL(ctx context.Context, sql string) error {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	if p.customRunner != nil {
+		_, err := p.customRunner("docker", "exec", "-i", p.containerName,
+			"psql", "-v", "ON_ERROR_STOP=1", "-U", p.dbUser, "-d", p.dbName, "-c", sql)
+		return err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	args := []string{"exec", "-i"}
+	if p.dbPass != "" {
+		args = append(args, "-e", "PGPASSWORD")
+	}
+	args = append(args, p.containerName, "psql", "-v", "ON_ERROR_STOP=1", "-U", p.dbUser, "-d", p.dbName)
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	if p.dbPass != "" {
+		cmd.Env = append(os.Environ(), "PGPASSWORD="+p.dbPass)
+	}
+	cmd.Stdin = bytes.NewBufferString(sql)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("psql execution failed: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func (p *PostgresBackend) execSQL(ctx context.Context, sql string) error {
+	p.schemaMu.Lock()
+	ready := p.schemaReady
+	if !ready {
+		if err := p.ensureSchema(ctx); err != nil {
+			p.schemaMu.Unlock()
 			return err
 		}
 		p.schemaReady = true
 	}
-	_, err := p.runner("docker", "exec", "-i", p.containerName,
-		"psql", "-v", "ON_ERROR_STOP=1", "-U", p.dbUser, "-d", p.dbName, "-c", sql)
-	return err
+	p.schemaMu.Unlock()
+
+	return p.runPSQL(ctx, sql)
 }
 
-func (p *PostgresBackend) ensureSchema() error {
+func (p *PostgresBackend) ensureSchema(ctx context.Context) error {
 	schema := `
 CREATE TABLE IF NOT EXISTS tasks (
 	id TEXT PRIMARY KEY,
+	node TEXT,
 	task_type TEXT NOT NULL,
 	target_type TEXT NOT NULL,
 	target_name TEXT NOT NULL,
@@ -78,6 +120,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	finished_at TIMESTAMPTZ,
 	duration_ms BIGINT DEFAULT 0
 );
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS node TEXT;
 CREATE TABLE IF NOT EXISTS task_logs (
 	task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
 	seq INT NOT NULL,
@@ -123,9 +166,7 @@ CREATE TABLE IF NOT EXISTS nodes (
 	os_version TEXT
 );
 ALTER TABLE nodes ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved';`
-	_, err := p.runner("docker", "exec", "-i", p.containerName,
-		"psql", "-v", "ON_ERROR_STOP=1", "-U", p.dbUser, "-d", p.dbName, "-c", schema)
-	return err
+	return p.runPSQL(ctx, schema)
 }
 
 func quoteLiteral(s string) string {
@@ -136,23 +177,30 @@ func quoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
+func sanitizeUTF8LogLine(s string) string {
+	noNul := strings.ReplaceAll(s, "\x00", "")
+	return strings.ToValidUTF8(noNul, "\uFFFD")
+}
+
 func (p *PostgresBackend) UpsertTask(ctx context.Context, t models.Task) error {
 	fin := "NULL"
 	if !t.FinishedAt.IsZero() {
 		fin = quoteLiteral(t.FinishedAt.Format(time.RFC3339Nano))
 	}
-	sql := fmt.Sprintf(`INSERT INTO tasks (id, task_type, target_type, target_name, from_version, to_version, triggered_by, status, error_msg, started_at, finished_at, duration_ms)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d)
+	sql := fmt.Sprintf(`INSERT INTO tasks (id, node, task_type, target_type, target_name, from_version, to_version, triggered_by, status, error_msg, started_at, finished_at, duration_ms)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d)
 ON CONFLICT (id) DO UPDATE SET
+node = EXCLUDED.node,
 status = EXCLUDED.status,
 error_msg = EXCLUDED.error_msg,
 finished_at = EXCLUDED.finished_at,
-duration_ms = EXCLUDED.duration_ms;`,
-		quoteLiteral(t.ID), quoteLiteral(t.TaskType), quoteLiteral(t.TargetType), quoteLiteral(t.TargetName),
+duration_ms = EXCLUDED.duration_ms
+WHERE tasks.finished_at IS NULL OR EXCLUDED.finished_at IS NOT NULL;`,
+		quoteLiteral(t.ID), quoteLiteral(t.Node), quoteLiteral(t.TaskType), quoteLiteral(t.TargetType), quoteLiteral(t.TargetName),
 		quoteLiteral(t.FromVersion), quoteLiteral(t.ToVersion), quoteLiteral(t.TriggeredBy),
 		quoteLiteral(t.Status), quoteLiteral(t.ErrorMsg), quoteLiteral(t.StartedAt.Format(time.RFC3339Nano)),
 		fin, t.DurationMs)
-	return p.execSQL(sql)
+	return p.execSQL(ctx, sql)
 }
 
 func (p *PostgresBackend) InsertTaskLog(ctx context.Context, l models.TaskLogLine) error {
@@ -165,14 +213,15 @@ func (p *PostgresBackend) InsertTaskLogsBatch(ctx context.Context, lines []model
 	}
 	var values []string
 	for _, l := range lines {
-		lineB64 := base64.StdEncoding.EncodeToString([]byte(l.Line))
+		safeLine := sanitizeUTF8LogLine(l.Line)
+		lineB64 := base64.StdEncoding.EncodeToString([]byte(safeLine))
 		values = append(values, fmt.Sprintf("(%s, %d, %s, %s, convert_from(decode(%s, 'base64'), 'UTF8'))",
 			quoteLiteral(l.TaskID), l.Seq, quoteLiteral(l.LoggedAt.Format(time.RFC3339Nano)),
 			quoteLiteral(l.Stream), quoteLiteral(lineB64)))
 	}
 	sql := fmt.Sprintf("INSERT INTO task_logs (task_id, seq, logged_at, stream, line) VALUES %s ON CONFLICT (task_id, seq) DO NOTHING;",
 		strings.Join(values, ", "))
-	return p.execSQL(sql)
+	return p.execSQL(ctx, sql)
 }
 
 func (p *PostgresBackend) UpsertSnapshot(ctx context.Context, snap models.RollbackSnapshot) error {
@@ -181,16 +230,20 @@ func (p *PostgresBackend) UpsertSnapshot(ctx context.Context, snap models.Rollba
 	sql := fmt.Sprintf(`INSERT INTO rollback_snapshots (service_name, service_key, image_repo, previous_version, previous_digest, compose_path, compose_backup_b64, env_path, env_backup_b64, created_at)
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (service_name) DO UPDATE SET
+service_key = EXCLUDED.service_key,
+image_repo = EXCLUDED.image_repo,
 previous_version = EXCLUDED.previous_version,
 previous_digest = EXCLUDED.previous_digest,
+compose_path = EXCLUDED.compose_path,
 compose_backup_b64 = EXCLUDED.compose_backup_b64,
+env_path = EXCLUDED.env_path,
 env_backup_b64 = EXCLUDED.env_backup_b64,
 created_at = EXCLUDED.created_at;`,
 		quoteLiteral(snap.ServiceName), quoteLiteral(snap.ServiceKey), quoteLiteral(snap.ImageRepo),
 		quoteLiteral(snap.PreviousVersion), quoteLiteral(snap.PreviousDigest),
 		quoteLiteral(snap.ComposePath), quoteLiteral(cb), quoteLiteral(snap.EnvPath), quoteLiteral(eb),
 		quoteLiteral(snap.CreatedAt.Format(time.RFC3339Nano)))
-	return p.execSQL(sql)
+	return p.execSQL(ctx, sql)
 }
 
 func (p *PostgresBackend) UpsertSkippedVersion(ctx context.Context, targetType, targetName, version, actor string) error {
@@ -201,13 +254,13 @@ skipped_version = EXCLUDED.skipped_version,
 created_by = EXCLUDED.created_by,
 created_at = NOW();`,
 		quoteLiteral(targetType), quoteLiteral(targetName), quoteLiteral(version), quoteLiteral(actor))
-	return p.execSQL(sql)
+	return p.execSQL(ctx, sql)
 }
 
 func (p *PostgresBackend) DeleteSkippedVersion(ctx context.Context, targetType, targetName string) error {
 	sql := fmt.Sprintf(`DELETE FROM skipped_versions WHERE target_type = %s AND target_name = %s;`,
 		quoteLiteral(targetType), quoteLiteral(targetName))
-	return p.execSQL(sql)
+	return p.execSQL(ctx, sql)
 }
 
 func (p *PostgresBackend) UpsertSentAlert(ctx context.Context, fingerprint, alertType string) error {
@@ -215,7 +268,7 @@ func (p *PostgresBackend) UpsertSentAlert(ctx context.Context, fingerprint, aler
 VALUES (%s, %s, NOW())
 ON CONFLICT (fingerprint) DO UPDATE SET sent_at = NOW();`,
 		quoteLiteral(fingerprint), quoteLiteral(alertType))
-	return p.execSQL(sql)
+	return p.execSQL(ctx, sql)
 }
 
 func (p *PostgresBackend) UpsertNode(ctx context.Context, node models.NodeInfo) error {
@@ -241,15 +294,20 @@ os_version = EXCLUDED.os_version;`,
 		quoteLiteral(node.Name), quoteLiteral(node.URL), quoteLiteral(node.Token),
 		quoteLiteral(node.Role), quoteLiteral(status), node.Online,
 		lastSeen, quoteLiteral(node.LastError), quoteLiteral(node.OSVersion))
-	return p.execSQL(sql)
+	return p.execSQL(ctx, sql)
 }
 
 func (p *PostgresBackend) DeleteNode(ctx context.Context, name string) error {
 	sql := fmt.Sprintf(`DELETE FROM nodes WHERE name = %s;`, quoteLiteral(name))
-	return p.execSQL(sql)
+	return p.execSQL(ctx, sql)
 }
 
 func ProvisionDatabase(ctx context.Context, containerName, dbName, dbUser, dbPass string, runner CLIRunner) error {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
 	if runner == nil {
 		runner = defaultRunner
 	}
@@ -285,8 +343,8 @@ func ProvisionDatabase(ctx context.Context, containerName, dbName, dbUser, dbPas
 	_, _ = runner("docker", "exec", "-i", containerName,
 		"sh", "-c", `psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -c "$1"`, "--", grantSQL)
 
-	pg := NewPostgresBackend(containerName, dbName, dbUser, runner)
-	if err := pg.ensureSchema(); err != nil {
+	pg := NewPostgresBackendWithPassword(containerName, dbName, dbUser, dbPass, runner)
+	if err := pg.ensureSchema(ctx); err != nil {
 		return fmt.Errorf("failed to initialize schema in database %s: %w", dbName, err)
 	}
 	return nil

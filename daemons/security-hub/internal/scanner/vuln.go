@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,11 +42,32 @@ type osvQuery struct {
 	} `json:"package"`
 }
 
+type osvVulnRecord struct {
+	ID               string `json:"id"`
+	Summary          string `json:"summary"`
+	Details          string `json:"details"`
+	DatabaseSpecific struct {
+		Severity string `json:"severity"`
+	} `json:"database_specific"`
+	Severity []struct {
+		Type  string `json:"type"`
+		Score string `json:"score"`
+	} `json:"severity"`
+	Affected []struct {
+		Ranges []struct {
+			Events []struct {
+				Fixed string `json:"fixed"`
+			} `json:"events"`
+		} `json:"ranges"`
+	} `json:"affected"`
+}
+
 func cleanUpstreamVersion(raw string) string {
-	cleanVer := strings.TrimPrefix(strings.TrimSpace(raw), "v")
+	cleanVer := strings.TrimSpace(raw)
 	if idx := strings.IndexByte(cleanVer, ':'); idx >= 0 {
 		cleanVer = cleanVer[idx+1:]
 	}
+	cleanVer = strings.TrimPrefix(cleanVer, "v")
 	for _, sep := range []byte{'-', '_', '+', '~'} {
 		if idx := strings.IndexByte(cleanVer, sep); idx > 0 {
 			cleanVer = cleanVer[:idx]
@@ -92,6 +115,73 @@ func normalizeSeverity(s string) models.Severity {
 	}
 }
 
+func osvVulnsBaseURL(queryBatchURL string) string {
+	trimmed := strings.TrimRight(queryBatchURL, "/")
+	if strings.HasSuffix(trimmed, "/querybatch") {
+		return strings.TrimSuffix(trimmed, "/querybatch") + "/vulns"
+	}
+	return "https://api.osv.dev/v1/vulns"
+}
+
+func (v *VulnScanner) fetchOSVVulnDetail(ctx context.Context, id string) (osvVulnRecord, bool) {
+	if v.httpClient == nil || id == "" {
+		return osvVulnRecord{}, false
+	}
+	detailURL := osvVulnsBaseURL(v.osvURL) + "/" + url.PathEscape(id)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, detailURL, nil)
+	if err != nil {
+		return osvVulnRecord{}, false
+	}
+	resp, err := v.httpClient.Do(req)
+	if err != nil {
+		return osvVulnRecord{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return osvVulnRecord{}, false
+	}
+	var rec osvVulnRecord
+	if json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&rec) != nil {
+		return osvVulnRecord{}, false
+	}
+	return rec, true
+}
+
+func extractOSVSeverity(vuln osvVulnRecord) models.Severity {
+	if vuln.DatabaseSpecific.Severity != "" {
+		return normalizeSeverity(vuln.DatabaseSpecific.Severity)
+	}
+	for _, s := range vuln.Severity {
+		if score, err := strconv.ParseFloat(strings.TrimSpace(s.Score), 64); err == nil {
+			switch {
+			case score >= 9.0:
+				return models.SeverityCritical
+			case score >= 7.0:
+				return models.SeverityHigh
+			case score >= 4.0:
+				return models.SeverityMedium
+			default:
+				return models.SeverityLow
+			}
+		}
+	}
+	return models.SeverityHigh
+}
+
+func extractOSVFixedVersion(vuln osvVulnRecord) string {
+	fixedVer := ""
+	for _, aff := range vuln.Affected {
+		for _, rng := range aff.Ranges {
+			for _, ev := range rng.Events {
+				if ev.Fixed != "" {
+					fixedVer = ev.Fixed
+				}
+			}
+		}
+	}
+	return fixedVer
+}
+
 func (v *VulnScanner) CheckVulnerabilities(ctx context.Context, items []models.ManagedItem) error {
 	var queries []osvQuery
 	var queryIdxToItem []int
@@ -123,49 +213,50 @@ func (v *VulnScanner) CheckVulnerabilities(ctx context.Context, items []models.M
 				if resp.StatusCode == http.StatusOK {
 					var batchResp struct {
 						Results []struct {
-							Vulns []struct {
-								ID               string `json:"id"`
-								Summary          string `json:"summary"`
-								DatabaseSpecific struct {
-									Severity string `json:"severity"`
-								} `json:"database_specific"`
-								Affected []struct {
-									Ranges []struct {
-										Events []struct {
-											Fixed string `json:"fixed"`
-										} `json:"events"`
-									} `json:"ranges"`
-								} `json:"affected"`
-							} `json:"vulns"`
+							Vulns []osvVulnRecord `json:"vulns"`
 						} `json:"results"`
 					}
 					if json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&batchResp) == nil {
+						detailCache := make(map[string]osvVulnRecord)
 						for qIdx, res := range batchResp.Results {
 							if qIdx >= len(queryIdxToItem) {
 								break
 							}
 							itemIdx := queryIdxToItem[qIdx]
 							for _, vuln := range res.Vulns {
-								sev := normalizeSeverity(vuln.DatabaseSpecific.Severity)
-								if vuln.DatabaseSpecific.Severity == "" {
-									sev = models.SeverityHigh
-								}
-								fixedVer := ""
-								for _, aff := range vuln.Affected {
-									for _, rng := range aff.Ranges {
-										for _, ev := range rng.Events {
-											if ev.Fixed != "" {
-												fixedVer = ev.Fixed
-											}
+								if vuln.ID != "" && (vuln.Summary == "" || vuln.DatabaseSpecific.Severity == "") {
+									det, cached := detailCache[vuln.ID]
+									if !cached {
+										if fetched, ok := v.fetchOSVVulnDetail(ctx, vuln.ID); ok {
+											det = fetched
+											detailCache[vuln.ID] = fetched
 										}
 									}
+									if vuln.Summary == "" {
+										vuln.Summary = det.Summary
+										if vuln.Summary == "" {
+											vuln.Summary = det.Details
+										}
+									}
+									if vuln.DatabaseSpecific.Severity == "" {
+										vuln.DatabaseSpecific.Severity = det.DatabaseSpecific.Severity
+									}
+									if len(vuln.Severity) == 0 {
+										vuln.Severity = det.Severity
+									}
+									if len(vuln.Affected) == 0 {
+										vuln.Affected = det.Affected
+									}
 								}
+
+								sev := extractOSVSeverity(vuln)
+								fixedVer := extractOSVFixedVersion(vuln)
 								appendVuln(&items[itemIdx], models.Vulnerability{
 									ID:           vuln.ID,
 									Summary:      vuln.Summary,
 									Severity:     sev,
 									FixedVersion: fixedVer,
-									URL:          "https://osv.dev/vulnerability/" + vuln.ID,
+									URL:          "https://osv.dev/vulnerability/" + url.PathEscape(vuln.ID),
 								})
 							}
 						}
@@ -182,7 +273,9 @@ func (v *VulnScanner) CheckVulnerabilities(ctx context.Context, items []models.M
 				if items[i].TargetType != models.TargetDocker || items[i].ImageRef == "" {
 					continue
 				}
-				out, err := v.runner.Run(ctx, "trivy", "image", "--format", "json", "--quiet", "--scanners", "vuln", items[i].ImageRef)
+				trivyCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+				out, err := v.runner.Run(trivyCtx, "trivy", "image", "--format", "json", "--quiet", "--scanners", "vuln", "--", items[i].ImageRef)
+				cancel()
 				if err != nil {
 					continue
 				}

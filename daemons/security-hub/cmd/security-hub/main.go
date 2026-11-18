@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -29,18 +30,34 @@ func main() {
 	os.Exit(runCLI(os.Args[1:], os.Stdout))
 }
 
-func loadAppConfig(configPath string) *config.Config {
+func loadAppConfig(configPath string) (*config.Config, error) {
 	if configPath != "" {
-		if cfg, err := config.LoadConfig(configPath); err == nil {
-			return cfg
-		}
+		return config.LoadConfig(configPath)
 	}
-	if _, err := os.Stat("config.yml"); err == nil {
-		if cfg, err := config.LoadConfig("config.yml"); err == nil {
-			return cfg
-		}
+	_, err := os.Stat("config.yml")
+	if err == nil {
+		return config.LoadConfig("config.yml")
 	}
-	return config.DefaultConfigWithEnv()
+	if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to stat config.yml: %w", err)
+	}
+	return config.DefaultConfigWithEnv(), nil
+}
+
+func loadAgentTokenFromFile(cfg *config.Config) error {
+	if cfg.AgentToken != "" {
+		return nil
+	}
+	tokFile := strings.TrimSpace(os.Getenv("SECURITY_HUB_AGENT_TOKEN_FILE"))
+	if tokFile == "" {
+		return nil
+	}
+	raw, err := os.ReadFile(tokFile)
+	if err != nil {
+		return fmt.Errorf("failed to read SECURITY_HUB_AGENT_TOKEN_FILE %q: %w", tokFile, err)
+	}
+	cfg.AgentToken = strings.TrimSpace(string(raw))
+	return nil
 }
 
 func runCLI(args []string, out io.Writer) int {
@@ -52,7 +69,11 @@ func runCLI(args []string, out io.Writer) int {
 	cmd := args[0]
 	rest := args[1:]
 
-	cfg := loadAppConfig("")
+	cfg, err := loadAppConfig("")
+	if err != nil {
+		fmt.Fprintf(out, "Failed to load configuration: %v\n", err)
+		return 1
+	}
 
 	switch cmd {
 	case "auth":
@@ -84,10 +105,21 @@ func runCLI(args []string, out io.Writer) int {
 		switch sub {
 		case "install":
 			fs := flag.NewFlagSet("service install", flag.ContinueOnError)
+			fs.SetOutput(out)
 			pathFlag := fs.String("path", "", "Path to write launchd plist")
-			_ = fs.Parse(rest[1:])
-			exe, _ := os.Executable()
-			wd, _ := os.Getwd()
+			if err := fs.Parse(rest[1:]); err != nil {
+				return 1
+			}
+			exe, err := os.Executable()
+			if err != nil {
+				fmt.Fprintf(out, "Failed to resolve executable path: %v\n", err)
+				return 1
+			}
+			wd, err := os.Getwd()
+			if err != nil {
+				fmt.Fprintf(out, "Failed to resolve working directory: %v\n", err)
+				return 1
+			}
 			if err := service.InstallPlist(*pathFlag, exe, wd); err != nil {
 				fmt.Fprintf(out, "Failed to install plist: %v\n", err)
 				return 1
@@ -95,7 +127,11 @@ func runCLI(args []string, out io.Writer) int {
 			fmt.Fprintf(out, "Installed launchd service plist (%s)\n", service.LaunchdLabel)
 			return 0
 		case "status":
-			st, _ := service.Status()
+			st, err := service.Status()
+			if err != nil {
+				fmt.Fprintf(out, "Failed to check service %s status: %v\n", service.LaunchdLabel, err)
+				return 1
+			}
 			fmt.Fprintf(out, "Service %s: %s\n", service.LaunchdLabel, st)
 			return 0
 		case "start":
@@ -139,8 +175,8 @@ func runCLI(args []string, out io.Writer) int {
 		return 0
 
 	case "scan":
-		pg := db.NewPostgresBackend(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, nil)
-		store, err := db.NewSpoolStore(cfg.Database.DataDir, pg)
+		pg := db.NewPostgresBackendWithPassword(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil)
+		store, err := db.NewCLISpoolStore(cfg.Database.DataDir, pg)
 		if err != nil {
 			fmt.Fprintf(out, "Failed to open spool store: %v\n", err)
 			return 1
@@ -165,8 +201,8 @@ func runCLI(args []string, out io.Writer) int {
 			fmt.Fprintln(out, "Usage: security-hub rollback <service-name>")
 			return 1
 		}
-		pg := db.NewPostgresBackend(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, nil)
-		store, err := db.NewSpoolStore(cfg.Database.DataDir, pg)
+		pg := db.NewPostgresBackendWithPassword(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil)
+		store, err := db.NewCLISpoolStore(cfg.Database.DataDir, pg)
 		if err != nil {
 			fmt.Fprintf(out, "Failed to open spool store: %v\n", err)
 			return 1
@@ -182,7 +218,11 @@ func runCLI(args []string, out io.Writer) int {
 		return 0
 
 	case "test-alert":
-		store, _ := db.NewSpoolStore(cfg.Database.DataDir, nil)
+		store, err := db.NewCLISpoolStore(cfg.Database.DataDir, nil)
+		if err != nil {
+			fmt.Fprintf(out, "Failed to open spool store: %v\n", err)
+			return 1
+		}
 		alerter := notifier.NewAlerter(cfg.Notifications.Email, store)
 		if err := alerter.SendTestEmail(context.Background()); err != nil {
 			fmt.Fprintf(out, "Test alert failed: %v\n", err)
@@ -199,13 +239,16 @@ func runCLI(args []string, out io.Writer) int {
 			return runAgentServiceCLI(rest[1:], cfg, out)
 		}
 		fs := flag.NewFlagSet("agent", flag.ContinueOnError)
+		fs.SetOutput(out)
 		nameFlag := fs.String("name", "", "Node name (defaults to system hostname)")
 		hostFlag := fs.String("host", "", "Bind host (default 0.0.0.0)")
 		portFlag := fs.Int("port", 0, "Agent bind port (overrides config.yml web.port; default 10247)")
 		tokenFlag := fs.String("token", "", "Shared X-NAL-Node-Token secret")
 		hubFlag := fs.String("hub", "", "Security Hub URL (e.g. http://hub.lan:10311)")
 		advFlag := fs.String("advertise-url", "", "Advertise URL for this agent reachable by the hub")
-		_ = fs.Parse(rest)
+		if err := fs.Parse(rest); err != nil {
+			return 1
+		}
 		if *nameFlag != "" {
 			cfg.NodeName = *nameFlag
 		}
@@ -222,6 +265,10 @@ func runCLI(args []string, out io.Writer) int {
 		if *tokenFlag != "" {
 			cfg.AgentToken = *tokenFlag
 		}
+		if err := loadAgentTokenFromFile(cfg); err != nil {
+			fmt.Fprintf(out, "Error loading agent token: %v\n", err)
+			return 1
+		}
 		if *hubFlag != "" {
 			cfg.HubURL = *hubFlag
 		}
@@ -235,7 +282,11 @@ func runCLI(args []string, out io.Writer) int {
 			fmt.Fprintln(out, "Usage: security-hub node <add|list|remove>")
 			return 1
 		}
-		store, err := db.NewSpoolStore(cfg.Database.DataDir, nil)
+		var pg db.Backend
+		if rest[0] == "add" || rest[0] == "remove" {
+			pg = db.NewPostgresBackendWithPassword(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil)
+		}
+		store, err := db.NewCLISpoolStore(cfg.Database.DataDir, pg)
 		if err != nil {
 			fmt.Fprintf(out, "Failed to open spool store: %v\n", err)
 			return 1
@@ -248,6 +299,10 @@ func runCLI(args []string, out io.Writer) int {
 			}
 			nodeName := strings.TrimSpace(rest[1])
 			nodeURL := config.NormalizeURL(rest[2])
+			if !web.IsValidAgentHTTPURL(nodeURL) {
+				fmt.Fprintf(out, "Error: invalid agent URL %q (must use http:// or https:// with a valid host)\n", rest[2])
+				return 1
+			}
 			hubName := cfg.NodeName
 			if hubName == "" {
 				hubName = config.DefaultNodeName()
@@ -257,8 +312,11 @@ func runCLI(args []string, out io.Writer) int {
 				return 1
 			}
 			fs := flag.NewFlagSet("node add", flag.ContinueOnError)
+			fs.SetOutput(out)
 			tokFlag := fs.String("token", cfg.AgentToken, "Shared X-NAL-Node-Token secret")
-			_ = fs.Parse(rest[3:])
+			if err := fs.Parse(rest[3:]); err != nil {
+				return 1
+			}
 			if err := store.UpsertNode(context.Background(), models.NodeInfo{
 				Name:  nodeName,
 				URL:   nodeURL,
@@ -271,7 +329,11 @@ func runCLI(args []string, out io.Writer) int {
 			fmt.Fprintf(out, "Registered node %s (%s)\n", nodeName, nodeURL)
 			return 0
 		case "list":
-			nodes, _ := store.ListNodes(context.Background())
+			nodes, err := store.ListNodes(context.Background())
+			if err != nil {
+				fmt.Fprintf(out, "Failed to list nodes: %v\n", err)
+				return 1
+			}
 			fmt.Fprintf(out, "• %s (Hub, Local)\n", cfg.NodeName)
 			for _, n := range nodes {
 				fmt.Fprintf(out, "• %s (%s) — online=%v\n", n.Name, n.URL, n.Online)
@@ -282,7 +344,10 @@ func runCLI(args []string, out io.Writer) int {
 				fmt.Fprintln(out, "Usage: security-hub node remove <Name>")
 				return 1
 			}
-			_ = store.RemoveNode(context.Background(), rest[1])
+			if err := store.RemoveNode(context.Background(), rest[1]); err != nil {
+				fmt.Fprintf(out, "Failed to remove node %s: %v\n", rest[1], err)
+				return 1
+			}
 			fmt.Fprintf(out, "Removed node %s\n", rest[1])
 			return 0
 		default:
@@ -297,7 +362,7 @@ func runCLI(args []string, out io.Writer) int {
 }
 
 func runDaemon(cfg *config.Config, out io.Writer) int {
-	pg := db.NewPostgresBackend(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, nil)
+	pg := db.NewPostgresBackendWithPassword(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil)
 	store, err := db.NewSpoolStore(cfg.Database.DataDir, pg)
 	if err != nil {
 		fmt.Fprintf(out, "Failed to initialize spool store: %v\n", err)
@@ -316,8 +381,12 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Background PostgreSQL Spool Syncer (flushes queued task logs whenever services/db recovers)
+	var bgWG sync.WaitGroup
+
+	// Background PostgreSQL Spool Syncer
+	bgWG.Add(1)
 	go func() {
+		defer bgWG.Done()
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -330,8 +399,10 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 		}
 	}()
 
-	// Background Security, Outdated, Brew & EoL Scanner
+	// Background Security, Outdated, Brew/Apt & EoL Scanner
+	bgWG.Add(1)
 	go func() {
+		defer bgWG.Done()
 		runScheduledScan := func() {
 			hubName := cfg.NodeName
 			if hubName == "" {
@@ -389,25 +460,42 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 		Addr:              addr,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	httpSrv.RegisterOnShutdown(srv.NotifyShutdown)
 
+	var shutWG sync.WaitGroup
+	shutWG.Add(1)
 	go func() {
+		defer shutWG.Done()
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(shutCtx)
+		updCtx, updCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer updCancel()
+		_ = updMgr.Wait(updCtx)
+		_ = srv.Wait(updCtx)
 	}()
 
 	fmt.Fprintf(out, "NAL Security Hub listening on http://%s\n", addr)
-	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		fmt.Fprintf(out, "HTTP server error: %v\n", err)
+	listenErr := httpSrv.ListenAndServe()
+	stop()
+	shutWG.Wait()
+	bgWG.Wait()
+	if listenErr != nil && listenErr != http.ErrServerClosed {
+		fmt.Fprintf(out, "HTTP server error: %v\n", listenErr)
 		return 1
 	}
 	return 0
 }
 
 func runAgentDaemon(cfg *config.Config, out io.Writer) int {
+	if err := loadAgentTokenFromFile(cfg); err != nil {
+		fmt.Fprintf(out, "Error loading agent token: %v\n", err)
+		return 1
+	}
 	if cfg.AgentToken == "" {
 		fmt.Fprintln(out, "Error: agent_token (or -token / SECURITY_HUB_AGENT_TOKEN) is required in agent mode")
 		return 1
@@ -418,17 +506,19 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 		fmt.Fprintf(out, "Failed to initialize agent spool store: %v\n", err)
 		return 1
 	}
-	authMgr, _ := auth.NewManager(cfg.Auth, filepath.Join(cfg.Database.DataDir, "auth_state.json"))
 	orch := scanner.NewOrchestrator(cfg, store, nil, nil)
 	updMgr := updater.NewManager(cfg, store, nil, nil)
-	srv := web.NewServer(cfg, store, orch, updMgr, authMgr, nil)
+	srv := web.NewServer(cfg, store, orch, updMgr, nil, nil)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	var bgWG sync.WaitGroup
 	if cfg.HubURL != "" {
 		errCh := service.StartAnnouncer(ctx, cfg, nil)
+		bgWG.Add(1)
 		go func() {
+			defer bgWG.Done()
 			for err := range errCh {
 				if err != nil {
 					fmt.Fprintf(out, "[Agent Announcer] Warning: %v\n", err)
@@ -440,20 +530,32 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 	addr := fmt.Sprintf("%s:%d", cfg.Web.Host, cfg.Web.Port)
 	httpSrv := &http.Server{
 		Addr:              addr,
-		Handler:           srv.Handler(),
+		Handler:           srv.AgentHandler(),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
+	httpSrv.RegisterOnShutdown(srv.NotifyShutdown)
+	var shutWG sync.WaitGroup
+	shutWG.Add(1)
 	go func() {
+		defer shutWG.Done()
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		_ = httpSrv.Shutdown(shutCtx)
+		updCtx, updCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer updCancel()
+		_ = updMgr.Wait(updCtx)
 	}()
 
 	fmt.Fprintf(out, "NAL Security Hub Agent [%s] listening on http://%s\n", cfg.NodeName, addr)
-	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		fmt.Fprintf(out, "Agent HTTP server error: %v\n", err)
+	listenErr := httpSrv.ListenAndServe()
+	stop()
+	shutWG.Wait()
+	bgWG.Wait()
+	if listenErr != nil && listenErr != http.ErrServerClosed {
+		fmt.Fprintf(out, "Agent HTTP server error: %v\n", listenErr)
 		return 1
 	}
 	return 0
@@ -468,6 +570,7 @@ func runAgentServiceCLI(args []string, cfg *config.Config, out io.Writer) int {
 	switch sub {
 	case "install":
 		fs := flag.NewFlagSet("agent service install", flag.ContinueOnError)
+		fs.SetOutput(out)
 		nameFlag := fs.String("name", "", "Node name (defaults to system hostname)")
 		hostFlag := fs.String("host", "", "Bind host (default 0.0.0.0)")
 		portFlag := fs.Int("port", 0, "Agent bind port (default 10247)")
@@ -508,8 +611,16 @@ func runAgentServiceCLI(args []string, cfg *config.Config, out io.Writer) int {
 			adv = config.NormalizeURL(cfg.AgentAdvertiseURL)
 		}
 
-		exe, _ := os.Executable()
-		wd, _ := os.Getwd()
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(out, "Failed to resolve executable path: %v\n", err)
+			return 1
+		}
+		wd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(out, "Failed to resolve working directory: %v\n", err)
+			return 1
+		}
 
 		opts := service.AgentServiceOptions{
 			BinaryPath:   exe,
@@ -567,7 +678,15 @@ func runAgentServiceCLI(args []string, cfg *config.Config, out io.Writer) int {
 		return 0
 
 	case "status":
-		st, _ := service.StatusAgent()
+		st, err := service.StatusAgent()
+		if err != nil {
+			if runtime.GOOS == "darwin" {
+				fmt.Fprintf(out, "Failed to check agent service %s status: %v\n", service.AgentLaunchdLabel, err)
+			} else {
+				fmt.Fprintf(out, "Failed to check agent service %s status: %v\n", service.AgentSystemdUnit, err)
+			}
+			return 1
+		}
 		if runtime.GOOS == "darwin" {
 			fmt.Fprintf(out, "Agent service %s: %s\n", service.AgentLaunchdLabel, st)
 		} else {

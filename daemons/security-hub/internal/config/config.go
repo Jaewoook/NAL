@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -110,8 +111,8 @@ func DefaultConfig() *Config {
 			RedirectURL:     "http://localhost:10311/api/auth/oidc/callback",
 			SessionSecret:   "",
 			SessionTTLHours: 24,
-			RPID:            "localhost",
-			PublicURL:       "http://localhost:10311",
+			RPID:            "",
+			PublicURL:       "",
 		},
 		Database: DatabaseConfig{
 			ContainerName: "postgresql",
@@ -279,17 +280,29 @@ func ApplyEnvOverrides(cfg *Config) {
 	}
 }
 
+const (
+	placeholderSessionSecret = "replace-with-openssl-rand-hex-32"
+	placeholderAgentToken    = "replace-with-shared-lan-agent-secret"
+)
+
 func ValidateAndApplyDefaults(cfg *Config) {
 	if strings.TrimSpace(cfg.NodeName) == "" {
 		cfg.NodeName = DefaultNodeName()
 	}
+	if cfg.AgentToken == placeholderAgentToken {
+		cfg.AgentToken = ""
+	}
 	if cfg.Web.Port <= 0 {
 		cfg.Web.Port = 10311
 	}
-	if cfg.Auth.SessionSecret == "" || cfg.Auth.SessionSecret == "default-dev-session-secret-change-in-prod" {
+	if cfg.Auth.SessionSecret == "" ||
+		cfg.Auth.SessionSecret == "default-dev-session-secret-change-in-prod" ||
+		cfg.Auth.SessionSecret == placeholderSessionSecret {
 		randBytes := make([]byte, 32)
 		if _, err := rand.Read(randBytes); err == nil {
 			cfg.Auth.SessionSecret = hex.EncodeToString(randBytes)
+		} else {
+			cfg.Auth.SessionSecret = ""
 		}
 	}
 	if cfg.Auth.SessionTTLHours <= 0 {
@@ -297,6 +310,20 @@ func ValidateAndApplyDefaults(cfg *Config) {
 	}
 	if cfg.Auth.PublicURL == "" && cfg.Web.PublicURL != "" {
 		cfg.Auth.PublicURL = cfg.Web.PublicURL
+	}
+	if strings.TrimSpace(cfg.Auth.RPID) == "" {
+		for _, candidate := range []string{cfg.Auth.PublicURL, cfg.Web.PublicURL, cfg.Auth.RedirectURL} {
+			if candidate == "" {
+				continue
+			}
+			if u, err := url.Parse(candidate); err == nil && u.Hostname() != "" {
+				cfg.Auth.RPID = u.Hostname()
+				break
+			}
+		}
+		if strings.TrimSpace(cfg.Auth.RPID) == "" {
+			cfg.Auth.RPID = "localhost"
+		}
 	}
 	if cfg.Database.DataDir == "" {
 		cfg.Database.DataDir = "data"
@@ -350,8 +377,16 @@ func NormalizeURL(raw string) string {
 	if s == "" {
 		return ""
 	}
-	if !strings.HasPrefix(s, "http://") && !strings.HasPrefix(s, "https://") {
-		s = "http://" + s
+	lower := strings.ToLower(s)
+	switch {
+	case strings.HasPrefix(lower, "https://"):
+		return "https://" + s[len("https://"):]
+	case strings.HasPrefix(lower, "http://"):
+		return "http://" + s[len("http://"):]
+	case strings.Contains(s, "://"):
+		// Preserve non-HTTP schemes unchanged so validators reject unsupported protocols cleanly.
+		return s
+	default:
+		return "http://" + s
 	}
-	return s
 }

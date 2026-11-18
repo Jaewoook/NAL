@@ -3,7 +3,9 @@ package scanner
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jaewoook/security-hub/internal/models"
@@ -15,6 +17,19 @@ type BrewScanner struct {
 
 func NewBrewScanner(runner CommandRunner) *BrewScanner {
 	return &BrewScanner{runner: runner}
+}
+
+func brewFormulaNotesURL(name string) string {
+	parts := strings.Split(name, "/")
+	if len(parts) == 3 {
+		// Tap-qualified formula: owner/tap/formula -> GitHub tap URL when unambiguous
+		repo := parts[1]
+		if !strings.HasPrefix(repo, "homebrew-") {
+			repo = "homebrew-" + repo
+		}
+		return "https://github.com/" + url.PathEscape(parts[0]) + "/" + url.PathEscape(repo)
+	}
+	return "https://formulae.brew.sh/formula/" + url.PathEscape(name)
 }
 
 func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error) {
@@ -36,6 +51,8 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 			Installed []struct {
 				Version string `json:"version"`
 			} `json:"installed"`
+			Pinned     bool `json:"pinned"`
+			Outdated   bool `json:"outdated"`
 			Deprecated bool `json:"deprecated"`
 			Disabled   bool `json:"disabled"`
 		} `json:"formulae"`
@@ -43,6 +60,7 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 			Token      string `json:"token"`
 			Version    string `json:"version"`
 			Installed  string `json:"installed"`
+			Outdated   bool   `json:"outdated"`
 			Deprecated bool   `json:"deprecated"`
 			Disabled   bool   `json:"disabled"`
 		} `json:"casks"`
@@ -52,6 +70,7 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 	}
 
 	outdatedMap := make(map[string]string)
+	outdatedSucceeded := false
 	if outRaw, err := b.runner.Run(ctx, "brew", "outdated", "--json=v2"); err == nil {
 		var outPayload struct {
 			Formulae []struct {
@@ -64,6 +83,7 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 			} `json:"casks"`
 		}
 		if json.Unmarshal(outRaw, &outPayload) == nil {
+			outdatedSucceeded = true
 			for _, f := range outPayload.Formulae {
 				outdatedMap[f.Name] = f.CurrentVersion
 			}
@@ -73,8 +93,36 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 		}
 	}
 
+	// Bounded concurrent `brew linkage --test` checks across installed formulae
+	nFormulae := len(infoPayload.Formulae)
+	brokenFlags := make([]bool, nFormulae)
+	linkageDetails := make([]string, nFormulae)
+	if nFormulae > 0 {
+		sem := make(chan struct{}, 4)
+		var wg sync.WaitGroup
+		for idx, f := range infoPayload.Formulae {
+			wg.Add(1)
+			go func(i int, formulaName string) {
+				defer wg.Done()
+				select {
+				case sem <- struct{}{}:
+					defer func() { <-sem }()
+				case <-ctx.Done():
+					return
+				}
+				lCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+				defer cancel()
+				if linkOut, linkErr := b.runner.Run(lCtx, "brew", "linkage", "--test", formulaName); linkErr != nil && ctx.Err() == nil {
+					brokenFlags[i] = true
+					linkageDetails[i] = strings.TrimSpace(string(linkOut))
+				}
+			}(idx, f.Name)
+		}
+		wg.Wait()
+	}
+
 	var items []models.ManagedItem
-	for _, f := range infoPayload.Formulae {
+	for idx, f := range infoPayload.Formulae {
 		curVer := ""
 		if len(f.Installed) > 0 {
 			curVer = f.Installed[len(f.Installed)-1].Version
@@ -84,15 +132,14 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 			latestVer = ov
 		}
 		_, isOutdated := outdatedMap[f.Name]
-		if !isOutdated && latestVer != "" && curVer != "" && !strings.HasPrefix(curVer, latestVer) {
+		if !isOutdated && f.Outdated {
 			isOutdated = true
 		}
-
-		broken := false
-		details := ""
-		if linkOut, linkErr := b.runner.Run(ctx, "brew", "linkage", "--test", f.Name); linkErr != nil {
-			broken = true
-			details = strings.TrimSpace(string(linkOut))
+		if !isOutdated && !outdatedSucceeded && !f.Pinned && latestVer != "" && curVer != "" && !strings.HasPrefix(curVer, latestVer) {
+			isOutdated = true
+		}
+		if f.Pinned {
+			isOutdated = false
 		}
 
 		eol := models.EoLInfo{Status: models.EoLUnknown}
@@ -101,6 +148,12 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 				Product: f.Name,
 				Status:  models.EoLExpired,
 				Message: "Formula deprecated/disabled in Homebrew",
+			}
+		} else if f.Pinned {
+			eol = models.EoLInfo{
+				Product: f.Name,
+				Status:  models.EoLSupported,
+				Message: "Pinned in Homebrew",
 			}
 		}
 
@@ -116,9 +169,9 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 			LatestVersion:   latestVer,
 			AvailableTags:   avail,
 			Outdated:        isOutdated,
-			BrokenLinkage:   broken,
-			LinkageDetails:  details,
-			ReleaseNotesURL: "https://formulae.brew.sh/formula/" + f.Name,
+			BrokenLinkage:   brokenFlags[idx],
+			LinkageDetails:  linkageDetails[idx],
+			ReleaseNotesURL: brewFormulaNotesURL(f.Name),
 			EoL:             eol,
 			LastCheckedAt:   time.Now().UTC(),
 		})
@@ -131,7 +184,10 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 			latestVer = ov
 		}
 		_, isOutdated := outdatedMap[c.Token]
-		if !isOutdated && latestVer != "" && curVer != "" && curVer != latestVer {
+		if !isOutdated && c.Outdated {
+			isOutdated = true
+		}
+		if !isOutdated && !outdatedSucceeded && latestVer != "" && curVer != "" && curVer != latestVer {
 			isOutdated = true
 		}
 		eol := models.EoLInfo{Status: models.EoLSupported, Message: "Homebrew Cask"}
@@ -149,7 +205,7 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 			LatestVersion:   latestVer,
 			AvailableTags:   avail,
 			Outdated:        isOutdated,
-			ReleaseNotesURL: "https://formulae.brew.sh/cask/" + c.Token,
+			ReleaseNotesURL: "https://formulae.brew.sh/cask/" + url.PathEscape(c.Token),
 			EoL:             eol,
 			LastCheckedAt:   time.Now().UTC(),
 		})

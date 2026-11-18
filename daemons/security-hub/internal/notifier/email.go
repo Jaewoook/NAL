@@ -69,6 +69,9 @@ type loginAuth struct {
 }
 
 func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	if !server.TLS {
+		return "", nil, errors.New("unencrypted connection")
+	}
 	if server.Name != a.host {
 		return "", nil, errors.New("wrong host name")
 	}
@@ -139,6 +142,9 @@ func sendMailWithDialer(ctx context.Context, dialer dialerFunc, cfg config.Email
 					password: cfg.Password,
 					host:     host,
 				}
+				if isImplicit {
+					authToSend = forcedTLSAuth{auth: authToSend}
+				}
 			}
 			if err := client.Auth(authToSend); err != nil {
 				return fmt.Errorf("smtp auth failed: %w", err)
@@ -180,8 +186,12 @@ type pendingFinding struct {
 	line        string
 }
 
+func sanitizeEmailHeader(s string) string {
+	return strings.NewReplacer("\r", "", "\n", "", "\x00", "").Replace(strings.TrimSpace(s))
+}
+
 func (a *Alerter) NotifyScanFindings(ctx context.Context, scan *models.ScanResult) (int, error) {
-	if scan == nil {
+	if scan == nil || !a.cfg.Enabled {
 		return 0, nil
 	}
 	var findings []pendingFinding
@@ -262,10 +272,8 @@ func (a *Alerter) NotifyScanFindings(ctx context.Context, scan *models.ScanResul
 	body.WriteString("\nOpen your NAL Security Hub web dashboard to review and trigger controlled updates.\n")
 
 	subject := fmt.Sprintf("[NAL Security Alert] %d New Vulnerability / EoL Finding(s)", len(findings))
-	if a.cfg.Enabled {
-		if err := a.sendEmail(ctx, subject, body.String()); err != nil {
-			return 0, err
-		}
+	if err := a.sendEmail(ctx, subject, body.String()); err != nil {
+		return 0, err
 	}
 
 	if a.store != nil {
@@ -281,7 +289,7 @@ func (a *Alerter) NotifyDeadManRollback(ctx context.Context, serviceName, fromVe
 	if !a.cfg.Enabled {
 		return nil
 	}
-	subject := fmt.Sprintf("[NAL ROLLBACK ALERT] %s automatically rolled back to %s", serviceName, fromVer)
+	subject := fmt.Sprintf("[NAL ROLLBACK ALERT] %s automatically rolled back to %s", sanitizeEmailHeader(serviceName), sanitizeEmailHeader(fromVer))
 	body := fmt.Sprintf("NAL Security Hub — Automatic 60s Dead-Man's Rollback Executed\n"+
 		"===============================================================\n"+
 		"Service:          %s\n"+
@@ -303,16 +311,21 @@ func (a *Alerter) sendEmail(ctx context.Context, subject, body string) error {
 	if a.cfg.SMTPHost == "" {
 		return errors.New("smtp_host is not configured")
 	}
-	if a.cfg.ToEmail == "" {
+	if strings.ContainsAny(a.cfg.ToEmail, "\r\n\x00") || strings.ContainsAny(a.cfg.FromEmail, "\r\n\x00") || strings.ContainsAny(a.cfg.SMTPHost, "\r\n\x00") {
+		return errors.New("invalid email configuration containing control characters")
+	}
+	toEmail := sanitizeEmailHeader(a.cfg.ToEmail)
+	if toEmail == "" {
 		return errors.New("to_email is not configured")
 	}
-	from := a.cfg.FromEmail
+	from := sanitizeEmailHeader(a.cfg.FromEmail)
 	if from == "" {
-		from = a.cfg.Username
+		from = sanitizeEmailHeader(a.cfg.Username)
 	}
 	if from == "" {
 		from = "security-hub@localhost"
 	}
+	cleanSubject := sanitizeEmailHeader(subject)
 	addr := fmt.Sprintf("%s:%d", a.cfg.SMTPHost, a.cfg.SMTPPort)
 	var auth smtp.Auth
 	if a.cfg.Username != "" && a.cfg.Password != "" {
@@ -325,7 +338,7 @@ func (a *Alerter) sendEmail(ctx context.Context, subject, body string) error {
 		"MIME-Version: 1.0\r\n"+
 		"Content-Type: text/plain; charset=UTF-8\r\n"+
 		"Date: %s\r\n\r\n%s",
-		from, a.cfg.ToEmail, subject, now, body))
+		from, toEmail, cleanSubject, now, body))
 
 	timeout := a.timeout
 	if timeout <= 0 {
@@ -343,13 +356,13 @@ func (a *Alerter) sendEmail(ctx context.Context, subject, body string) error {
 	done := make(chan error, 1)
 	go func() {
 		if a.sendMailFunc != nil {
-			done <- a.sendMailFunc(ctx, a.cfg, addr, auth, from, []string{a.cfg.ToEmail}, msg)
+			done <- a.sendMailFunc(ctx, a.cfg, addr, auth, from, []string{toEmail}, msg)
 		} else {
 			dialer := a.dialer
 			if dialer == nil {
 				dialer = defaultDial
 			}
-			done <- sendMailWithDialer(ctx, dialer, a.cfg, addr, auth, from, []string{a.cfg.ToEmail}, msg)
+			done <- sendMailWithDialer(ctx, dialer, a.cfg, addr, auth, from, []string{toEmail}, msg)
 		}
 	}()
 	select {

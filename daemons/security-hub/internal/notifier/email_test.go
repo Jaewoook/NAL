@@ -366,3 +366,71 @@ func TestAlerter_STARTTLS_Required_FailsFastIfMissing(t *testing.T) {
 		t.Fatalf("expected error mentioning STARTTLS, got: %v", err)
 	}
 }
+
+func TestAlerter_HeaderInjectionDisabledDedupAndLoginAuthTLS(t *testing.T) {
+	ctx := context.Background()
+	store, _ := db.NewSpoolStore(t.TempDir(), nil)
+
+	// 1. Disabled alerter must NOT mark findings as already alerted
+	disabled := NewAlerter(config.EmailConfig{Enabled: false}, store)
+	scan := &models.ScanResult{
+		Items: []models.ManagedItem{
+			{
+				Node:           "Axis",
+				TargetType:     models.TargetDocker,
+				Name:           "auth",
+				CurrentVersion: "1.0",
+				CritCount:      1,
+				Vulnerabilities: []models.Vulnerability{
+					{ID: "CVE-2026-0001", Severity: models.SeverityCritical},
+				},
+			},
+		},
+	}
+	cnt, err := disabled.NotifyScanFindings(ctx, scan)
+	if err != nil || cnt != 0 {
+		t.Fatalf("expected 0 count and nil err when disabled, got cnt=%d err=%v", cnt, err)
+	}
+	sent, _ := store.HasAlertBeenSent(ctx, "Axis:cve:docker:auth:CVE-2026-0001")
+	if sent {
+		t.Fatal("disabled alerter must NOT record alert as sent")
+	}
+
+	// 2. Reject CRLF in email addresses and strip CRLF from Subject fields
+	badCfgAlerter := NewAlerter(config.EmailConfig{
+		Enabled:   true,
+		SMTPHost:  "smtp.example.com",
+		SMTPPort:  587,
+		FromEmail: "from@example.com\r\nBcc: evil@attacker.com",
+		ToEmail:   "to@example.com",
+	}, store)
+	if err := badCfgAlerter.SendTestEmail(ctx); err == nil {
+		t.Fatal("expected error when FromEmail contains CRLF")
+	}
+
+	var capturedMsg string
+	enabled := NewAlerter(config.EmailConfig{
+		Enabled:   true,
+		SMTPHost:  "smtp.example.com",
+		SMTPPort:  587,
+		FromEmail: "from@example.com",
+		ToEmail:   "to@example.com",
+	}, store)
+	enabled.sendMailFunc = func(ctx context.Context, cfg config.EmailConfig, addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		capturedMsg = string(msg)
+		return nil
+	}
+	if err := enabled.NotifyDeadManRollback(ctx, "svc\r\nBcc: x@y.com", "1.0\nEvil: 1", "2.0", "reason"); err != nil {
+		t.Fatal(err)
+	}
+	headers := strings.SplitN(capturedMsg, "\r\n\r\n", 2)[0]
+	if strings.Contains(headers, "\nBcc:") || strings.Contains(headers, "\nEvil:") || strings.Contains(headers, "\rBcc:") {
+		t.Fatalf("CRLF header injection created extra header line:\n%s", headers)
+	}
+
+	// 3. loginAuth rejects non-TLS connections
+	la := &loginAuth{username: "u", password: "p", host: "smtp.example.com"}
+	if _, _, err := la.Start(&smtp.ServerInfo{Name: "smtp.example.com", TLS: false}); err == nil {
+		t.Fatal("expected loginAuth.Start to reject unencrypted TLS=false server")
+	}
+}

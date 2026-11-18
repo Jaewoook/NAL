@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -32,6 +33,19 @@ type parsedVer struct {
 	minor  int
 	patch  int
 	suffix string
+}
+
+func isPrereleaseSuffix(s string) bool {
+	lower := strings.ToLower(strings.TrimSpace(s))
+	if lower == "" {
+		return false
+	}
+	for _, p := range []string{"rc", "alpha", "beta", "dev", "pre", "preview", "canary"} {
+		if strings.HasPrefix(lower, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseVersionTag(tag string) (parsedVer, bool) {
@@ -61,7 +75,17 @@ func compareParsedVer(a, b parsedVer) int {
 	if a.minor != b.minor {
 		return a.minor - b.minor
 	}
-	return a.patch - b.patch
+	if a.patch != b.patch {
+		return a.patch - b.patch
+	}
+	// Stable release (empty suffix) beats prerelease suffix at same major.minor.patch
+	if a.suffix == "" && isPrereleaseSuffix(b.suffix) {
+		return 1
+	}
+	if isPrereleaseSuffix(a.suffix) && b.suffix == "" {
+		return -1
+	}
+	return 0
 }
 
 func parseRegistryHostAndRepo(imageRepo string) (host, repo, tokenURL string) {
@@ -72,8 +96,21 @@ func parseRegistryHostAndRepo(imageRepo string) (host, repo, tokenURL string) {
 	case strings.HasPrefix(imageRepo, "lscr.io/"):
 		repo = strings.TrimPrefix(imageRepo, "lscr.io/")
 		return "https://lscr.io", repo, fmt.Sprintf("https://lscr.io/token?scope=repository:%s:pull", repo)
-	default:
+	case strings.HasPrefix(imageRepo, "docker.io/"):
 		repo = strings.TrimPrefix(imageRepo, "docker.io/")
+		if !strings.Contains(repo, "/") {
+			repo = "library/" + repo
+		}
+		return "https://registry-1.docker.io", repo, fmt.Sprintf("https://auth.docker.io/token?service=registry.docker.io&scope=repository:%s:pull", repo)
+	default:
+		if slash := strings.IndexByte(imageRepo, '/'); slash > 0 {
+			first := imageRepo[:slash]
+			if strings.ContainsAny(first, ".:") || first == "localhost" {
+				repo = imageRepo[slash+1:]
+				return "https://" + first, repo, ""
+			}
+		}
+		repo = imageRepo
 		if !strings.Contains(repo, "/") {
 			repo = "library/" + repo
 		}
@@ -81,7 +118,71 @@ func parseRegistryHostAndRepo(imageRepo string) (host, repo, tokenURL string) {
 	}
 }
 
+func parseWWWAuthenticateBearer(hdr, fallbackRepo string) string {
+	idx := strings.Index(strings.ToLower(hdr), "bearer ")
+	if idx < 0 {
+		return ""
+	}
+	rest := hdr[idx+len("bearer "):]
+	params := make(map[string]string)
+	for _, part := range strings.Split(rest, ",") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		k := strings.ToLower(strings.TrimSpace(kv[0]))
+		v := strings.Trim(strings.TrimSpace(kv[1]), `"`)
+		params[k] = v
+	}
+	realm := params["realm"]
+	u, err := url.Parse(realm)
+	if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Host == "" {
+		return ""
+	}
+	q := u.Query()
+	if params["service"] != "" {
+		q.Set("service", params["service"])
+	}
+	if params["scope"] != "" {
+		q.Set("scope", params["scope"])
+	} else if fallbackRepo != "" {
+		q.Set("scope", "repository:"+fallbackRepo+":pull")
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func parseNextLinkURL(baseURL, linkHdr string) string {
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+	for _, seg := range strings.Split(linkHdr, ",") {
+		if !strings.Contains(strings.ToLower(seg), `rel="next"`) && !strings.Contains(strings.ToLower(seg), "rel=next") {
+			continue
+		}
+		start := strings.IndexByte(seg, '<')
+		end := strings.IndexByte(seg, '>')
+		if start < 0 || end <= start+1 {
+			continue
+		}
+		rel, err := url.Parse(strings.TrimSpace(seg[start+1 : end]))
+		if err != nil {
+			continue
+		}
+		next := base.ResolveReference(rel)
+		if !strings.EqualFold(next.Scheme, base.Scheme) || !strings.EqualFold(next.Host, base.Host) {
+			return ""
+		}
+		return next.String()
+	}
+	return ""
+}
+
 func (r *RegistryClient) fetchToken(ctx context.Context, tokenURL string) string {
+	if tokenURL == "" || r.httpClient == nil {
+		return ""
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL, nil)
 	if err != nil {
 		return ""
@@ -105,11 +206,11 @@ func (r *RegistryClient) fetchToken(ctx context.Context, tokenURL string) string
 	return body.AccessToken
 }
 
-func (r *RegistryClient) fetchRemoteDigest(ctx context.Context, host, repo, tag, token string) string {
-	url := fmt.Sprintf("%s/v2/%s/manifests/%s", host, repo, tag)
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
+func (r *RegistryClient) fetchRemoteDigest(ctx context.Context, host, repo, tag, token string) (string, string) {
+	reqURL := fmt.Sprintf("%s/v2/%s/manifests/%s", host, repo, url.PathEscape(tag))
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, reqURL, nil)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	req.Header.Set("Accept", "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json")
 	if token != "" {
@@ -117,36 +218,77 @@ func (r *RegistryClient) fetchRemoteDigest(ctx context.Context, host, repo, tag,
 	}
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	defer resp.Body.Close()
-	return resp.Header.Get("Docker-Content-Digest")
+	return resp.Header.Get("Docker-Content-Digest"), resp.Header.Get("WWW-Authenticate")
 }
 
 func (r *RegistryClient) fetchTagsList(ctx context.Context, host, repo, token string) ([]string, error) {
-	url := fmt.Sprintf("%s/v2/%s/tags/list?n=200", host, repo)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
+	nextURL := fmt.Sprintf("%s/v2/%s/tags/list?n=200", host, repo)
+	var allTags []string
+	seenURLs := make(map[string]bool)
+	discoveredChallenge := false
+
+	const maxPages = 5
+	for page := 0; page < maxPages && nextURL != ""; page++ {
+		if seenURLs[nextURL] {
+			break
+		}
+		seenURLs[nextURL] = true
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, nextURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		resp, err := r.httpClient.Do(req)
+		if err != nil {
+			if len(allTags) > 0 {
+				return allTags, nil
+			}
+			return nil, err
+		}
+		if resp.StatusCode == http.StatusUnauthorized && token == "" && !discoveredChallenge {
+			discoveredChallenge = true
+			wwwAuth := resp.Header.Get("WWW-Authenticate")
+			resp.Body.Close()
+			if bearerURL := parseWWWAuthenticateBearer(wwwAuth, repo); bearerURL != "" {
+				if newTok := r.fetchToken(ctx, bearerURL); newTok != "" {
+					token = newTok
+					delete(seenURLs, nextURL)
+					page--
+					continue
+				}
+			}
+			return nil, fmt.Errorf("registry returned HTTP 401")
+		}
+		if resp.StatusCode != http.StatusOK {
+			status := resp.StatusCode
+			resp.Body.Close()
+			if len(allTags) > 0 {
+				return allTags, nil
+			}
+			return nil, fmt.Errorf("registry returned HTTP %d", status)
+		}
+		var payload struct {
+			Tags []string `json:"tags"`
+		}
+		decErr := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&payload)
+		linkHdr := resp.Header.Get("Link")
+		resp.Body.Close()
+		if decErr != nil {
+			if len(allTags) > 0 {
+				return allTags, nil
+			}
+			return nil, decErr
+		}
+		allTags = append(allTags, payload.Tags...)
+		nextURL = parseNextLinkURL(nextURL, linkHdr)
 	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := r.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("registry returned HTTP %d", resp.StatusCode)
-	}
-	var payload struct {
-		Tags []string `json:"tags"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&payload); err != nil {
-		return nil, err
-	}
-	return payload.Tags, nil
+	return allTags, nil
 }
 
 func (r *RegistryClient) CheckImageUpdates(ctx context.Context, imageRef string, currentDigest string) (latestVersion string, availableTags []string, remoteDigest string, outdated bool, err error) {
@@ -154,11 +296,21 @@ func (r *RegistryClient) CheckImageUpdates(ctx context.Context, imageRef string,
 	host, repo, tokenURL := parseRegistryHostAndRepo(imageRepo)
 	token := r.fetchToken(ctx, tokenURL)
 
-	remoteDigest = r.fetchRemoteDigest(ctx, host, repo, currentTag, token)
-	rawTags, _ := r.fetchTagsList(ctx, host, repo, token)
+	remoteDigest, wwwAuth := r.fetchRemoteDigest(ctx, host, repo, currentTag, token)
+	if remoteDigest == "" && token == "" && wwwAuth != "" {
+		if bearerURL := parseWWWAuthenticateBearer(wwwAuth, repo); bearerURL != "" {
+			if tok := r.fetchToken(ctx, bearerURL); tok != "" {
+				token = tok
+				remoteDigest, _ = r.fetchRemoteDigest(ctx, host, repo, currentTag, token)
+			}
+		}
+	}
+	rawTags, tagsErr := r.fetchTagsList(ctx, host, repo, token)
+	if tagsErr != nil && remoteDigest == "" {
+		return currentTag, []string{currentTag}, "", false, tagsErr
+	}
 
 	curParsed, curIsSemver := parseVersionTag(currentTag)
-	// Also handle major-only flavor tags like "16-alpine"
 	if !curIsSemver && strings.Contains(currentTag, "-") {
 		parts := strings.SplitN(currentTag, "-", 2)
 		if maj, errConv := strconv.Atoi(parts[0]); errConv == nil {
@@ -167,6 +319,7 @@ func (r *RegistryClient) CheckImageUpdates(ctx context.Context, imageRef string,
 		}
 	}
 
+	curPrerelease := curIsSemver && isPrereleaseSuffix(curParsed.suffix)
 	var candidates []parsedVer
 	for _, t := range rawTags {
 		pv, ok := parseVersionTag(t)
@@ -174,7 +327,9 @@ func (r *RegistryClient) CheckImageUpdates(ctx context.Context, imageRef string,
 			continue
 		}
 		if curIsSemver && curParsed.suffix != pv.suffix {
-			continue
+			if !(curPrerelease && pv.suffix == "") {
+				continue
+			}
 		}
 		candidates = append(candidates, pv)
 	}
@@ -203,29 +358,33 @@ func (r *RegistryClient) CheckImageUpdates(ctx context.Context, imageRef string,
 		return latestVersion, availableTags, remoteDigest, outdated, nil
 	}
 
-	// Pinned tag: prefer highest tag within the same major version if available,
-	// while still listing major upgrades in availableTags.
 	latestVersion = currentTag
-	if len(candidates) > 0 {
-		latestVersion = candidates[0].raw
-		if curIsSemver {
-			for _, c := range candidates {
-				if c.major == curParsed.major {
-					latestVersion = c.raw
-					break
-				}
+	if curIsSemver && len(candidates) > 0 {
+		bestCandidate := candidates[0].raw
+		for _, c := range candidates {
+			if c.major == curParsed.major {
+				bestCandidate = c.raw
+				break
 			}
-			if latestParsed, ok := parseVersionTag(latestVersion); ok {
-				if compareParsedVer(latestParsed, curParsed) > 0 {
-					outdated = true
-				}
-			}
-		} else if latestVersion != currentTag {
+		}
+		if latestParsed, ok := parseVersionTag(bestCandidate); ok && compareParsedVer(latestParsed, curParsed) > 0 {
+			latestVersion = bestCandidate
 			outdated = true
 		}
 	}
 	if len(availableTags) == 0 {
 		availableTags = []string{currentTag}
+	} else {
+		foundLatest := false
+		for _, t := range availableTags {
+			if t == latestVersion {
+				foundLatest = true
+				break
+			}
+		}
+		if !foundLatest {
+			availableTags = append(availableTags, latestVersion)
+		}
 	}
 	return latestVersion, availableTags, remoteDigest, outdated, nil
 }

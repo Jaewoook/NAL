@@ -1,7 +1,9 @@
 package service_test
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,10 +23,13 @@ func TestAgentService_GenerateLaunchdAndSystemd(t *testing.T) {
 		AdvertiseURL: "http://192.168.1.50:10247",
 	}
 
-	// 1. Launchd plist verification
+	// 1. Launchd plist verification (token stored in EnvironmentVariables, NEVER in ProgramArguments)
 	plist := service.GenerateAgentLaunchdPlist(opts)
 	if !strings.Contains(plist, "me.jaewook.nal.security-hub-agent") {
 		t.Errorf("expected AgentLaunchdLabel in plist, got: %s", plist)
+	}
+	if strings.Contains(plist, "<string>-token</string>") {
+		t.Fatalf("did not expect -token CLI flag in launchd ProgramArguments:\n%s", plist)
 	}
 	for _, expected := range []string{
 		"<string>agent</string>",
@@ -32,7 +37,7 @@ func TestAgentService_GenerateLaunchdAndSystemd(t *testing.T) {
 		"<string>0.0.0.0</string>",
 		"<string>-port</string>",
 		"<string>10247</string>",
-		"<string>-token</string>",
+		"<key>SECURITY_HUB_AGENT_TOKEN</key>",
 		"<string>super-secret-token</string>",
 		"<string>-hub</string>",
 		"<string>http://hub.lan:10311</string>",
@@ -48,20 +53,22 @@ func TestAgentService_GenerateLaunchdAndSystemd(t *testing.T) {
 		}
 	}
 
-	// Also verify service.AgentService.GenerateLaunchdPlist(opts)
 	if service.AgentService.GenerateLaunchdPlist(opts) != plist {
 		t.Errorf("AgentService.GenerateLaunchdPlist mismatch")
 	}
 
-	// 2. Systemd unit verification
+	// 2. Systemd unit verification (token passed via Environment/EnvironmentFile, NEVER ExecStart -token)
 	unit := service.GenerateAgentSystemdUnit(opts)
+	if strings.Contains(unit, "ExecStart=/usr/local/bin/security-hub agent -host 0.0.0.0 -port 10247 -token") {
+		t.Fatalf("did not expect -token in ExecStart:\n%s", unit)
+	}
 	for _, expected := range []string{
 		"[Unit]",
 		"[Service]",
 		"ExecStart=/usr/local/bin/security-hub agent",
 		"-host 0.0.0.0",
 		"-port 10247",
-		"-token super-secret-token",
+		"Environment=SECURITY_HUB_AGENT_TOKEN=super-secret-token",
 		"-hub http://hub.lan:10311",
 		"-name MacStudio-M2",
 		"-advertise-url http://192.168.1.50:10247",
@@ -74,7 +81,6 @@ func TestAgentService_GenerateLaunchdAndSystemd(t *testing.T) {
 		}
 	}
 
-	// Also verify GenerateSystemdUnit alias
 	if service.GenerateSystemdUnit(opts) != unit {
 		t.Errorf("GenerateSystemdUnit alias mismatch")
 	}
@@ -83,7 +89,7 @@ func TestAgentService_GenerateLaunchdAndSystemd(t *testing.T) {
 	}
 }
 
-func TestAgentService_InstallCustomPath(t *testing.T) {
+func TestAgentService_InstallCustomPathAndRestrictedPermissions(t *testing.T) {
 	tmpDir := t.TempDir()
 	customPath := filepath.Join(tmpDir, "custom-agent-service.file")
 
@@ -101,6 +107,14 @@ func TestAgentService_InstallCustomPath(t *testing.T) {
 		t.Fatalf("InstallAgent with CustomPath failed: %v", err)
 	}
 
+	st, err := os.Stat(customPath)
+	if err != nil {
+		t.Fatalf("failed to stat custom service file: %v", err)
+	}
+	if st.Mode().Perm() != 0600 {
+		t.Fatalf("expected 0600 permissions on installed service file, got %o", st.Mode().Perm())
+	}
+
 	content, err := os.ReadFile(customPath)
 	if err != nil {
 		t.Fatalf("failed to read installed custom service file: %v", err)
@@ -109,6 +123,13 @@ func TestAgentService_InstallCustomPath(t *testing.T) {
 	if !strings.Contains(sContent, "agent") || !strings.Contains(sContent, "tok123") {
 		t.Fatalf("installed content missing expected fields: %s", sContent)
 	}
+
+	// Custom systemd .service creates a 0600 EnvironmentFile instead of inline secret
+	systemdPath := filepath.Join(tmpDir, "security-hub-agent.service")
+	optsSystemd := opts
+	optsSystemd.CustomPath = systemdPath
+	// Simulate non-.plist CustomPath handling by directly calling on non-plist or testing validation
+	_ = service.InstallAgent(optsSystemd)
 }
 
 func TestAgentService_SystemdWhitespaceQuoting(t *testing.T) {
@@ -124,7 +145,7 @@ func TestAgentService_SystemdWhitespaceQuoting(t *testing.T) {
 	for _, expected := range []string{
 		`ExecStart="/opt/My Security Hub/security-hub" agent`,
 		`-name "Mac Studio M2"`,
-		`-token "super secret token"`,
+		`Environment="SECURITY_HUB_AGENT_TOKEN=super secret token"`,
 		`-hub http://hub.lan:10311`,
 	} {
 		if !strings.Contains(unit, expected) {
@@ -165,7 +186,6 @@ func TestAgentService_LaunchdPlistXMLEntityEscaping(t *testing.T) {
 	}
 
 	plist := service.GenerateAgentLaunchdPlist(opts)
-	// Assert raw unsafe XML characters are escaped
 	if strings.Contains(plist, "tok&<val>") {
 		t.Fatalf("expected unescaped & and < to be absent from plist, got:\n%s", plist)
 	}
@@ -185,8 +205,8 @@ func TestAgentService_SystemdDollarSignEscaping(t *testing.T) {
 	}
 
 	unit := service.GenerateAgentSystemdUnit(opts)
-	if !strings.Contains(unit, "-token my$$secret$$token") {
-		t.Fatalf("expected $ to be escaped as $$ in systemd token, got:\n%s", unit)
+	if !strings.Contains(unit, "Environment=SECURITY_HUB_AGENT_TOKEN=my$$secret$$token") {
+		t.Fatalf("expected $ to be escaped as $$ in systemd token env, got:\n%s", unit)
 	}
 	if !strings.Contains(unit, "-name node$$1") {
 		t.Fatalf("expected $ to be escaped as $$ in systemd name, got:\n%s", unit)
@@ -212,8 +232,33 @@ func TestAgentService_SystemdBackslashQuoting(t *testing.T) {
 		Token:      `secret\token`,
 	}
 	unit := service.GenerateAgentSystemdUnit(opts)
-	if !strings.Contains(unit, `-token "secret\\token"`) {
-		t.Fatalf("expected backslash to be quoted and escaped in systemd unit, got:\n%s", unit)
+	if !strings.Contains(unit, `Environment="SECURITY_HUB_AGENT_TOKEN=secret\\token"`) {
+		t.Fatalf("expected backslash to be quoted and escaped in systemd unit env, got:\n%s", unit)
+	}
+}
+
+func TestAgentService_RejectsDirectiveInjectionAndUnsafeUser(t *testing.T) {
+	badOpts := []service.AgentServiceOptions{
+		{Name: "node1\nExecStartPre=/bin/evil"},
+		{Token: "tok\r\nEnvironment=EVIL=1"},
+		{User: "root\nExecStart=/evil"},
+		{User: "bad user;id"},
+		{WorkingDir: "/tmp/ok\x00dir"},
+	}
+	for _, o := range badOpts {
+		o.CustomPath = filepath.Join(t.TempDir(), "test.plist")
+		if err := service.InstallAgent(o); err == nil {
+			t.Fatalf("expected InstallAgent to reject injection/invalid user in opts %+v", o)
+		}
+	}
+
+	// Defense in depth: GenerateAgentSystemdUnit strips newlines and ignores invalid User even when called directly
+	unit := service.GenerateAgentSystemdUnit(service.AgentServiceOptions{
+		Name: "node\nExecStartPre=/evil",
+		User: "bad user",
+	})
+	if strings.Contains(unit, "\nExecStartPre=") || strings.Contains(unit, "User=bad user") {
+		t.Fatalf("expected directive injection and invalid User stripped from rendered systemd unit:\n%s", unit)
 	}
 }
 
@@ -230,4 +275,166 @@ func TestHubLaunchdPlist_XMLEntityEscaping(t *testing.T) {
 	}
 }
 
+func TestAgentService_SystemdEnvFileSingleEscaping(t *testing.T) {
+	tmpDir := t.TempDir()
+	servicePath := filepath.Join(tmpDir, "security-hub-agent.service")
+	opts := service.AgentServiceOptions{
+		BinaryPath: "/usr/local/bin/security-hub",
+		WorkingDir: tmpDir,
+		Token:      `sec\ret"val$1`,
+		CustomPath: servicePath,
+	}
+	if err := service.InstallAgent(opts); err != nil {
+		t.Fatalf("InstallAgent failed: %v", err)
+	}
+	envPath := servicePath + ".env"
+	st, err := os.Stat(envPath)
+	if err != nil {
+		t.Fatalf("expected systemd .env file to be created: %v", err)
+	}
+	if st.Mode().Perm() != 0600 {
+		t.Fatalf("expected 0600 permissions on .env file, got %o", st.Mode().Perm())
+	}
+	envBytes, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "SECURITY_HUB_AGENT_TOKEN=\"sec\\\\ret\\\"val$1\"\n"
+	if string(envBytes) != expected {
+		t.Fatalf("unexpected .env file content:\ngot:  %q\nwant: %q", string(envBytes), expected)
+	}
+}
 
+type mockExitCodeErr int
+
+func (e mockExitCodeErr) Error() string { return "exit status" }
+func (e mockExitCodeErr) ExitCode() int { return int(e) }
+
+func TestService_LaunchdStopAndRestartHandlesExitStatus3(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	plistPath := service.DefaultPlistPath()
+	// Pre-create with overly permissive 0644 to verify InstallPlist atomically resets mode to 0600
+	if err := os.MkdirAll(filepath.Dir(plistPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plistPath, []byte("stale"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.InstallPlist(plistPath, "/usr/local/bin/security-hub", tmpHome); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(plistPath); err != nil || st.Mode().Perm() != 0600 {
+		t.Fatalf("expected atomic overwrite of 0644 plist to reset permissions to 0600, got err=%v perm=%v", err, st)
+	}
+	agentPlistPath := service.DefaultAgentPlistPath()
+	if err := os.WriteFile(agentPlistPath, []byte("stale-agent"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.InstallAgent(service.AgentServiceOptions{CustomPath: agentPlistPath, Token: "tok"}); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(agentPlistPath); err != nil || st.Mode().Perm() != 0600 {
+		t.Fatalf("expected atomic overwrite of 0644 agent plist to reset permissions to 0600, got err=%v perm=%v", err, st)
+	}
+
+	// 1. Loaded KeepAlive=true job: Restart unloads directly via `launchctl unload -w <plist>`
+	// (avoiding `launchctl stop` respawns before unload) and tolerates exit 3 / unload failed: 5 / exit 113.
+	var calls []string
+	restore := service.SetCmdRunner(func(name string, args ...string) ([]byte, error) {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		if len(args) >= 1 && args[0] == "unload" {
+			return nil, exec.Command("sh", "-c", "exit 3").Run()
+		}
+		return []byte(""), nil
+	})
+	defer restore()
+
+	if err := service.Restart(); err != nil {
+		t.Fatalf("expected Restart to succeed when unload handles exit status 3, got: %v", err)
+	}
+	expectedSeq := []string{
+		"launchctl list " + service.LaunchdLabel,
+		"launchctl unload -w " + plistPath,
+		"launchctl list " + service.LaunchdLabel,
+		"launchctl unload -w " + plistPath,
+		"launchctl load -w " + plistPath,
+		"launchctl start " + service.LaunchdLabel,
+	}
+	if len(calls) != len(expectedSeq) {
+		t.Fatalf("unexpected launchctl call sequence (%d calls): %v", len(calls), calls)
+	}
+	for i, want := range expectedSeq {
+		if calls[i] != want {
+			t.Fatalf("call[%d] = %q; want %q (full sequence: %v)", i, calls[i], want, calls)
+		}
+	}
+
+	// 2. Completely unloaded service: `launchctl list <label>` returns exit 113 -> no-ops cleanly
+	calls = nil
+	restoreNotLoaded := service.SetCmdRunner(func(name string, args ...string) ([]byte, error) {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		if len(args) >= 1 && args[0] == "list" {
+			return []byte("Could not find service"), mockExitCodeErr(113)
+		}
+		return []byte(""), nil
+	})
+	defer restoreNotLoaded()
+
+	if err := service.StopLaunchdServiceForTest(plistPath, service.LaunchdLabel); err != nil {
+		t.Fatalf("expected StopLaunchdServiceForTest on unloaded service to succeed, got: %v", err)
+	}
+	if len(calls) != 1 || calls[0] != "launchctl list "+service.LaunchdLabel {
+		t.Fatalf("expected only 'launchctl list' when service is unloaded, got: %v", calls)
+	}
+
+	// 3. Unexpected launchctl list error (e.g. exit status 1 permission denied) propagates instead of returning nil
+	restoreListFail := service.SetCmdRunner(func(name string, args ...string) ([]byte, error) {
+		if len(args) >= 1 && args[0] == "list" {
+			return []byte("ipc permission denied"), errors.New("exit status 1")
+		}
+		return []byte(""), nil
+	})
+	defer restoreListFail()
+
+	if err := service.StopLaunchdServiceForTest(plistPath, service.LaunchdLabel); err == nil || !strings.Contains(err.Error(), "ipc permission denied") {
+		t.Fatalf("expected non-not-loaded launchctl list error to propagate, got: %v", err)
+	}
+
+	// 4. When plist is missing on disk while job is still loaded in launchd, stopLaunchdService calls `launchctl remove <label>`
+	calls = nil
+	missingPlist := filepath.Join(tmpHome, "missing.plist")
+	restoreMissingPlist := service.SetCmdRunner(func(name string, args ...string) ([]byte, error) {
+		calls = append(calls, name+" "+strings.Join(args, " "))
+		return []byte(""), nil
+	})
+	defer restoreMissingPlist()
+
+	if err := service.StopLaunchdServiceForTest(missingPlist, service.LaunchdLabel); err != nil {
+		t.Fatalf("expected StopLaunchdServiceForTest fallback remove to succeed, got: %v", err)
+	}
+	if len(calls) != 2 || calls[1] != "launchctl remove "+service.LaunchdLabel {
+		t.Fatalf("expected fallback 'launchctl remove' when plist is missing, got: %v", calls)
+	}
+
+	// 5. Status() matches exact 3rd-column label and does NOT prefix-match AgentLaunchdLabel
+	restoreStatus := service.SetCmdRunner(func(name string, args ...string) ([]byte, error) {
+		return []byte("PID\tStatus\tLabel\n4321\t0\t" + service.AgentLaunchdLabel + "\n"), nil
+	})
+	defer restoreStatus()
+
+	hubStatus, err := service.Status()
+	if err != nil {
+		t.Fatalf("Status() error: %v", err)
+	}
+	if hubStatus != "not running / not loaded" {
+		t.Fatalf("expected Hub Status() not to prefix-match %q, got %q", service.AgentLaunchdLabel, hubStatus)
+	}
+	agentStatus, err := service.StatusAgent()
+	if err != nil {
+		t.Fatalf("StatusAgent() error: %v", err)
+	}
+	if !strings.Contains(agentStatus, service.AgentLaunchdLabel) {
+		t.Fatalf("expected StatusAgent() to match %q, got %q", service.AgentLaunchdLabel, agentStatus)
+	}
+}

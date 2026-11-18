@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,6 +32,9 @@ type Orchestrator struct {
 }
 
 func NewOrchestrator(cfg *config.Config, store db.Store, runner CommandRunner, httpClient *http.Client) *Orchestrator {
+	if cfg == nil {
+		cfg = config.DefaultConfig()
+	}
 	if runner == nil {
 		runner = NewOSCommandRunner()
 	}
@@ -51,6 +55,20 @@ func NewOrchestrator(cfg *config.Config, store db.Store, runner CommandRunner, h
 	}
 }
 
+func (o *Orchestrator) safeAgentHTTPClient() *http.Client {
+	var c http.Client
+	if o.httpClient != nil {
+		c = *o.httpClient
+	}
+	if c.Timeout <= 0 {
+		c.Timeout = 60 * time.Second
+	}
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &c
+}
+
 // IsScanning reports whether a scan is currently running and returns the active task ID if so.
 func (o *Orchestrator) IsScanning() (bool, string) {
 	o.scanMu.Lock()
@@ -59,9 +77,6 @@ func (o *Orchestrator) IsScanning() (bool, string) {
 }
 
 // StartScan attempts to acquire the scan mutex for taskID.
-// If another scan is already running, it returns false and the active task ID.
-// If acquired, it records the active task ID (defaulting to a timestamped string if empty)
-// and returns true, "".
 func (o *Orchestrator) StartScan(taskID string) (bool, string) {
 	o.scanMu.Lock()
 	defer o.scanMu.Unlock()
@@ -105,6 +120,18 @@ func ApplySkippedAndSummarize(items []models.ManagedItem, skipped map[string]str
 				items[i].Outdated = false
 				res.TotalSkipped++
 			}
+		} else if items[i].Skipped || items[i].SecurityOverride || items[i].SkippedVersion != "" {
+			items[i].Skipped = false
+			items[i].SkippedVersion = ""
+			items[i].SecurityOverride = false
+			isHeldApt := items[i].TargetType == models.TargetApt && strings.Contains(items[i].EoL.Message, "Held via apt-mark")
+			if !isHeldApt {
+				if items[i].LatestVersion != "" && items[i].CurrentVersion != "" && items[i].LatestVersion != items[i].CurrentVersion {
+					items[i].Outdated = true
+				} else if items[i].TargetType == models.TargetDocker && IsFloatingTag(items[i].CurrentVersion) && items[i].CurrentDigest != "" && items[i].RemoteDigest != "" && items[i].CurrentDigest != items[i].RemoteDigest {
+					items[i].Outdated = true
+				}
+			}
 		}
 		res.TotalCritCVEs += items[i].CritCount
 		res.TotalHighCVEs += items[i].HighCount
@@ -130,39 +157,58 @@ func (o *Orchestrator) ScanLocalNode(ctx context.Context) ([]models.ManagedItem,
 	if nodeName == "" {
 		nodeName = config.DefaultNodeName()
 	}
+
 	var localItems []models.ManagedItem
+	var scanErrs []error
+
 	if o.dockerScanner != nil {
-		if dockerItems, err := o.dockerScanner.ScanDockerServices(ctx); err == nil {
+		if dockerItems, err := o.dockerScanner.ScanDockerServices(ctx); err != nil {
+			scanErrs = append(scanErrs, fmt.Errorf("docker scanner: %w", err))
+		} else {
 			localItems = append(localItems, dockerItems...)
 		}
 	}
 	if o.brewScanner != nil {
-		if brewItems, err := o.brewScanner.ScanBrew(ctx); err == nil {
+		if brewItems, err := o.brewScanner.ScanBrew(ctx); err != nil {
+			scanErrs = append(scanErrs, fmt.Errorf("brew scanner: %w", err))
+		} else {
 			localItems = append(localItems, brewItems...)
 		}
 	}
 	if o.aptScanner != nil {
-		if aptItems, err := o.aptScanner.ScanApt(ctx); err == nil {
+		if aptItems, err := o.aptScanner.ScanApt(ctx); err != nil {
+			scanErrs = append(scanErrs, fmt.Errorf("apt scanner: %w", err))
+		} else {
 			localItems = append(localItems, aptItems...)
 		}
 	}
 	if o.daemonScanner != nil {
-		if daemonItems, err := o.daemonScanner.ScanDaemonsAndOS(ctx); err == nil {
+		if daemonItems, err := o.daemonScanner.ScanDaemonsAndOS(ctx); err != nil {
+			scanErrs = append(scanErrs, fmt.Errorf("daemon scanner: %w", err))
+		} else {
 			localItems = append(localItems, daemonItems...)
 		}
 	}
 
 	if o.vulnScanner != nil {
-		_ = o.vulnScanner.CheckVulnerabilities(ctx, localItems)
+		if err := o.vulnScanner.CheckVulnerabilities(ctx, localItems); err != nil {
+			scanErrs = append(scanErrs, fmt.Errorf("vuln scanner: %w", err))
+		}
 	}
-	if o.eolChecker != nil && o.cfg != nil {
-		_ = o.eolChecker.CheckEoL(ctx, localItems, time.Now().UTC(), o.cfg.Scanner.EoLWarningDays)
+	if o.eolChecker != nil {
+		warningDays := 30
+		if o.cfg != nil && o.cfg.Scanner.EoLWarningDays > 0 {
+			warningDays = o.cfg.Scanner.EoLWarningDays
+		}
+		if err := o.eolChecker.CheckEoL(ctx, localItems, time.Now().UTC(), warningDays); err != nil {
+			scanErrs = append(scanErrs, fmt.Errorf("eol checker: %w", err))
+		}
 	}
 
 	for i := range localItems {
 		localItems[i].Node = nodeName
 	}
-	return localItems, nil
+	return localItems, errors.Join(scanErrs...)
 }
 
 func (o *Orchestrator) fetchRemoteAgentScan(ctx context.Context, node models.NodeInfo) ([]models.ManagedItem, error) {
@@ -178,7 +224,7 @@ func (o *Orchestrator) fetchRemoteAgentScan(ctx context.Context, node models.Nod
 	if tok != "" {
 		req.Header.Set("X-NAL-Node-Token", tok)
 	}
-	resp, err := o.httpClient.Do(req)
+	resp, err := o.safeAgentHTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +242,8 @@ func (o *Orchestrator) fetchRemoteAgentScan(ctx context.Context, node models.Nod
 	for i := range payload.Items {
 		payload.Items[i].Node = node.Name
 		u := strings.TrimSpace(payload.Items[i].ReleaseNotesURL)
-		if u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		lower := strings.ToLower(u)
+		if u != "" && !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
 			payload.Items[i].ReleaseNotesURL = ""
 		}
 	}
@@ -247,7 +294,10 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 		_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("Starting full scan on Hub (%s)...", hubName))
 	}
 
-	localItems, _ := o.ScanLocalNode(ctx)
+	localItems, localErr := o.ScanLocalNode(ctx)
+	if localErr != nil && taskID != "" && o.store != nil {
+		_, _ = o.store.AppendTaskLog(ctx, taskID, "warn", fmt.Sprintf("[Hub] Partial local scan warning: %v", localErr))
+	}
 	allItems := append([]models.ManagedItem(nil), localItems...)
 	if taskID != "" && o.store != nil {
 		_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[Hub] Scanned %d local components...", len(localItems)))
@@ -304,32 +354,34 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 				continue
 			}
 			if res.err != nil {
-				rn.Online = false
-				rn.LastError = res.err.Error()
-				_ = o.store.UpsertNode(ctx, rn)
+				_ = o.store.UpdateNodeHealth(ctx, rn.Name, false, time.Time{}, res.err.Error())
 				if taskID != "" {
 					_, _ = o.store.AppendTaskLog(ctx, taskID, "stderr", fmt.Sprintf("[%s] Remote agent unreachable (%v) — retaining cached items if available", rn.Name, res.err))
 				}
-				if prevScan != nil {
-					for _, prevItem := range prevScan.Items {
-						if prevItem.Node == rn.Name {
-							allItems = append(allItems, prevItem)
+				if latest, getErr := o.store.GetNode(ctx, rn.Name); getErr == nil {
+					if prevScan != nil {
+						for _, prevItem := range prevScan.Items {
+							if prevItem.Node == rn.Name {
+								allItems = append(allItems, prevItem)
+							}
 						}
 					}
+					rnCopy := *latest
+					rnCopy.Token = ""
+					nodesList = append(nodesList, rnCopy)
 				}
 			} else {
-				rn.Online = true
-				rn.LastSeenAt = time.Now().UTC()
-				rn.LastError = ""
-				_ = o.store.UpsertNode(ctx, rn)
-				allItems = append(allItems, res.items...)
-				if taskID != "" {
-					_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[%s] Scanned %d remote components...", rn.Name, len(res.items)))
+				_ = o.store.UpdateNodeHealth(ctx, rn.Name, true, time.Now().UTC(), "")
+				if latest, getErr := o.store.GetNode(ctx, rn.Name); getErr == nil {
+					allItems = append(allItems, res.items...)
+					if taskID != "" {
+						_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[%s] Scanned %d remote components...", rn.Name, len(res.items)))
+					}
+					rnCopy := *latest
+					rnCopy.Token = ""
+					nodesList = append(nodesList, rnCopy)
 				}
 			}
-			rnCopy := rn
-			rnCopy.Token = ""
-			nodesList = append(nodesList, rnCopy)
 		}
 	}
 
@@ -345,7 +397,7 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 	}
 
 	for i := range allItems {
-		if allItems[i].TargetType != models.TargetDocker {
+		if allItems[i].TargetType != models.TargetDocker || allItems[i].HasRollback {
 			continue
 		}
 		if snap, ok := snapshots[allItems[i].Node+":"+allItems[i].Name]; ok {

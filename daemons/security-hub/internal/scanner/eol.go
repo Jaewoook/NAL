@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -78,7 +79,8 @@ func checkCloudflaredSupportWindow(version string, now time.Time, warningDays in
 	}
 	relDate := time.Date(year, time.Month(month), 15, 0, 0, 0, 0, time.UTC)
 	eolDate := relDate.AddDate(1, 0, 0)
-	daysRem := int(eolDate.Sub(now).Hours() / 24)
+	todayUTC := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	daysRem := int(eolDate.Sub(todayUTC).Hours() / 24)
 	status := models.EoLSupported
 	if daysRem < 0 {
 		status = models.EoLExpired
@@ -95,18 +97,35 @@ func checkCloudflaredSupportWindow(version string, now time.Time, warningDays in
 	}, true
 }
 
+func withHeldNotice(msg string, isHeld bool) string {
+	if !isHeld {
+		return msg
+	}
+	if msg == "" {
+		return "Held via apt-mark (pinned)"
+	}
+	return msg + " · Held via apt-mark (pinned)"
+}
+
 func (e *EoLChecker) CheckEoL(ctx context.Context, items []models.ManagedItem, now time.Time, warningDays int) error {
 	if warningDays <= 0 {
 		warningDays = 30
 	}
-	cache := make(map[string]map[string]string)
+	type cachedReleases struct {
+		releases map[string]string
+		ok       bool
+	}
+	cache := make(map[string]cachedReleases)
 
 	for i := range items {
 		if items[i].EoL.Status == models.EoLExpired && items[i].EoL.Message != "" {
 			continue
 		}
+		isHeldApt := items[i].TargetType == models.TargetApt && strings.Contains(items[i].EoL.Message, "Held via apt-mark")
+
 		if strings.Contains(items[i].ImageRef, "cloudflared") || items[i].Name == "cloudflare-tunnel" {
 			if info, ok := checkCloudflaredSupportWindow(items[i].CurrentVersion, now, warningDays); ok {
+				info.Message = withHeldNotice(info.Message, isHeldApt)
 				items[i].EoL = info
 				continue
 			}
@@ -114,33 +133,59 @@ func (e *EoLChecker) CheckEoL(ctx context.Context, items []models.ManagedItem, n
 
 		prod, cycle := mapItemToEoLProductAndCycle(items[i])
 		if prod == "" || cycle == "" || IsFloatingTag(cycle) {
-			if items[i].EoL.Status == "" || items[i].EoL.Status == models.EoLUnknown {
+			if items[i].EoL.Status == "" {
 				items[i].EoL = models.EoLInfo{
-					Status:  models.EoLSupported,
-					Message: "Rolling / active upstream track",
+					Status:  models.EoLUnknown,
+					Message: "Unmapped / rolling track",
 				}
 			}
 			continue
 		}
 
-		releases, cached := cache[prod]
+		entry, cached := cache[prod]
 		if !cached {
-			releases = e.fetchProductReleases(ctx, prod)
-			cache[prod] = releases
+			rels, ok := e.fetchProductReleases(ctx, prod)
+			entry = cachedReleases{releases: rels, ok: ok}
+			cache[prod] = entry
 		}
-		eolDateStr, found := releases[cycle]
-		if !found || eolDateStr == "" {
+		if !entry.ok || len(entry.releases) == 0 {
+			items[i].EoL = models.EoLInfo{
+				Product: prod,
+				Cycle:   cycle,
+				Status:  models.EoLUnknown,
+				Message: withHeldNotice("EoL status unavailable", isHeldApt),
+			}
+			continue
+		}
+
+		eolDateStr, found := entry.releases[cycle]
+		if !found {
+			items[i].EoL = models.EoLInfo{
+				Product: prod,
+				Cycle:   cycle,
+				Status:  models.EoLUnknown,
+				Message: withHeldNotice(fmt.Sprintf("Cycle %s %s not found in endoflife.date", prod, cycle), isHeldApt),
+			}
+			continue
+		}
+		if eolDateStr == "" {
 			items[i].EoL = models.EoLInfo{
 				Product: prod,
 				Cycle:   cycle,
 				Status:  models.EoLSupported,
-				Message: fmt.Sprintf("Active %s %s track", prod, cycle),
+				Message: withHeldNotice(fmt.Sprintf("Active %s %s track", prod, cycle), isHeldApt),
 			}
 			continue
 		}
 
 		eolTime, err := time.Parse("2006-01-02", eolDateStr)
 		if err != nil {
+			items[i].EoL = models.EoLInfo{
+				Product: prod,
+				Cycle:   cycle,
+				Status:  models.EoLUnknown,
+				Message: withHeldNotice("Invalid EoL date returned", isHeldApt),
+			}
 			continue
 		}
 		todayUTC := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
@@ -157,28 +202,29 @@ func (e *EoLChecker) CheckEoL(ctx context.Context, items []models.ManagedItem, n
 			Status:        status,
 			EoLDate:       eolDateStr,
 			DaysRemaining: daysRem,
+			Message:       withHeldNotice("", isHeldApt),
 		}
 	}
 	return nil
 }
 
-func (e *EoLChecker) fetchProductReleases(ctx context.Context, product string) map[string]string {
+func (e *EoLChecker) fetchProductReleases(ctx context.Context, product string) (map[string]string, bool) {
 	out := make(map[string]string)
 	if e.httpClient == nil {
-		return out
+		return out, false
 	}
-	url := fmt.Sprintf("%s/%s", e.baseURL, product)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	reqURL := fmt.Sprintf("%s/%s", e.baseURL, url.PathEscape(product))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return out
+		return out, false
 	}
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		return out
+		return out, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return out
+		return out, false
 	}
 
 	type relItem struct {
@@ -191,13 +237,14 @@ func (e *EoLChecker) fetchProductReleases(ctx context.Context, product string) m
 			Releases []relItem `json:"releases"`
 		} `json:"result"`
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&payload) == nil {
-		for _, rel := range payload.Releases {
-			out[rel.Name] = rel.EoLFrom
-		}
-		for _, rel := range payload.Result.Releases {
-			out[rel.Name] = rel.EoLFrom
-		}
+	if json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&payload) != nil {
+		return out, false
 	}
-	return out
+	for _, rel := range payload.Releases {
+		out[rel.Name] = rel.EoLFrom
+	}
+	for _, rel := range payload.Result.Releases {
+		out[rel.Name] = rel.EoLFrom
+	}
+	return out, len(out) > 0
 }

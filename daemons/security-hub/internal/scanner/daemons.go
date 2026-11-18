@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -60,82 +62,82 @@ func (ds *DaemonScanner) fetchLatestOllamaVersion(ctx context.Context, fallback 
 	return fallback
 }
 
+func isValidVersionPrefix(s string) bool {
+	return len(s) > 0 && s[0] >= '0' && s[0] <= '9'
+}
+
 func (ds *DaemonScanner) ScanDaemonsAndOS(ctx context.Context) ([]models.ManagedItem, error) {
 	var items []models.ManagedItem
 
-	// 1. Ollama host daemon (gracefully skip if ollama binary is not installed)
-	ollamaVer := "installed"
-	ollamaInstalled := true
+	// 1. Ollama host daemon (only report when binary is confirmed present)
 	if ds.runner != nil {
 		if out, err := ds.runner.Run(ctx, "ollama", "--version"); err == nil {
 			if m := ollamaVerRe.FindStringSubmatch(string(out)); len(m) > 1 {
-				ollamaVer = m[1]
+				ollamaVer := m[1]
+				latestOllama := ds.fetchLatestOllamaVersion(ctx, ollamaVer)
+				ollamaOutdated := latestOllama != "" && latestOllama != ollamaVer
+				items = append(items, models.ManagedItem{
+					TargetType:      models.TargetDaemon,
+					Name:            "ollama",
+					CurrentVersion:  ollamaVer,
+					LatestVersion:   latestOllama,
+					Outdated:        ollamaOutdated,
+					AvailableTags:   []string{latestOllama},
+					ReleaseNotesURL: "https://github.com/ollama/ollama/releases",
+					EoL:             models.EoLInfo{Status: models.EoLSupported, Message: "Active host daemon"},
+					LastCheckedAt:   time.Now().UTC(),
+				})
 			}
-		} else {
-			ollamaInstalled = false
 		}
 	}
-	if ollamaInstalled {
-		latestOllama := ds.fetchLatestOllamaVersion(ctx, ollamaVer)
-		ollamaOutdated := ollamaVer != "installed" && latestOllama != "" && latestOllama != ollamaVer
-		items = append(items, models.ManagedItem{
-			TargetType:      models.TargetDaemon,
-			Name:            "ollama",
-			CurrentVersion:  ollamaVer,
-			LatestVersion:   latestOllama,
-			Outdated:        ollamaOutdated,
-			AvailableTags:   []string{latestOllama},
-			ReleaseNotesURL: "https://github.com/ollama/ollama/releases",
-			EoL:             models.EoLInfo{Status: models.EoLSupported, Message: "Active host daemon"},
-			LastCheckedAt:   time.Now().UTC(),
-		})
+
+	// 2. Server Monitor daemon (only emit on hosts where server-monitor exists)
+	if ds.daemonsDir != "" {
+		if info, err := os.Stat(filepath.Join(ds.daemonsDir, "server-monitor")); err == nil && info.IsDir() {
+			items = append(items, models.ManagedItem{
+				TargetType:     models.TargetDaemon,
+				Name:           "server-monitor",
+				CurrentVersion: "local-go-binary",
+				LatestVersion:  "local-go-binary",
+				AvailableTags:  []string{"local-go-binary"},
+				EoL:            models.EoLInfo{Status: models.EoLSupported, Message: "Internal NAL daemon"},
+				LastCheckedAt:  time.Now().UTC(),
+			})
+		}
 	}
 
-	// 2. Server Monitor daemon
-	items = append(items, models.ManagedItem{
-		TargetType:     models.TargetDaemon,
-		Name:           "server-monitor",
-		CurrentVersion: "local-go-binary",
-		LatestVersion:  "local-go-binary",
-		AvailableTags:  []string{"local-go-binary"},
-		EoL:            models.EoLInfo{Status: models.EoLSupported, Message: "Internal NAL daemon"},
-		LastCheckedAt:  time.Now().UTC(),
-	})
-
-	// 3. macOS softwareupdate check
-	macVer := "up-to-date"
-	latestMacVer := macVer
-	macOutdated := false
+	// 3. macOS softwareupdate check (only emit on macOS hosts where sw_vers returns an OS version)
 	if ds.runner != nil {
 		if swVer, err := ds.runner.Run(ctx, "sw_vers", "-productVersion"); err == nil {
-			if v := strings.TrimSpace(string(swVer)); v != "" {
-				macVer = v
-				latestMacVer = v
-			}
-		}
-		if suOut, err := ds.runner.Run(ctx, "softwareupdate", "-l"); err == nil {
-			s := string(suOut)
-			if strings.Contains(s, "Label:") || strings.Contains(s, "Software Update found") {
-				macOutdated = true
-				for _, line := range strings.Split(s, "\n") {
-					if idx := strings.Index(line, "Label:"); idx >= 0 {
-						latestMacVer = strings.TrimSpace(line[idx+len("Label:"):])
-						break
+			macVer := strings.TrimSpace(string(swVer))
+			if isValidVersionPrefix(macVer) {
+				latestMacVer := macVer
+				macOutdated := false
+				if suOut, suErr := ds.runner.Run(ctx, "softwareupdate", "-l"); suErr == nil {
+					s := string(suOut)
+					if strings.Contains(s, "Label:") || strings.Contains(s, "Software Update found") {
+						macOutdated = true
+						for _, line := range strings.Split(s, "\n") {
+							if idx := strings.Index(line, "Label:"); idx >= 0 {
+								latestMacVer = strings.TrimSpace(line[idx+len("Label:"):])
+								break
+							}
+						}
 					}
 				}
+				items = append(items, models.ManagedItem{
+					TargetType:     models.TargetMacOS,
+					Name:           "macOS Host",
+					CurrentVersion: macVer,
+					LatestVersion:  latestMacVer,
+					Outdated:       macOutdated,
+					AvailableTags:  []string{latestMacVer},
+					EoL:            models.EoLInfo{Product: "macos", Status: models.EoLSupported},
+					LastCheckedAt:  time.Now().UTC(),
+				})
 			}
 		}
 	}
-	items = append(items, models.ManagedItem{
-		TargetType:     models.TargetMacOS,
-		Name:           "macOS Host",
-		CurrentVersion: macVer,
-		LatestVersion:  latestMacVer,
-		Outdated:       macOutdated,
-		AvailableTags:  []string{latestMacVer},
-		EoL:            models.EoLInfo{Product: "macos", Status: models.EoLSupported},
-		LastCheckedAt:  time.Now().UTC(),
-	})
 
 	return items, nil
 }

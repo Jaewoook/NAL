@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/jaewoook/security-hub/internal/config"
+	"github.com/jaewoook/security-hub/internal/db"
+	"github.com/jaewoook/security-hub/internal/models"
 	"github.com/jaewoook/security-hub/internal/service"
 )
 
@@ -20,6 +23,11 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("SECURITY_HUB_DATA_DIR", tmpDir)
 	t.Setenv("SECURITY_HUB_PUBLIC_URL", "http://localhost:10311")
+	isoCfgDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(isoCfgDir, "config.yml"), []byte("database:\n  container_name: nonexistent-unit-test-pg\n"), 0600)
+	startWD, _ := os.Getwd()
+	_ = os.Chdir(isoCfgDir)
+	defer func() { _ = os.Chdir(startWD) }()
 
 	var out bytes.Buffer
 	code := runCLI([]string{"auth", "login-link"}, &out)
@@ -115,6 +123,29 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	if !strings.Contains(string(content), "me.jaewook.nal.security-hub-agent") || !strings.Contains(string(content), "sec123") {
 		t.Fatalf("agent plist missing expected content: %s", string(content))
 	}
+	if strings.Contains(string(content), "<string>-token</string>") {
+		t.Fatalf("expected agent plist not to pass -token in ProgramArguments:\n%s", string(content))
+	}
+	if st, sErr := os.Stat(agentPlistPath); sErr != nil || st.Mode().Perm() != 0600 {
+		t.Fatalf("expected 0600 permissions on agent plist, got err=%v perm=%v", sErr, st)
+	}
+
+	// Verify corrupt config.yml in CWD fails loudly
+	cfgDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(cfgDir, "config.yml"), []byte("web: [broken\n"), 0600)
+	origWD, _ := os.Getwd()
+	_ = os.Chdir(cfgDir)
+	defer func() { _ = os.Chdir(origWD) }()
+	if _, lErr := loadAppConfig(""); lErr == nil {
+		t.Fatal("expected loadAppConfig to fail on corrupt config.yml")
+	}
+	_ = os.Chdir(origWD)
+
+	// Verify unknown CLI flags return non-zero
+	out.Reset()
+	if code := runCLI([]string{"service", "install", "-unknown-flag"}, &out); code != 1 {
+		t.Fatalf("expected exit code 1 on unknown service install flag, got %d", code)
+	}
 
 	// Verify agent service status runs cleanly
 	out.Reset()
@@ -124,5 +155,34 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Agent service") {
 		t.Fatalf("expected agent service status in output, got: %s", out.String())
+	}
+
+	// Verify CLI node add rejects non-HTTP URLs and CLI node list does not abort running daemon tasks
+	out.Reset()
+	if code := runCLI([]string{"node", "add", "BadNode", "ftp://files.internal/pkg"}, &out); code != 1 {
+		t.Fatalf("expected exit code 1 for non-HTTP node URL, got %d (%s)", code, out.String())
+	}
+
+	cliCoexDir := t.TempDir()
+	t.Setenv("SECURITY_HUB_DATA_DIR", cliCoexDir)
+	daemonStore, err := db.NewSpoolStore(cliCoexDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := daemonStore.CreateTask(context.Background(), &models.Task{
+		TaskType:   "security_scan",
+		TargetType: "system",
+		TargetName: "all",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := runCLI([]string{"node", "list"}, &out); code != 0 {
+		t.Fatalf("expected exit code 0 for node list, got %d (%s)", code, out.String())
+	}
+	stillRunning, _, err := daemonStore.GetTaskWithLogs(context.Background(), task.ID)
+	if err != nil || stillRunning.Status != "running" {
+		t.Fatalf("expected CLI node list not to abort daemon task, got status=%v err=%v", stillRunning, err)
 	}
 }

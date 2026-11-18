@@ -7,124 +7,290 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
+func (m *Manager) effectiveRPID() string {
+	if rpid := strings.TrimSpace(m.cfg.RPID); rpid != "" {
+		return rpid
+	}
+	for _, candidate := range []string{m.cfg.PublicURL, m.cfg.RedirectURL} {
+		if candidate == "" {
+			continue
+		}
+		if u, err := url.Parse(candidate); err == nil && u.Hostname() != "" {
+			return u.Hostname()
+		}
+	}
+	return ""
+}
+
+func (m *Manager) isValidWebAuthnOrigin(originStr, rpid string) bool {
+	if originStr == "" || rpid == "" {
+		return false
+	}
+	u, err := url.Parse(originStr)
+	if err != nil || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	if !strings.EqualFold(u.Hostname(), rpid) {
+		return false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if m.isSecureCookie() && scheme != "https" {
+		return false
+	}
+	if scheme == "https" {
+		return true
+	}
+	if scheme == "http" {
+		hostLower := strings.ToLower(u.Hostname())
+		return hostLower == "localhost" || hostLower == "127.0.0.1" || hostLower == "::1"
+	}
+	return false
+}
+
 func (m *Manager) pruneExpiredChallengesLocked() {
 	now := time.Now().UTC()
-	for ch, exp := range m.challenges {
-		if now.After(exp) {
+	for ch, entry := range m.challenges {
+		if now.After(entry.ExpiresAt) {
 			delete(m.challenges, ch)
 		}
 	}
 }
 
-func (m *Manager) newChallenge() (string, error) {
+var errTooManyChallenges = errors.New("too many pending WebAuthn challenges")
+
+func (m *Manager) newChallengeFor(kind, subject string) (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
 	ch := base64.RawURLEncoding.EncodeToString(buf)
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.pruneExpiredChallengesLocked()
-	m.challenges[ch] = time.Now().UTC().Add(5 * time.Minute)
-	m.mu.Unlock()
+	if len(m.challenges) >= maxPendingChallenges {
+		return "", errTooManyChallenges
+	}
+	m.challenges[ch] = challengeEntry{
+		ExpiresAt: time.Now().UTC().Add(5 * time.Minute),
+		Kind:      kind,
+		Subject:   subject,
+	}
 	return ch, nil
 }
 
-func (m *Manager) consumeChallenge(ch string) bool {
+func (m *Manager) consumeChallengeFor(ch, expectedKind, expectedSubject string) bool {
 	if ch == "" {
 		return false
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pruneExpiredChallengesLocked()
-	exp, ok := m.challenges[ch]
+	entry, ok := m.challenges[ch]
 	if !ok {
 		return false
 	}
+	if entry.Kind != expectedKind {
+		return false
+	}
+	if expectedSubject != "" && entry.Subject != expectedSubject {
+		return false
+	}
 	delete(m.challenges, ch)
-	return time.Now().UTC().Before(exp)
+	return time.Now().UTC().Before(entry.ExpiresAt)
 }
 
 func (m *Manager) BeginPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
-	claims, err := m.VerifyRequest(r)
-	if err != nil {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+	if r.Method != http.MethodPost {
+		WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	ch, err := m.newChallenge()
+	claims, err := m.VerifyRequest(r)
 	if err != nil {
-		http.Error(w, `{"error":"failed to create challenge"}`, http.StatusInternalServerError)
+		WriteJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := m.VerifyCSRF(r); err != nil {
+		WriteJSONError(w, http.StatusForbidden, "csrf validation failed")
+		return
+	}
+	rpid := m.effectiveRPID()
+	if rpid == "" {
+		WriteJSONError(w, http.StatusBadRequest, "WebAuthn RP ID is not configured")
+		return
+	}
+	ch, err := m.newChallengeFor("register", claims.Subject)
+	if err != nil {
+		if errors.Is(err, errTooManyChallenges) {
+			WriteJSONError(w, http.StatusTooManyRequests, err.Error())
+			return
+		}
+		WriteJSONError(w, http.StatusInternalServerError, "failed to create challenge")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"challenge": ch,
-		"rp_id":     m.cfg.RPID,
+		"rp_id":     rpid,
 		"user":      claims.Subject,
 	})
 }
 
 func (m *Manager) FinishPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
-	if _, err := m.VerifyRequest(r); err != nil {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+	if r.Method != http.MethodPost {
+		WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	claims, err := m.VerifyRequest(r)
+	if err != nil {
+		WriteJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := m.VerifyCSRF(r); err != nil {
+		WriteJSONError(w, http.StatusForbidden, "csrf validation failed")
+		return
+	}
+	rpid := m.effectiveRPID()
+	if rpid == "" {
+		WriteJSONError(w, http.StatusBadRequest, "WebAuthn RP ID is not configured")
+		return
+	}
+
 	var req struct {
-		CredentialID  string `json:"credential_id"`
-		Label         string `json:"label"`
-		PublicKeySPKI string `json:"public_key_spki"`
-		Challenge     string `json:"challenge"`
+		CredentialID      string `json:"credential_id"`
+		Label             string `json:"label"`
+		AttestationObject string `json:"attestation_object"`
+		ClientDataJSON    string `json:"client_data_json"`
+		PublicKeySPKI     string `json:"public_key_spki"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		WriteJSONError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	if !m.consumeChallenge(req.Challenge) {
-		http.Error(w, `{"error":"invalid or expired challenge"}`, http.StatusBadRequest)
+	if strings.TrimSpace(req.CredentialID) == "" || req.AttestationObject == "" || req.ClientDataJSON == "" {
+		WriteJSONError(w, http.StatusBadRequest, "credential_id, attestation_object, and client_data_json are required")
 		return
 	}
-	spkiBytes, err := base64.RawURLEncoding.DecodeString(req.PublicKeySPKI)
+
+	attObjBytes, err1 := base64.RawURLEncoding.DecodeString(req.AttestationObject)
+	clientDataBytes, err2 := base64.RawURLEncoding.DecodeString(req.ClientDataJSON)
+	if err1 != nil || err2 != nil {
+		WriteJSONError(w, http.StatusBadRequest, "malformed base64url registration fields")
+		return
+	}
+
+	var clientData struct {
+		Type      string `json:"type"`
+		Challenge string `json:"challenge"`
+		Origin    string `json:"origin"`
+	}
+	if err := json.Unmarshal(clientDataBytes, &clientData); err != nil {
+		WriteJSONError(w, http.StatusBadRequest, "invalid clientDataJSON")
+		return
+	}
+	if clientData.Type != "webauthn.create" {
+		WriteJSONError(w, http.StatusBadRequest, "invalid clientData type")
+		return
+	}
+	if !m.isValidWebAuthnOrigin(clientData.Origin, rpid) {
+		WriteJSONError(w, http.StatusBadRequest, "clientData origin mismatch")
+		return
+	}
+	if !m.consumeChallengeFor(clientData.Challenge, "register", claims.Subject) {
+		WriteJSONError(w, http.StatusBadRequest, "invalid or expired challenge")
+		return
+	}
+
+	att, err := parseAndVerifyAttestationObject(attObjBytes, rpid)
 	if err != nil {
-		http.Error(w, `{"error":"invalid public_key_spki encoding"}`, http.StatusBadRequest)
+		WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	pub, err := x509.ParsePKIXPublicKey(spkiBytes)
-	if err != nil {
-		http.Error(w, `{"error":"invalid SPKI public key"}`, http.StatusBadRequest)
+	attCredIDB64 := base64.RawURLEncoding.EncodeToString(att.CredentialID)
+	if attCredIDB64 != req.CredentialID {
+		WriteJSONError(w, http.StatusBadRequest, "credential_id does not match attested credential ID")
 		return
 	}
-	if _, ok := pub.(*ecdsa.PublicKey); !ok {
-		http.Error(w, `{"error":"expected ECDSA P-256 public key"}`, http.StatusBadRequest)
+	attestedSPKIB64 := base64.RawURLEncoding.EncodeToString(att.PublicKeySPKI)
+	if req.PublicKeySPKI != "" && req.PublicKeySPKI != attestedSPKIB64 {
+		WriteJSONError(w, http.StatusBadRequest, "public_key_spki does not match attested COSE key")
 		return
 	}
-	if req.Label == "" {
-		req.Label = "Passkey"
+
+	label := strings.TrimSpace(req.Label)
+	if label == "" {
+		label = claims.Subject
+	}
+	if label == "" {
+		label = "Passkey"
 	}
 
 	m.mu.Lock()
-	m.state.Passkeys = append(m.state.Passkeys, PasskeyCredential{
-		CredentialID:  req.CredentialID,
-		Label:         req.Label,
-		PublicKeySPKI: req.PublicKeySPKI,
-		CreatedAt:     time.Now().UTC(),
+	var conflict bool
+	saveErr := m.withFileLock(func() error {
+		if err := m.loadStateFromDiskLocked(); err != nil {
+			return err
+		}
+		for _, pk := range m.state.Passkeys {
+			if pk.CredentialID == req.CredentialID {
+				conflict = true
+				return nil
+			}
+		}
+		m.state.Passkeys = append(m.state.Passkeys, PasskeyCredential{
+			CredentialID:  req.CredentialID,
+			Label:         label,
+			PublicKeySPKI: attestedSPKIB64,
+			SignCount:     att.SignCount,
+			CreatedAt:     time.Now().UTC(),
+		})
+		return m.saveStateLocked()
 	})
-	_ = m.saveStateLocked()
 	m.mu.Unlock()
+
+	if saveErr != nil {
+		WriteJSONError(w, http.StatusInternalServerError, "failed to persist passkey credential")
+		return
+	}
+	if conflict {
+		WriteJSONError(w, http.StatusConflict, "passkey credential_id already registered")
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "registered", "credential_id": req.CredentialID})
 }
 
 func (m *Manager) BeginPasskeyLogin(w http.ResponseWriter, r *http.Request) {
-	ch, err := m.newChallenge()
+	if r.Method != http.MethodPost {
+		WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if err := m.VerifyOriginAndFetchSite(r); err != nil {
+		WriteJSONError(w, http.StatusForbidden, "origin check failed")
+		return
+	}
+	rpid := m.effectiveRPID()
+	if rpid == "" {
+		WriteJSONError(w, http.StatusBadRequest, "WebAuthn RP ID is not configured")
+		return
+	}
+	ch, err := m.newChallengeFor("login", "")
 	if err != nil {
-		http.Error(w, `{"error":"failed to create challenge"}`, http.StatusInternalServerError)
+		if errors.Is(err, errTooManyChallenges) {
+			WriteJSONError(w, http.StatusTooManyRequests, err.Error())
+			return
+		}
+		WriteJSONError(w, http.StatusInternalServerError, "failed to create challenge")
 		return
 	}
 	m.mu.Lock()
@@ -136,13 +302,27 @@ func (m *Manager) BeginPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"challenge":          ch,
-		"rp_id":              m.cfg.RPID,
+		"challenge":         ch,
+		"rp_id":             rpid,
 		"allow_credentials": credIDs,
 	})
 }
 
 func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if err := m.VerifyOriginAndFetchSite(r); err != nil {
+		WriteJSONError(w, http.StatusForbidden, "origin check failed")
+		return
+	}
+	rpid := m.effectiveRPID()
+	if rpid == "" {
+		WriteJSONError(w, http.StatusBadRequest, "WebAuthn RP ID is not configured")
+		return
+	}
+
 	var req struct {
 		CredentialID      string `json:"credential_id"`
 		AuthenticatorData string `json:"authenticator_data"`
@@ -150,7 +330,11 @@ func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		Signature         string `json:"signature"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		WriteJSONError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if req.CredentialID == "" {
+		WriteJSONError(w, http.StatusUnauthorized, "unknown passkey credential")
 		return
 	}
 
@@ -165,7 +349,7 @@ func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Unlock()
 	if matched == nil {
-		http.Error(w, `{"error":"unknown passkey credential"}`, http.StatusUnauthorized)
+		WriteJSONError(w, http.StatusUnauthorized, "unknown passkey credential")
 		return
 	}
 
@@ -173,7 +357,7 @@ func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 	clientDataBytes, err2 := base64.RawURLEncoding.DecodeString(req.ClientDataJSON)
 	sigBytes, err3 := base64.RawURLEncoding.DecodeString(req.Signature)
 	if err1 != nil || err2 != nil || err3 != nil {
-		http.Error(w, `{"error":"malformed base64url assertion fields"}`, http.StatusBadRequest)
+		WriteJSONError(w, http.StatusBadRequest, "malformed base64url assertion fields")
 		return
 	}
 
@@ -183,53 +367,48 @@ func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		Origin    string `json:"origin"`
 	}
 	if err := json.Unmarshal(clientDataBytes, &clientData); err != nil {
-		http.Error(w, `{"error":"invalid clientDataJSON"}`, http.StatusBadRequest)
+		WriteJSONError(w, http.StatusBadRequest, "invalid clientDataJSON")
 		return
 	}
 	if clientData.Type != "webauthn.get" {
-		http.Error(w, `{"error":"invalid clientData type"}`, http.StatusBadRequest)
+		WriteJSONError(w, http.StatusBadRequest, "invalid clientData type")
 		return
 	}
-	if !m.consumeChallenge(clientData.Challenge) {
-		http.Error(w, `{"error":"invalid or expired WebAuthn challenge"}`, http.StatusUnauthorized)
+	if !m.consumeChallengeFor(clientData.Challenge, "login", "") {
+		WriteJSONError(w, http.StatusUnauthorized, "invalid or expired WebAuthn challenge")
 		return
 	}
 	if len(authData) < 37 {
-		http.Error(w, `{"error":"invalid authenticatorData length"}`, http.StatusBadRequest)
+		WriteJSONError(w, http.StatusBadRequest, "invalid authenticatorData length")
 		return
 	}
-	if m.cfg.RPID != "" {
-		expectedRPIDHash := sha256.Sum256([]byte(m.cfg.RPID))
-		if !hmac.Equal(authData[:32], expectedRPIDHash[:]) {
-			http.Error(w, `{"error":"RP ID hash mismatch"}`, http.StatusBadRequest)
-			return
-		}
+	expectedRPIDHash := sha256.Sum256([]byte(rpid))
+	if !hmac.Equal(authData[:32], expectedRPIDHash[:]) {
+		WriteJSONError(w, http.StatusBadRequest, "RP ID hash mismatch")
+		return
 	}
 	if (authData[32] & 0x01) == 0 {
-		http.Error(w, `{"error":"User Presence flag not set"}`, http.StatusBadRequest)
+		WriteJSONError(w, http.StatusBadRequest, "User Presence flag not set")
 		return
 	}
-	if m.cfg.RPID != "" {
-		if clientData.Origin == "" {
-			http.Error(w, `{"error":"clientData origin is required"}`, http.StatusBadRequest)
-			return
-		}
-		parsedOrigin, err := url.Parse(clientData.Origin)
-		if err != nil || parsedOrigin.Hostname() != m.cfg.RPID {
-			http.Error(w, `{"error":"clientData origin mismatch"}`, http.StatusBadRequest)
-			return
-		}
+	if !m.isValidWebAuthnOrigin(clientData.Origin, rpid) {
+		WriteJSONError(w, http.StatusBadRequest, "clientData origin mismatch")
+		return
 	}
 
-	spkiBytes, _ := base64.RawURLEncoding.DecodeString(matched.PublicKeySPKI)
+	spkiBytes, err := base64.RawURLEncoding.DecodeString(matched.PublicKeySPKI)
+	if err != nil {
+		WriteJSONError(w, http.StatusInternalServerError, "corrupt stored public key")
+		return
+	}
 	pubAny, err := x509.ParsePKIXPublicKey(spkiBytes)
 	if err != nil {
-		http.Error(w, `{"error":"corrupt stored public key"}`, http.StatusInternalServerError)
+		WriteJSONError(w, http.StatusInternalServerError, "corrupt stored public key")
 		return
 	}
 	ecPub, ok := pubAny.(*ecdsa.PublicKey)
 	if !ok {
-		http.Error(w, `{"error":"corrupt stored public key"}`, http.StatusInternalServerError)
+		WriteJSONError(w, http.StatusInternalServerError, "corrupt stored public key")
 		return
 	}
 
@@ -238,11 +417,50 @@ func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 	digest := sha256.Sum256(signedData)
 
 	if !ecdsa.VerifyASN1(ecPub, digest[:], sigBytes) {
-		http.Error(w, `{"error":"passkey signature verification failed"}`, http.StatusUnauthorized)
+		WriteJSONError(w, http.StatusUnauthorized, "passkey signature verification failed")
 		return
 	}
 
-	_ = m.IssueSessionCookie(w, matched.Label, "passkey")
+	// Verify monotonic signCount to detect cloned authenticators (WebAuthn §7.2 step 21)
+	sigCount := binary.BigEndian.Uint32(authData[33:37])
+	var clonedErr bool
+	var persistErr error
+	m.mu.Lock()
+	persistErr = m.withFileLock(func() error {
+		if err := m.loadStateFromDiskLocked(); err != nil {
+			return err
+		}
+		for i := range m.state.Passkeys {
+			if m.state.Passkeys[i].CredentialID == matched.CredentialID {
+				storedCount := m.state.Passkeys[i].SignCount
+				if sigCount != 0 || storedCount != 0 {
+					if sigCount <= storedCount {
+						clonedErr = true
+						return nil
+					}
+					m.state.Passkeys[i].SignCount = sigCount
+					return m.saveStateLocked()
+				}
+				break
+			}
+		}
+		return nil
+	})
+	m.mu.Unlock()
+
+	if clonedErr {
+		WriteJSONError(w, http.StatusUnauthorized, "passkey sign counter regression detected")
+		return
+	}
+	if persistErr != nil {
+		WriteJSONError(w, http.StatusInternalServerError, "failed to update passkey sign counter")
+		return
+	}
+
+	if err := m.IssueSessionCookie(w, matched.Label, "passkey"); err != nil {
+		WriteJSONError(w, http.StatusInternalServerError, "failed to issue session cookie")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "authenticated", "method": "passkey", "subject": matched.Label})
 }
