@@ -175,6 +175,16 @@ func runCLI(args []string, out io.Writer) int {
 		return 0
 
 	case "scan":
+		fs := flag.NewFlagSet("scan", flag.ContinueOnError)
+		fs.SetOutput(out)
+		nodeFlag := fs.String("node", "", "Specific compute node to scan (default scans all nodes)")
+		if err := fs.Parse(rest); err != nil {
+			return 1
+		}
+		if fs.NArg() > 0 {
+			fmt.Fprintln(out, "Usage: security-hub scan [-node <name>]")
+			return 1
+		}
 		pg := db.NewPostgresBackendWithPassword(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil)
 		store, err := db.NewCLISpoolStore(cfg.Database.DataDir, pg)
 		if err != nil {
@@ -182,18 +192,40 @@ func runCLI(args []string, out io.Writer) int {
 			return 1
 		}
 		orch := scanner.NewOrchestrator(cfg, store, nil, nil)
-		res, err := orch.RunFullScan(context.Background())
+		targetNode := strings.TrimSpace(*nodeFlag)
+		var res *models.ScanResult
+		if targetNode != "" {
+			if resolved, rErr := orch.ResolveTargetNode(context.Background(), targetNode); rErr == nil {
+				targetNode = resolved.Name
+			}
+			res, err = orch.RunNodeScan(context.Background(), targetNode)
+		} else {
+			res, err = orch.RunFullScan(context.Background())
+		}
 		if err != nil {
 			fmt.Fprintf(out, "Scan failed: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(out, "=== NAL Security Hub Scan Summary ===\n")
-		fmt.Fprintf(out, "Items Scanned:     %d\n", len(res.Items))
-		fmt.Fprintf(out, "Critical CVEs:     %d\n", res.TotalCritCVEs)
-		fmt.Fprintf(out, "High CVEs:         %d\n", res.TotalHighCVEs)
-		fmt.Fprintf(out, "LTS/EoL Warnings:  %d\n", res.TotalEoLIssues)
-		fmt.Fprintf(out, "Outdated Packages: %d\n", res.TotalOutdated)
-		fmt.Fprintf(out, "Broken Pkg Links:  %d\n", res.TotalBrokenBrew)
+		summary := res
+		targetLabel := "All Nodes"
+		if targetNode != "" {
+			targetLabel = "Node " + targetNode
+			var nodeItems []models.ManagedItem
+			for _, it := range res.Items {
+				if strings.EqualFold(it.Node, targetNode) {
+					nodeItems = append(nodeItems, it)
+				}
+			}
+			skipped, _ := store.ListSkippedVersions(context.Background())
+			summary = scanner.ApplySkippedAndSummarize(nodeItems, skipped)
+		}
+		fmt.Fprintf(out, "=== NAL Security Hub Scan Summary (%s) ===\n", targetLabel)
+		fmt.Fprintf(out, "Items Scanned:     %d\n", len(summary.Items))
+		fmt.Fprintf(out, "Critical CVEs:     %d\n", summary.TotalCritCVEs)
+		fmt.Fprintf(out, "High CVEs:         %d\n", summary.TotalHighCVEs)
+		fmt.Fprintf(out, "LTS/EoL Warnings:  %d\n", summary.TotalEoLIssues)
+		fmt.Fprintf(out, "Outdated Packages: %d\n", summary.TotalOutdated)
+		fmt.Fprintf(out, "Broken Pkg Links:  %d\n", summary.TotalBrokenBrew)
 		return 0
 
 	case "rollback":
@@ -404,34 +436,65 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 	go func() {
 		defer bgWG.Done()
 		runScheduledScan := func() {
+			orch.LockScanStart()
+			startLocked := true
+			defer func() {
+				if startLocked {
+					orch.UnlockScanStart()
+				}
+			}()
+
+			if scanning, _ := orch.IsScanning(); scanning {
+				return
+			}
 			hubName := cfg.NodeName
 			if hubName == "" {
 				hubName = config.DefaultNodeName()
 			}
+			initialNodes := []string{hubName}
+			if store != nil {
+				if remoteNodes, err := store.ListNodes(ctx); err == nil {
+					for _, rn := range remoteNodes {
+						if !strings.EqualFold(rn.Name, hubName) && (rn.Status == "" || rn.Status == models.NodeStatusApproved) {
+							initialNodes = append(initialNodes, rn.Name)
+						}
+					}
+				}
+			}
 			var taskID string
 			if store != nil {
-				if t, err := store.CreateTask(ctx, &models.Task{
+				t, err := store.CreateTask(ctx, &models.Task{
 					Node:        hubName,
 					TaskType:    "security_scan",
 					TargetType:  "system",
 					TargetName:  "all",
 					TriggeredBy: "scanner",
 					Status:      "running",
-				}); err == nil {
-					taskID = t.ID
+				})
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "[Scheduler] Failed to create scheduled scan task: %v\n", err)
+					return
 				}
+				taskID = t.ID
 			}
-			started, _ := orch.StartScan(taskID)
+			if taskID == "" {
+				taskID = fmt.Sprintf("scan_%d", time.Now().UnixNano())
+			}
+			started, _ := orch.StartScanWithNodes(taskID, initialNodes)
 			if !started {
-				if taskID != "" && store != nil {
+				if store != nil {
 					_ = store.FinishTask(context.Background(), taskID, "aborted", "scan already running")
 				}
 				return
 			}
-			defer orch.FinishScan()
+			orch.UnlockScanStart()
+			startLocked = false
+
+			defer orch.FinishScanTask(taskID)
 			scanCtx, scanCancel := context.WithTimeout(ctx, 15*time.Minute)
 			defer scanCancel()
 			if res, err := orch.RunFullScanWithTask(scanCtx, taskID); err == nil {
+				orch.FinishScanTask(taskID)
 				if alerter != nil {
 					_, _ = alerter.NotifyScanFindings(scanCtx, res)
 				}
@@ -709,7 +772,7 @@ Commands:
   agent                    Run the lightweight LAN Agent on a remote compute node
   agent service <action>   Manage Agent daemon service (install, uninstall, start, stop, restart, status)
   node <action>            Manage registered compute nodes (add, list, remove)
-  scan                     Run an immediate multi-node Docker, Homebrew, CVE, and EoL scan
+  scan [-node <name>]      Run an immediate Docker, Homebrew, CVE, and EoL scan (all nodes or single node)
   rollback <service>       Roll back a Docker service to its previous snapshot
   auth login-link          Generate a 5-minute break-glass web login link
   db init                  Provision the security_hub_db database in services/db

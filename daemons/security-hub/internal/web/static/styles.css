@@ -194,6 +194,33 @@ header {
   color: var(--text);
   background: rgba(56, 189, 248, 0.12);
 }
+.node-pill.scanning {
+  border-color: var(--warn);
+  background: rgba(245, 158, 11, 0.14);
+  color: var(--text);
+}
+.dot.scanning {
+  background: var(--warn);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.8);
+  animation: pulse-dot 1.2s infinite ease-in-out;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(1.3); }
+}
+.node-scan-status {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--warn-bg);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: 0.02em;
+}
 .node-role {
   font-size: 10px;
   text-transform: uppercase;
@@ -384,6 +411,9 @@ select.ver-select:hover, select.ver-select:focus {
   border: 1px solid transparent;
 }
 .btn-primary { background: var(--accent); color: #0f172a; }
+.btn-secondary { background: #334155; color: #f8fafc; border: 1px solid #475569; }
+.btn-secondary:hover:not(:disabled) { background: #475569; color: #fff; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-danger { background: var(--crit); color: #fff; }
 .btn-ghost { background: transparent; border-color: var(--border); color: var(--muted); }
 .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
@@ -443,3 +473,30 @@ select.ver-select:hover, select.ver-select:focus {
   gap: 10px;
 }
 .modal-options label { display: flex; gap: 8px; align-items: center; }
+.scan-node-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.scan-node-option:hover {
+  background: var(--panel-hover);
+  border-color: var(--accent);
+}
+.scan-node-option input[type="radio"] {
+  margin-right: 12px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.scan-node-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  flex: 1;
+}

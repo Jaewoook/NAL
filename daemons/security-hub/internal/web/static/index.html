@@ -5,11 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NAL Security Hub</title>
   <link rel="stylesheet" href="/styles.css" />
-  <style>
-    .btn-secondary { background: #334155; color: #f8fafc; border: 1px solid #475569; }
-    .btn-secondary:hover:not(:disabled) { background: #475569; color: #fff; }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-  </style>
 </head>
 <body>
   <header>
@@ -29,6 +24,7 @@
           ⟳ <span id="scan-progress-text">Scanning...</span>
         </span>
       </div>
+      <button class="btn btn-secondary" id="btn-scan-node" onclick="openScanNodeModal()">↻ Scan Single Node</button>
       <button class="btn btn-primary" id="btn-scan-now" onclick="triggerScan()">↻ Scan Now</button>
       
       <!-- User Dropdown (placed at the far right) -->
@@ -240,6 +236,21 @@
         <div class="terminal-box" id="modal-linkage-body" style="height:auto; max-height:260px; margin-bottom:16px; white-space:pre-wrap; word-break:break-all;"></div>
         <div style="display:flex; justify-content:flex-end; gap:10px;">
           <button class="btn btn-ghost" onclick="closeBrokenLinkageModal()">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCAN SINGLE NODE MODAL -->
+    <div id="modal-scan-node" class="modal-backdrop" style="display:none;">
+      <div class="card-box modal-card">
+        <h3>Scan Single Node</h3>
+        <p class="muted" style="margin: 8px 0 14px;">
+          Select a registered compute node to execute a targeted security scan:
+        </p>
+        <div id="scan-node-modal-list" class="modal-options" style="max-height:320px; overflow-y:auto; margin-bottom:16px;"></div>
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+          <button id="btn-confirm-scan-node" class="btn btn-primary" onclick="confirmAndStartNodeScan()">↻ Start Scan</button>
+          <button class="btn btn-ghost" onclick="closeScanNodeModal()">Cancel</button>
         </div>
       </div>
     </div>

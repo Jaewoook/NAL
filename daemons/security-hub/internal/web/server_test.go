@@ -929,6 +929,11 @@ func TestWebAssets_PendingNodesAndScanProgress(t *testing.T) {
 		"test-node-result",
 		"pending-nodes-section",
 		"pending-nodes-list",
+		"btn-scan-node",
+		"btn-scan-now",
+		"modal-scan-node",
+		"scan-node-modal-list",
+		"btn-confirm-scan-node",
 	} {
 		if !strings.Contains(indexHTML, elem) {
 			t.Errorf("expected embedded index.html to contain element %q", elem)
@@ -957,6 +962,10 @@ func TestWebAssets_PendingNodesAndScanProgress(t *testing.T) {
 		"approveNode",
 		"rejectNode",
 		"triggerScan",
+		"openScanNodeModal",
+		"confirmAndStartNodeScan",
+		"renderScanNodeModalList",
+		"node-scan-status",
 		"renderPendingNodesBanner",
 		"renderNodesModalList",
 		"/api/nodes/approve",
@@ -1763,6 +1772,247 @@ func TestServer_Round3_AgentURLValidation_And_ManualScanShutdownWait(t *testing.
 	var testResp nodeTestResponse
 	if err := json.Unmarshal(badTestW.Body.Bytes(), &testResp); err != nil || testResp.OK || !strings.Contains(testResp.Error, "invalid url") {
 		t.Fatalf("expected hostless URL rejected with OK=false invalid url, got %+v err=%v", testResp, err)
+	}
+}
+
+func TestServer_SingleNodeScanAndDashboardScanningNodes(t *testing.T) {
+	srv, sessionCookie, store, cfg := setupTestHubServer(t)
+	ctx := context.Background()
+
+	// 1. Add approved node Atlas and pending node PendingNode
+	var blockerMu sync.Mutex
+	scanBlocker := make(chan struct{})
+	activeBlocker := scanBlocker
+	closeChannelSafe := func(ch chan struct{}) {
+		if ch == nil {
+			return
+		}
+		select {
+		case <-ch:
+		default:
+			close(ch)
+		}
+	}
+	defer func() {
+		blockerMu.Lock()
+		ch := activeBlocker
+		blockerMu.Unlock()
+		closeChannelSafe(ch)
+	}()
+
+	agentSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		blockerMu.Lock()
+		ch := activeBlocker
+		blockerMu.Unlock()
+		if ch != nil {
+			select {
+			case <-ch:
+			case <-r.Context().Done():
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"node": "Atlas",
+			"items": []models.ManagedItem{
+				{
+					Node:           "Atlas",
+					TargetType:     models.TargetDaemon,
+					Name:           "ollama",
+					CurrentVersion: "0.5.1",
+				},
+			},
+		})
+	}))
+	defer agentSrv.Close()
+
+	srv.SetHTTPClient(agentSrv.Client())
+	_ = store.UpsertNode(ctx, models.NodeInfo{
+		Name:   "Atlas",
+		URL:    agentSrv.URL,
+		Token:  cfg.AgentToken,
+		Role:   "agent",
+		Status: models.NodeStatusApproved,
+	})
+	_ = store.UpsertNode(ctx, models.NodeInfo{
+		Name:   "PendingNode",
+		URL:    "http://pending.lan:10247",
+		Token:  cfg.AgentToken,
+		Role:   "agent",
+		Status: models.NodeStatusPending,
+	})
+
+	h := srv.Handler()
+
+	// 2. Reject unknown node with 404
+	badNodeReq := httptest.NewRequest(http.MethodPost, "/api/scan?node=NonExistent", nil)
+	addAuthAndCSRF(badNodeReq, sessionCookie, srv.authMgr)
+	badNodeW := httptest.NewRecorder()
+	h.ServeHTTP(badNodeW, badNodeReq)
+	if badNodeW.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown node scan, got %d: %s", badNodeW.Code, badNodeW.Body.String())
+	}
+
+	// 3. Reject pending node with 400
+	pendingNodeBody, _ := json.Marshal(map[string]string{"node": "PendingNode"})
+	pendingNodeReq := httptest.NewRequest(http.MethodPost, "/api/scan", bytes.NewReader(pendingNodeBody))
+	addAuthAndCSRF(pendingNodeReq, sessionCookie, srv.authMgr)
+	pendingNodeW := httptest.NewRecorder()
+	h.ServeHTTP(pendingNodeW, pendingNodeReq)
+	if pendingNodeW.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for pending node scan, got %d: %s", pendingNodeW.Code, pendingNodeW.Body.String())
+	}
+
+	// 3b. Reject malformed JSON bodies and conflicting query/body node params with 400
+	for _, badBody := range []string{`{bad`, `{"node": 123}`, `{"unknown": "Atlas"}`, `{"node": "Atlas"} extra`} {
+		badReq := httptest.NewRequest(http.MethodPost, "/api/scan", strings.NewReader(badBody))
+		addAuthAndCSRF(badReq, sessionCookie, srv.authMgr)
+		badW := httptest.NewRecorder()
+		h.ServeHTTP(badW, badReq)
+		if badW.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for malformed scan body %q, got %d: %s", badBody, badW.Code, badW.Body.String())
+		}
+	}
+	conflictParamReq := httptest.NewRequest(http.MethodPost, "/api/scan?node=Axis", strings.NewReader(`{"node":"Atlas"}`))
+	addAuthAndCSRF(conflictParamReq, sessionCookie, srv.authMgr)
+	conflictParamW := httptest.NewRecorder()
+	h.ServeHTTP(conflictParamW, conflictParamReq)
+	if conflictParamW.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for conflicting query & body node params, got %d: %s", conflictParamW.Code, conflictParamW.Body.String())
+	}
+
+	// 4. Trigger single-node scan for Atlas -> returns 202 with scanning_nodes: ["Atlas"]
+	atlasScanBody, _ := json.Marshal(map[string]string{"node": "Atlas"})
+	scanReq := httptest.NewRequest(http.MethodPost, "/api/scan", bytes.NewReader(atlasScanBody))
+	addAuthAndCSRF(scanReq, sessionCookie, srv.authMgr)
+	scanW := httptest.NewRecorder()
+	h.ServeHTTP(scanW, scanReq)
+	if scanW.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 Accepted on single node scan trigger, got %d: %s", scanW.Code, scanW.Body.String())
+	}
+	var scanResp struct {
+		TaskID        string   `json:"task_id"`
+		Status        string   `json:"status"`
+		Node          string   `json:"node"`
+		ScanningNodes []string `json:"scanning_nodes"`
+	}
+	if err := json.Unmarshal(scanW.Body.Bytes(), &scanResp); err != nil {
+		t.Fatalf("failed to decode scan response: %v", err)
+	}
+	if scanResp.Node != "Atlas" || len(scanResp.ScanningNodes) != 1 || scanResp.ScanningNodes[0] != "Atlas" {
+		t.Fatalf("unexpected scan response: %+v", scanResp)
+	}
+
+	// 5. Query /api/dashboard while scan is running -> returns scanning: true and scanning_nodes: ["Atlas"]
+	dashReq := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	dashReq.AddCookie(sessionCookie)
+	dashW := httptest.NewRecorder()
+	h.ServeHTTP(dashW, dashReq)
+	if dashW.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /api/dashboard, got %d", dashW.Code)
+	}
+	var dashResp struct {
+		Scanning         bool     `json:"scanning"`
+		ActiveScanTaskID string   `json:"active_scan_task_id"`
+		ScanningNodes    []string `json:"scanning_nodes"`
+	}
+	if err := json.Unmarshal(dashW.Body.Bytes(), &dashResp); err != nil {
+		t.Fatalf("failed to decode dashboard response: %v", err)
+	}
+	if !dashResp.Scanning || dashResp.ActiveScanTaskID != scanResp.TaskID || len(dashResp.ScanningNodes) != 1 || dashResp.ScanningNodes[0] != "Atlas" {
+		t.Fatalf("unexpected dashboard scanning state: %+v", dashResp)
+	}
+
+	// 6. Attempt concurrent scan while Atlas is scanning -> 409 Conflict with scanning_nodes: ["Atlas"]
+	conflictReq := httptest.NewRequest(http.MethodPost, "/api/scan", nil)
+	addAuthAndCSRF(conflictReq, sessionCookie, srv.authMgr)
+	conflictW := httptest.NewRecorder()
+	h.ServeHTTP(conflictW, conflictReq)
+	if conflictW.Code != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict for concurrent scan trigger, got %d: %s", conflictW.Code, conflictW.Body.String())
+	}
+	var conflictResp struct {
+		Error         string   `json:"error"`
+		TaskID        string   `json:"task_id"`
+		ScanningNodes []string `json:"scanning_nodes"`
+	}
+	if err := json.Unmarshal(conflictW.Body.Bytes(), &conflictResp); err != nil {
+		t.Fatalf("failed to decode conflict response: %v", err)
+	}
+	if conflictResp.TaskID != scanResp.TaskID || len(conflictResp.ScanningNodes) != 1 || conflictResp.ScanningNodes[0] != "Atlas" {
+		t.Fatalf("unexpected conflict response payload: %+v", conflictResp)
+	}
+
+	// 7. Unblock Atlas and wait for scan to complete
+	closeChannelSafe(scanBlocker)
+	waitCtx, waitCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer waitCancel()
+	if err := srv.Wait(waitCtx); err != nil {
+		t.Fatalf("srv.Wait failed: %v", err)
+	}
+
+	// 8. Final dashboard check: scanning=false, scanning_nodes=[]
+	dashReq2 := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	dashReq2.AddCookie(sessionCookie)
+	dashW2 := httptest.NewRecorder()
+	h.ServeHTTP(dashW2, dashReq2)
+	var dashResp2 struct {
+		Scanning      bool     `json:"scanning"`
+		ScanningNodes []string `json:"scanning_nodes"`
+	}
+	_ = json.Unmarshal(dashW2.Body.Bytes(), &dashResp2)
+	if dashResp2.Scanning || len(dashResp2.ScanningNodes) != 0 {
+		t.Fatalf("expected idle dashboard state after scan completion, got: %+v", dashResp2)
+	}
+
+	// 9. Verify concurrent scan-start requests create zero phantom aborted tasks
+	concBlocker := make(chan struct{})
+	blockerMu.Lock()
+	activeBlocker = concBlocker
+	blockerMu.Unlock()
+	defer closeChannelSafe(concBlocker)
+
+	var concWG sync.WaitGroup
+	acceptedCount := 0
+	conflictCount := 0
+	var countMu sync.Mutex
+	for i := 0; i < 5; i++ {
+		concWG.Add(1)
+		go func() {
+			defer concWG.Done()
+			req := httptest.NewRequest(http.MethodPost, "/api/scan", strings.NewReader(`{"node":"Atlas"}`))
+			addAuthAndCSRF(req, sessionCookie, srv.authMgr)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			countMu.Lock()
+			if rec.Code == http.StatusAccepted {
+				acceptedCount++
+			} else if rec.Code == http.StatusConflict {
+				conflictCount++
+			} else {
+				t.Errorf("unexpected status code in concurrent scan test: %d (%s)", rec.Code, rec.Body.String())
+			}
+			countMu.Unlock()
+		}()
+	}
+	concWG.Wait()
+	closeChannelSafe(concBlocker)
+	waitCtx2, waitCancel2 := context.WithTimeout(ctx, 5*time.Second)
+	defer waitCancel2()
+	if err := srv.Wait(waitCtx2); err != nil {
+		t.Fatalf("srv.Wait after concurrent test failed: %v", err)
+	}
+	if acceptedCount != 1 || conflictCount != 4 {
+		t.Fatalf("expected exactly 1 Accepted and 4 Conflict in concurrent start, got accepted=%d conflict=%d", acceptedCount, conflictCount)
+	}
+	allTasks, err := store.ListTasks(ctx, "", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tk := range allTasks {
+		if tk.Status == "aborted" {
+			t.Fatalf("found unexpected phantom aborted task: %+v", tk)
+		}
 	}
 }
 

@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -184,5 +187,120 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	stillRunning, _, err := daemonStore.GetTaskWithLogs(context.Background(), task.ID)
 	if err != nil || stillRunning.Status != "running" {
 		t.Fatalf("expected CLI node list not to abort daemon task, got status=%v err=%v", stillRunning, err)
+	}
+}
+
+func TestCLI_ScanCommand(t *testing.T) {
+	tmpDir := t.TempDir()
+	emptyBin := t.TempDir()
+	emptyServices := t.TempDir()
+	emptyDaemons := t.TempDir()
+
+	t.Setenv("PATH", emptyBin)
+	t.Setenv("SECURITY_HUB_DATA_DIR", tmpDir)
+
+	isoCfgDir := t.TempDir()
+	cfgYAML := "node_name: AxisHub\ndatabase:\n  container_name: nonexistent-unit-test-pg\nscanner:\n  services_dir: " + emptyServices + "\n  daemons_dir: " + emptyDaemons + "\n  osv_api_url: http://127.0.0.1:0\n  eol_api_url: http://127.0.0.1:0\n"
+	_ = os.WriteFile(filepath.Join(isoCfgDir, "config.yml"), []byte(cfgYAML), 0600)
+	startWD, _ := os.Getwd()
+	_ = os.Chdir(isoCfgDir)
+	defer func() { _ = os.Chdir(startWD) }()
+
+	// Seed a remote approved node (Atlas) with 1 outdated item and another node (Aegis) with cached items
+	agentSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"node": "Atlas",
+			"items": []models.ManagedItem{
+				{
+					Node:           "Atlas",
+					TargetType:     models.TargetDocker,
+					Name:           "atlas-app",
+					CurrentVersion: "1.0.0",
+					LatestVersion:  "1.1.0",
+					Outdated:       true,
+				},
+			},
+		})
+	}))
+	defer agentSrv.Close()
+
+	store, err := db.NewCLISpoolStore(tmpDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = store.UpsertNode(context.Background(), models.NodeInfo{
+		Name:   "Atlas",
+		URL:    agentSrv.URL,
+		Token:  "tok",
+		Role:   "agent",
+		Status: models.NodeStatusApproved,
+	})
+	_ = store.UpsertNode(context.Background(), models.NodeInfo{
+		Name:   "Aegis",
+		URL:    "http://127.0.0.1:19999",
+		Token:  "tok",
+		Role:   "agent",
+		Status: models.NodeStatusApproved,
+	})
+	_ = store.SaveScanResult(context.Background(), &models.ScanResult{
+		Items: []models.ManagedItem{
+			{Node: "Aegis", TargetType: models.TargetDocker, Name: "aegis-web", CurrentVersion: "1.0", Outdated: true, CritCount: 2},
+			{Node: "Aegis", TargetType: models.TargetDocker, Name: "aegis-db", CurrentVersion: "2.0"},
+		},
+	})
+
+	// 1. Positional arg rejected
+	var out bytes.Buffer
+	code := runCLI([]string{"scan", "Atlas"}, &out)
+	if code != 1 {
+		t.Fatalf("expected exit code 1 for positional arg on scan, got %d (%s)", code, out.String())
+	}
+
+	// 2. Single node scan CLI for local Hub -> prints only AxisHub summary (0 items), not Aegis's 2 items
+	out.Reset()
+	code = runCLI([]string{"scan", "-node", "AxisHub"}, &out)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 for scan -node AxisHub, got %d (%s)", code, out.String())
+	}
+	if !strings.Contains(out.String(), "=== NAL Security Hub Scan Summary (Node AxisHub) ===") {
+		t.Fatalf("expected Node AxisHub scan summary, got: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "Items Scanned:     0") || !strings.Contains(out.String(), "Critical CVEs:     0") {
+		t.Fatalf("expected node-specific counts (0 items, 0 crit CVEs) rather than Aegis cached counts, got:\n%s", out.String())
+	}
+
+	// 3. Single node scan CLI for remote Atlas agent -> prints Atlas summary (1 item) while preserving Aegis in store
+	out.Reset()
+	code = runCLI([]string{"scan", "-node", "atlas"}, &out)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 for scan -node atlas, got %d (%s)", code, out.String())
+	}
+	if !strings.Contains(out.String(), "=== NAL Security Hub Scan Summary (Node Atlas) ===") {
+		t.Fatalf("expected canonical Node Atlas scan summary, got: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "Items Scanned:     1") || !strings.Contains(out.String(), "Outdated Packages: 1") {
+		t.Fatalf("expected Atlas counts (1 item, 1 outdated), got:\n%s", out.String())
+	}
+
+	// 4. Full scan CLI
+	_ = store.RemoveNode(context.Background(), "Aegis")
+	out.Reset()
+	code = runCLI([]string{"scan"}, &out)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 for full scan, got %d (%s)", code, out.String())
+	}
+	if !strings.Contains(out.String(), "=== NAL Security Hub Scan Summary (All Nodes) ===") {
+		t.Fatalf("expected All Nodes scan summary, got: %s", out.String())
+	}
+
+	// 5. Unknown node -> exits 1 with Scan failed
+	out.Reset()
+	code = runCLI([]string{"scan", "-node", "UnknownNodeXYZ"}, &out)
+	if code != 1 {
+		t.Fatalf("expected exit code 1 for unknown node scan, got %d (%s)", code, out.String())
+	}
+	if !strings.Contains(out.String(), "Scan failed") {
+		t.Fatalf("expected Scan failed error message, got: %s", out.String())
 	}
 }

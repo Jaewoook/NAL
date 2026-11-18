@@ -999,6 +999,287 @@ func TestParseComposeImageRefs_ContainerNameEnvExpansion(t *testing.T) {
 	}
 }
 
+func TestOrchestrator_ScanningNodesTracking(t *testing.T) {
+	orch := &Orchestrator{}
 
+	started, active := orch.StartScanWithNodes("task-abc", []string{"Hub", "Node1", "Node1", ""})
+	if !started || active != "" {
+		t.Fatalf("StartScanWithNodes failed: started=%v active=%q", started, active)
+	}
 
+	scanning, activeID, nodes := orch.GetScanState()
+	if !scanning || activeID != "task-abc" || len(nodes) != 2 || nodes[0] != "Hub" || nodes[1] != "Node1" {
+		t.Fatalf("unexpected scan state: scanning=%v activeID=%q nodes=%v", scanning, activeID, nodes)
+	}
+
+	orch.removeScanningNodeIfMultiple("Hub")
+	nodes = orch.ScanningNodes()
+	if len(nodes) != 1 || nodes[0] != "Node1" {
+		t.Fatalf("expected only Node1 left after removing Hub, got %v", nodes)
+	}
+
+	// Removing last remaining node must be a no-op so chip indicator stays visible until FinishScan
+	orch.removeScanningNodeIfMultiple("Node1")
+	nodes = orch.ScanningNodes()
+	if len(nodes) != 1 || nodes[0] != "Node1" {
+		t.Fatalf("expected final node Node1 to be preserved until FinishScan, got %v", nodes)
+	}
+
+	// FinishScanTask with mismatched ID must not clear active task
+	orch.FinishScanTask("wrong-task-id")
+	if scanning, _, _ := orch.GetScanState(); !scanning {
+		t.Fatal("expected FinishScanTask(wrong-task-id) not to clear active scan")
+	}
+
+	orch.FinishScan()
+	scanning, activeID, nodes = orch.GetScanState()
+	if scanning || activeID != "" || len(nodes) != 0 {
+		t.Fatalf("expected clean idle state after FinishScan, got scanning=%v activeID=%q nodes=%v", scanning, activeID, nodes)
+	}
+
+	// Verify FinishScanTask("wrong-id") also does not clear placeholder "scan_..." active task
+	if started, _ := orch.StartScan(""); !started {
+		t.Fatal("StartScan(\"\") failed")
+	}
+	orch.FinishScanTask("other-id")
+	if scanning, _, _ := orch.GetScanState(); !scanning {
+		t.Fatal("expected FinishScanTask(other-id) not to clear scan_ active task")
+	}
+	orch.FinishScan()
+}
+
+func TestOrchestrator_ResolveTargetNode(t *testing.T) {
+	store, err := db.NewSpoolStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	_ = store.UpsertNode(ctx, models.NodeInfo{
+		Name:   "ApprovedAgent",
+		URL:    "http://approved.lan:10247",
+		Role:   "agent",
+		Status: models.NodeStatusApproved,
+	})
+	_ = store.UpsertNode(ctx, models.NodeInfo{
+		Name:   "PendingAgent",
+		URL:    "http://pending.lan:10247",
+		Role:   "agent",
+		Status: models.NodeStatusPending,
+	})
+
+	cfg := &config.Config{NodeName: "Axis"}
+	orch := NewOrchestrator(cfg, store, nil, nil)
+
+	// 1. Hub by empty name and explicit name (case-insensitive)
+	hub1, err := orch.ResolveTargetNode(ctx, "")
+	if err != nil || hub1.Name != "Axis" || hub1.Role != "hub" {
+		t.Fatalf("expected Axis hub by empty name, got %+v, err=%v", hub1, err)
+	}
+	hub2, err := orch.ResolveTargetNode(ctx, "axis")
+	if err != nil || hub2.Name != "Axis" || hub2.Role != "hub" {
+		t.Fatalf("expected Axis hub by lowercase name, got %+v, err=%v", hub2, err)
+	}
+
+	// 2. Approved agent
+	ag, err := orch.ResolveTargetNode(ctx, "ApprovedAgent")
+	if err != nil || ag.Name != "ApprovedAgent" || ag.Role != "agent" {
+		t.Fatalf("expected ApprovedAgent, got %+v, err=%v", ag, err)
+	}
+
+	// 3. Pending agent -> ErrScanNodeNotApproved
+	_, err = orch.ResolveTargetNode(ctx, "PendingAgent")
+	if !errors.Is(err, ErrScanNodeNotApproved) {
+		t.Fatalf("expected ErrScanNodeNotApproved for pending agent, got: %v", err)
+	}
+
+	// 4. Unknown node -> ErrScanNodeNotFound
+	_, err = orch.ResolveTargetNode(ctx, "GhostNode")
+	if !errors.Is(err, ErrScanNodeNotFound) {
+		t.Fatalf("expected ErrScanNodeNotFound for unknown node, got: %v", err)
+	}
+}
+
+func TestOrchestrator_RunNodeScan_SingleNodeAndCacheMerge(t *testing.T) {
+	store, err := db.NewSpoolStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	// Seed previous scan result with items from Hub (Axis), Atlas, and lowercase "aegis" to verify case-insensitive canonicalization
+	_ = store.SaveScanResult(ctx, &models.ScanResult{
+		ScannedAt: time.Now().UTC().Add(-1 * time.Hour),
+		Items: []models.ManagedItem{
+			{Node: "Axis", TargetType: models.TargetDocker, Name: "hub-auth", CurrentVersion: "1.0"},
+			{Node: "Atlas", TargetType: models.TargetDocker, Name: "old-atlas-service", CurrentVersion: "0.9"},
+			{Node: "aegis", TargetType: models.TargetDocker, Name: "aegis-worker", CurrentVersion: "2.5"},
+		},
+	})
+
+	var atlasContacted, aegisContacted bool
+	var orch *Orchestrator
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(r.Host, "atlas"):
+			atlasContacted = true
+			if orch != nil {
+				scanning, activeTaskID, scanningNodes := orch.GetScanState()
+				if !scanning || activeTaskID == "" || len(scanningNodes) != 1 || scanningNodes[0] != "Atlas" {
+					t.Errorf("expected live GetScanState(true, non-empty, [Atlas]) during direct RunNodeScan, got scanning=%v taskID=%q nodes=%v", scanning, activeTaskID, scanningNodes)
+				}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"node": "Atlas",
+				"items": []models.ManagedItem{
+					{
+						Node:           "Atlas",
+						TargetType:     models.TargetDocker,
+						Name:           "new-atlas-service",
+						CurrentVersion: "1.0",
+						LatestVersion:  "1.1",
+						Outdated:       true,
+					},
+				},
+			})
+		case strings.Contains(r.Host, "aegis"):
+			aegisContacted = true
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"node":  "Aegis",
+				"items": []models.ManagedItem{},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	_ = store.UpsertNode(ctx, models.NodeInfo{
+		Name:   "Atlas",
+		URL:    "http://atlas.local",
+		Role:   "agent",
+		Status: models.NodeStatusApproved,
+	})
+	_ = store.UpsertNode(ctx, models.NodeInfo{
+		Name:   "Aegis",
+		URL:    "http://aegis.local",
+		Role:   "agent",
+		Status: models.NodeStatusApproved,
+	})
+
+	cfg := &config.Config{NodeName: "Axis"}
+	client := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			// Redirect host calls to test server
+			r2 := req.Clone(req.Context())
+			r2.URL.Scheme = "http"
+			r2.URL.Host = server.Listener.Addr().String()
+			return server.Client().Transport.RoundTrip(r2)
+		}),
+	}
+	orch = NewOrchestrator(cfg, store, nil, client)
+
+	// Execute single node scan for Atlas
+	res, err := orch.RunNodeScan(ctx, "Atlas")
+	if err != nil {
+		t.Fatalf("RunNodeScan(Atlas) failed: %v", err)
+	}
+	if scanning, activeID, nodes := orch.GetScanState(); scanning || activeID != "" || len(nodes) != 0 {
+		t.Fatalf("expected clean idle scan state after RunNodeScan, got scanning=%v activeID=%q nodes=%v", scanning, activeID, nodes)
+	}
+
+	if !atlasContacted {
+		t.Fatal("expected Atlas agent to be contacted")
+	}
+	if aegisContacted {
+		t.Fatal("expected Aegis agent NOT to be contacted during Atlas single-node scan")
+	}
+
+	// Verify items: old Atlas item replaced with new Atlas item, Axis and Aegis items preserved
+	itemsByNodeAndName := make(map[string]models.ManagedItem)
+	for _, it := range res.Items {
+		itemsByNodeAndName[it.Node+":"+it.Name] = it
+	}
+
+	if _, hasOld := itemsByNodeAndName["Atlas:old-atlas-service"]; hasOld {
+		t.Fatal("expected old-atlas-service to be removed/replaced for Atlas")
+	}
+	if newAtlas, hasNew := itemsByNodeAndName["Atlas:new-atlas-service"]; !hasNew || !newAtlas.Outdated {
+		t.Fatalf("expected new-atlas-service with Outdated=true, got %+v", newAtlas)
+	}
+	if hubItem, hasHub := itemsByNodeAndName["Axis:hub-auth"]; !hasHub || hubItem.CurrentVersion != "1.0" {
+		t.Fatalf("expected Axis:hub-auth preserved, got %+v", hubItem)
+	}
+	if aegisItem, hasAegis := itemsByNodeAndName["Aegis:aegis-worker"]; !hasAegis || aegisItem.CurrentVersion != "2.5" {
+		t.Fatalf("expected Aegis:aegis-worker preserved, got %+v", aegisItem)
+	}
+
+	// Verify Atlas node health was updated online
+	atlasNode, _ := store.GetNode(ctx, "Atlas")
+	if !atlasNode.Online || !atlasNode.LastSeenAt.After(time.Now().UTC().Add(-10*time.Second)) {
+		t.Fatalf("expected Atlas node health updated, got %+v", atlasNode)
+	}
+
+	// Verify Hub context cancellation during remote scan does NOT mark healthy Atlas node offline
+	cancelCtx, cancelFunc := context.WithCancel(ctx)
+	cancelOrch := NewOrchestrator(cfg, store, nil, &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			cancelFunc()
+			return nil, context.Canceled
+		}),
+	})
+	if _, cancelErr := cancelOrch.RunNodeScan(cancelCtx, "Atlas"); cancelErr == nil {
+		t.Fatal("expected error on cancelled RunNodeScan")
+	}
+	atlasAfterCancel, _ := store.GetNode(ctx, "Atlas")
+	if !atlasAfterCancel.Online {
+		t.Fatalf("expected healthy Atlas node NOT to be marked offline on Hub context cancellation, got %+v", atlasAfterCancel)
+	}
+}
+
+func TestOrchestrator_DirectScanRejectsWhenScanInProgress(t *testing.T) {
+	ctx := context.Background()
+	store, err := db.NewSpoolStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.NodeName = "Axis"
+	cfg.Scanner.ServicesDir = t.TempDir()
+	cfg.Scanner.DaemonsDir = t.TempDir()
+	orch := NewOrchestrator(cfg, store, nil, nil)
+
+	orch.LockScanStart()
+	started, existingID := orch.StartScanWithNodes("active-task", []string{"Atlas"})
+	orch.UnlockScanStart()
+	if !started || existingID != "" {
+		t.Fatalf("expected active-task to acquire scan lock, got started=%v existingID=%q", started, existingID)
+	}
+
+	if _, err := orch.RunFullScan(ctx); !errors.Is(err, ErrScanInProgress) {
+		t.Fatalf("expected ErrScanInProgress from RunFullScan, got: %v", err)
+	}
+	if _, err := orch.RunFullScanWithTask(ctx, "other-task"); !errors.Is(err, ErrScanInProgress) {
+		t.Fatalf("expected ErrScanInProgress from RunFullScanWithTask(other-task), got: %v", err)
+	}
+	if _, err := orch.RunNodeScan(ctx, "Axis"); !errors.Is(err, ErrScanInProgress) {
+		t.Fatalf("expected ErrScanInProgress from RunNodeScan, got: %v", err)
+	}
+	if _, err := orch.RunNodeScanWithTask(ctx, "Axis", "other-task"); !errors.Is(err, ErrScanInProgress) {
+		t.Fatalf("expected ErrScanInProgress from RunNodeScanWithTask(other-task), got: %v", err)
+	}
+
+	scanning, activeID, nodes := orch.GetScanState()
+	if !scanning || activeID != "active-task" || len(nodes) != 1 || nodes[0] != "Atlas" {
+		t.Fatalf("expected active scan state preserved after rejected calls, got scanning=%v activeID=%q nodes=%v", scanning, activeID, nodes)
+	}
+
+	orch.FinishScan()
+	scanning, activeID, nodes = orch.GetScanState()
+	if scanning || activeID != "" || len(nodes) != 0 {
+		t.Fatalf("expected clean idle scan state after FinishScan, got scanning=%v activeID=%q nodes=%v", scanning, activeID, nodes)
+	}
+}
 

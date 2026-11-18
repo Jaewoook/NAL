@@ -4,7 +4,99 @@ let dashboardData = null;
 let pendingUpdateReq = null;
 let activeEventSource = null;
 let activeScanEventSource = null;
+let activeScanningNodes = new Set();
+let scanPollTimer = null;
+let failedStreamTaskIds = new Set();
 let csrfToken = '';
+
+function clearScanPollTimer() {
+  if (scanPollTimer) {
+    clearTimeout(scanPollTimer);
+    scanPollTimer = null;
+  }
+}
+
+function scheduleScanPoll(delayMs = 2000) {
+  clearScanPollTimer();
+  scanPollTimer = setTimeout(() => {
+    scanPollTimer = null;
+    loadDashboard();
+  }, delayMs);
+}
+
+function isStreamableScanTaskId(taskId) {
+  if (!taskId) return false;
+  const id = String(taskId);
+  if (id.startsWith('scan_') || id.startsWith('task_')) return false;
+  return !failedStreamTaskIds.has(id);
+}
+
+function isNodeScanning(nodeName) {
+  const target = String(nodeName || '').trim().toLowerCase();
+  if (!target) return false;
+  for (const n of activeScanningNodes) {
+    if (String(n).trim().toLowerCase() === target) return true;
+  }
+  return false;
+}
+
+function removeActiveScanningNode(nodeName) {
+  const target = String(nodeName || '').trim().toLowerCase();
+  if (!target) return false;
+  let removed = false;
+  for (const n of Array.from(activeScanningNodes)) {
+    if (String(n).trim().toLowerCase() === target) {
+      activeScanningNodes.delete(n);
+      removed = true;
+    }
+  }
+  return removed;
+}
+
+function updateScanButtons(isScanning) {
+  const btnScanNow = document.getElementById('btn-scan-now');
+  const btnScanNode = document.getElementById('btn-scan-node');
+  const btnConfirmNode = document.getElementById('btn-confirm-scan-node');
+  const progressBox = document.getElementById('scan-progress-box');
+  if (btnScanNow) {
+    btnScanNow.disabled = isScanning;
+    btnScanNow.textContent = isScanning ? '⟳ Scanning...' : '↻ Scan Now';
+  }
+  if (btnScanNode) {
+    btnScanNode.disabled = isScanning;
+  }
+  if (btnConfirmNode) {
+    const nodes = (dashboardData && dashboardData.nodes) || [{name: (dashboardData && dashboardData.hub_node) || 'local', role: 'hub', online: true}];
+    const hasApproved = nodes.some(n => !n.status || n.status === 'approved');
+    btnConfirmNode.disabled = isScanning || !hasApproved;
+  }
+  if (!isScanning) {
+    if (progressBox) progressBox.style.display = 'none';
+    const progressText = document.getElementById('scan-progress-text');
+    if (progressText) progressText.textContent = '';
+  }
+}
+
+function resetSessionClientState() {
+  csrfToken = '';
+  clearScanPollTimer();
+  failedStreamTaskIds.clear();
+  activeScanningNodes.clear();
+  if (activeEventSource) {
+    activeEventSource.close();
+    activeEventSource = null;
+  }
+  if (activeScanEventSource) {
+    activeScanEventSource.close();
+    activeScanEventSource = null;
+  }
+  updateScanButtons(false);
+  closeScanNodeModal();
+  closeUpdateModal();
+  closeNodesModal();
+  closeBrokenLinkageModal();
+  closeUserDropdown();
+}
 
 function getCsrfToken() {
   const m = document.cookie.match(/(?:^|;\s*)nal_csrf_token=([^;]+)/);
@@ -28,7 +120,7 @@ async function initApp() {
   const res = await fetch('/api/auth/session');
   const session = await res.json();
   if (!session.authenticated) {
-    csrfToken = '';
+    resetSessionClientState();
     document.getElementById('view-login').style.display = 'block';
     document.getElementById('view-dashboard').style.display = 'none';
     document.getElementById('header-actions').style.display = 'none';
@@ -87,11 +179,35 @@ async function loadDashboard() {
     return initApp();
   }
   dashboardData = await res.json();
+  if (dashboardData.scanning && Array.isArray(dashboardData.scanning_nodes)) {
+    activeScanningNodes = new Set(dashboardData.scanning_nodes);
+    updateScanButtons(true);
+    const activeId = dashboardData.active_scan_task_id;
+    if (!activeScanEventSource) {
+      if (activeId && isStreamableScanTaskId(activeId)) {
+        attachScanStream(activeId);
+      } else {
+        const progressBox = document.getElementById('scan-progress-box');
+        const progressText = document.getElementById('scan-progress-text');
+        if (progressBox) progressBox.style.display = 'inline-flex';
+        if (progressText && !progressText.textContent) progressText.textContent = 'Scanning in progress...';
+        scheduleScanPoll(2000);
+      }
+    }
+  } else if (!activeScanEventSource) {
+    clearScanPollTimer();
+    activeScanningNodes.clear();
+    updateScanButtons(false);
+  }
   renderPendingNodesBanner();
   renderNodeBar();
   renderSummary();
   renderItemsTable();
   renderTaskList();
+  const scanModal = document.getElementById('modal-scan-node');
+  if (scanModal && scanModal.style.display === 'flex') {
+    renderScanNodeModalList();
+  }
 }
 
 function renderPendingNodesBanner() {
@@ -134,16 +250,22 @@ function renderNodeBar() {
   if (!container) return;
   const nodes = (dashboardData && dashboardData.nodes) || [{name: (dashboardData && dashboardData.hub_node) || 'local', role: 'hub', online: true}];
   const approvedNodes = nodes.filter(n => !n.status || n.status === 'approved');
-  let html = `<button class="node-pill ${currentNodeFilter === 'all' ? 'active' : ''}" onclick='selectNodeFilter("all")'>All Nodes (${approvedNodes.length})</button>`;
+  const isAllScanning = approvedNodes.length > 0 && approvedNodes.every(n => isNodeScanning(n.name));
+  let html = `<button class="node-pill ${currentNodeFilter === 'all' ? 'active' : ''} ${isAllScanning ? 'scanning' : ''}" onclick='selectNodeFilter("all")'>
+    <span>All Nodes (${approvedNodes.length})</span>
+    ${isAllScanning ? '<span class="node-scan-status">⟳ Scanning</span>' : ''}
+  </button>`;
   approvedNodes.forEach(n => {
-    const dot = n.online ? 'green' : 'amber';
+    const scanning = isNodeScanning(n.name);
+    const dot = scanning ? 'scanning' : (n.online ? 'green' : 'amber');
     const roleTag = n.role === 'hub' ? 'Hub' : 'Agent';
-    const title = n.last_error ? `Offline: ${n.last_error}` : (n.url || 'Local Host');
+    const title = scanning ? 'Scanning in progress...' : (n.last_error ? `Offline: ${n.last_error}` : (n.url || 'Local Host'));
     html += `
-      <button class="node-pill ${currentNodeFilter === n.name ? 'active' : ''}" title="${escapeHtml(title)}" onclick='selectNodeFilter("${encodeNodeArg(n.name)}")'>
+      <button class="node-pill ${currentNodeFilter === n.name ? 'active' : ''} ${scanning ? 'scanning' : ''}" title="${escapeHtml(title)}" onclick='selectNodeFilter("${encodeNodeArg(n.name)}")'>
         <span class="dot ${dot}"></span>
         <span>${escapeHtml(n.name)}</span>
         <span class="node-role">${roleTag}</span>
+        ${scanning ? '<span class="node-scan-status">⟳ Scanning</span>' : ''}
       </button>
     `;
   });
@@ -727,98 +849,222 @@ async function unskipItem(encodedNode, encodedTargetType, encodedTargetName) {
   await loadDashboard();
 }
 
-async function triggerScan() {
-  const btn = document.getElementById('btn-scan-now');
+function openScanNodeModal() {
+  const modal = document.getElementById('modal-scan-node');
+  if (!modal) return;
+  renderScanNodeModalList();
+  modal.style.display = 'flex';
+}
+
+function closeScanNodeModal() {
+  const modal = document.getElementById('modal-scan-node');
+  if (modal) modal.style.display = 'none';
+  const container = document.getElementById('scan-node-modal-list');
+  if (container) container.innerHTML = '';
+}
+
+function renderScanNodeModalList() {
+  const container = document.getElementById('scan-node-modal-list');
+  if (!container) return;
+  const confirmBtn = document.getElementById('btn-confirm-scan-node');
+  const existingChecked = container.querySelector('input[name="scan-target-node"]:checked');
+  const existingVal = existingChecked ? existingChecked.value : '';
+  const nodes = (dashboardData && dashboardData.nodes) || [{name: (dashboardData && dashboardData.hub_node) || 'local', role: 'hub', online: true}];
+  const approvedNodes = nodes.filter(n => !n.status || n.status === 'approved');
+
+  if (confirmBtn) {
+    confirmBtn.disabled = approvedNodes.length === 0 || !!activeScanEventSource || activeScanningNodes.size > 0 || Boolean(dashboardData && dashboardData.scanning);
+  }
+
+  if (approvedNodes.length === 0) {
+    container.innerHTML = `<div class="muted" style="padding:12px; text-align:center;">No approved nodes available to scan.</div>`;
+    return;
+  }
+
+  let preselect = approvedNodes[0].name;
+  const existingMatch = existingVal ? approvedNodes.find(n => String(n.name).toLowerCase() === String(existingVal).toLowerCase()) : null;
+  if (existingMatch) {
+    preselect = existingMatch.name;
+  } else if (currentNodeFilter && currentNodeFilter !== 'all') {
+    const matched = approvedNodes.find(n => String(n.name).toLowerCase() === String(currentNodeFilter).toLowerCase());
+    if (matched) preselect = matched.name;
+  }
+
+  container.innerHTML = approvedNodes.map((n, idx) => {
+    const isChecked = n.name === preselect ? 'checked' : '';
+    const dot = n.online ? 'green' : 'amber';
+    const roleTag = n.role === 'hub' ? 'Hub' : 'Agent';
+    const isScanning = isNodeScanning(n.name);
+    return `
+      <label class="scan-node-option" for="scan-node-radio-${idx}">
+        <div class="scan-node-label">
+          <input type="radio" id="scan-node-radio-${idx}" name="scan-target-node" value="${escapeHtml(n.name)}" ${isChecked} />
+          <span class="dot ${isScanning ? 'scanning' : dot}"></span>
+          <strong>${escapeHtml(n.name)}</strong>
+          <span class="node-role">${roleTag}</span>
+          ${n.os_version ? `<span class="badge skip" style="font-size:10px; padding:1px 6px;">${escapeHtml(n.os_version)}</span>` : ''}
+          ${isScanning ? '<span class="node-scan-status">⟳ Scanning</span>' : ''}
+        </div>
+        <div class="svc-sub">${escapeHtml(n.url || 'Local Hub Host')}</div>
+      </label>
+    `;
+  }).join('');
+}
+
+function confirmAndStartNodeScan() {
+  const selected = document.querySelector('input[name="scan-target-node"]:checked');
+  if (!selected || !selected.value) {
+    alert('Please select a node to scan.');
+    return;
+  }
+  const targetNode = selected.value;
+  closeScanNodeModal();
+  triggerScan(targetNode);
+}
+
+function updateActiveNodesFromLogLine(line) {
+  if (!line || activeScanningNodes.size <= 1) return;
+  let changed = false;
+  if (/^\[Hub\] Scanned \d+ local\b/.test(line)) {
+    const hubName = (dashboardData && dashboardData.hub_node) || 'local';
+    changed = removeActiveScanningNode(hubName) || changed;
+  } else {
+    const m = line.match(/^\[([^\]]+)\] (?:Scanned \d+ remote\b|Remote agent unreachable\b)/);
+    if (m && m[1]) {
+      changed = removeActiveScanningNode(m[1]) || changed;
+    }
+  }
+  if (changed) {
+    renderNodeBar();
+  }
+}
+
+function attachScanStream(taskId) {
+  clearScanPollTimer();
+  if (activeScanEventSource) {
+    activeScanEventSource.close();
+    activeScanEventSource = null;
+  }
+
+  const progressBox = document.getElementById('scan-progress-box');
+  const progressText = document.getElementById('scan-progress-text');
+  if (progressBox) progressBox.style.display = 'inline-flex';
+  if (progressText && !progressText.textContent) progressText.textContent = 'Scanning in progress...';
+  updateScanButtons(true);
+
+  if (!isStreamableScanTaskId(taskId)) {
+    scheduleScanPoll(2000);
+    return;
+  }
+
+  activeScanEventSource = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/stream`);
+
+  activeScanEventSource.onmessage = (e) => {
+    failedStreamTaskIds.delete(String(taskId));
+    let lineText = '';
+    try {
+      const parsed = JSON.parse(e.data);
+      lineText = parsed.line || '';
+    } catch (_) {
+      lineText = e.data || '';
+    }
+    if (lineText) {
+      if (progressText) progressText.textContent = lineText;
+      updateActiveNodesFromLogLine(lineText);
+    }
+  };
+
+  const handleDone = async () => {
+    clearScanPollTimer();
+    if (activeScanEventSource) {
+      activeScanEventSource.close();
+      activeScanEventSource = null;
+    }
+    activeScanningNodes.clear();
+    if (dashboardData) {
+      dashboardData.scanning = false;
+      dashboardData.scanning_nodes = [];
+    }
+    updateScanButtons(false);
+    renderNodeBar();
+    if (progressBox) progressBox.style.display = 'none';
+    if (progressText) progressText.textContent = '';
+    await loadDashboard();
+  };
+
+  activeScanEventSource.addEventListener('done', handleDone);
+  activeScanEventSource.onerror = () => {
+    if (activeScanEventSource) {
+      activeScanEventSource.close();
+      activeScanEventSource = null;
+    }
+    failedStreamTaskIds.add(String(taskId));
+    scheduleScanPoll(2000);
+  };
+}
+
+async function triggerScan(targetNode = '') {
+  clearScanPollTimer();
   const progressBox = document.getElementById('scan-progress-box');
   const progressText = document.getElementById('scan-progress-text');
 
-  if (btn) {
-    btn.textContent = '⟳ Scanning...';
-    btn.disabled = true;
-  }
+  updateScanButtons(true);
   if (progressBox) progressBox.style.display = 'inline-flex';
-  if (progressText) progressText.textContent = 'Initializing scan...';
+
+  const nodes = (dashboardData && dashboardData.nodes) || [];
+  const approvedNodes = nodes.filter(n => !n.status || n.status === 'approved');
+
+  if (targetNode) {
+    activeScanningNodes = new Set([targetNode]);
+    if (progressText) progressText.textContent = `Initializing scan for [${targetNode}]...`;
+  } else {
+    activeScanningNodes = new Set(approvedNodes.map(n => n.name));
+    if (progressText) progressText.textContent = 'Initializing full security scan...';
+  }
+  renderNodeBar();
 
   try {
-    const res = await apiFetch('/api/scan', {method: 'POST'});
+    const fetchOpts = {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+    };
+    if (targetNode) {
+      fetchOpts.body = JSON.stringify({node: targetNode});
+    }
+
+    const res = await apiFetch('/api/scan', fetchOpts);
     const data = await res.json().catch(() => ({}));
+
+    if (Array.isArray(data.scanning_nodes) && (res.status === 409 || data.scanning_nodes.length > 0)) {
+      activeScanningNodes = new Set(data.scanning_nodes);
+      renderNodeBar();
+    }
 
     let taskId = data.task_id;
     if (res.status === 409) {
       if (progressText) progressText.textContent = 'Scan in progress; attaching to stream...';
     } else if (!res.ok) {
       alert(`Scan failed: ${data.error || res.statusText}`);
-      if (btn) {
-        btn.textContent = '↻ Scan Now';
-        btn.disabled = false;
-      }
-      if (progressBox) progressBox.style.display = 'none';
+      activeScanningNodes.clear();
+      updateScanButtons(false);
+      renderNodeBar();
       return;
     }
 
     if (!taskId) {
-      if (btn) {
-        btn.textContent = '↻ Scan Now';
-        btn.disabled = false;
-      }
-      if (progressBox) progressBox.style.display = 'none';
+      activeScanningNodes.clear();
+      updateScanButtons(false);
+      renderNodeBar();
       await loadDashboard();
       return;
     }
 
-    if (activeScanEventSource) {
-      activeScanEventSource.close();
-    }
-
-    activeScanEventSource = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/stream`);
-
-    activeScanEventSource.onmessage = (e) => {
-      try {
-        const parsed = JSON.parse(e.data);
-        if (parsed.line && progressText) {
-          progressText.textContent = parsed.line;
-        }
-      } catch (_) {
-        if (e.data && progressText) {
-          progressText.textContent = e.data;
-        }
-      }
-    };
-
-    activeScanEventSource.addEventListener('done', async () => {
-      if (activeScanEventSource) {
-        activeScanEventSource.close();
-        activeScanEventSource = null;
-      }
-      if (progressBox) progressBox.style.display = 'none';
-      if (progressText) progressText.textContent = '';
-      if (btn) {
-        btn.textContent = '↻ Scan Now';
-        btn.disabled = false;
-      }
-      await loadDashboard();
-    });
-
-    activeScanEventSource.onerror = () => {
-      if (activeScanEventSource) {
-        activeScanEventSource.close();
-        activeScanEventSource = null;
-      }
-      if (progressBox) progressBox.style.display = 'none';
-      if (progressText) progressText.textContent = '';
-      if (btn) {
-        btn.textContent = '↻ Scan Now';
-        btn.disabled = false;
-      }
-      loadDashboard();
-    };
+    attachScanStream(taskId);
   } catch (err) {
     alert(`Scan error: ${err.message}`);
-    if (btn) {
-      btn.textContent = '↻ Scan Now';
-      btn.disabled = false;
-    }
-    if (progressBox) progressBox.style.display = 'none';
+    activeScanningNodes.clear();
+    updateScanButtons(false);
+    renderNodeBar();
   }
 }
 
@@ -832,13 +1078,17 @@ function renderTaskList() {
   container.innerHTML = tasks.map(t => {
     const badgeClass = t.status === 'succeeded' ? 'ok' : (t.status === 'rolled_back' || t.status === 'running') ? 'warn' : 'crit';
     const nodeLabel = t.node ? `[${escapeHtml(t.node)}] ` : '';
+    const hasVersions = Boolean(t.from_version || t.to_version);
+    const subDetail = hasVersions
+      ? `(${escapeHtml(t.from_version || '')} → ${escapeHtml(t.to_version || '')})`
+      : (t.target_type ? `(${escapeHtml(t.target_type)})` : '');
     return `
       <div class="task-list-item" onclick='streamTaskLogs("${encodeNodeArg(t.id)}")'>
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <strong>${escapeHtml(t.id)} · ${nodeLabel}${escapeHtml(t.task_type)}</strong>
           <span class="badge ${badgeClass}">${escapeHtml(t.status)}</span>
         </div>
-        <div class="svc-sub" style="margin-top:4px;">${escapeHtml(t.target_name)} (${escapeHtml(t.from_version || '')} → ${escapeHtml(t.to_version || '')})</div>
+        <div class="svc-sub" style="margin-top:4px;">${escapeHtml(t.target_name)}${subDetail ? ' ' + subDetail : ''}</div>
       </div>
     `;
   }).join('');
@@ -887,16 +1137,8 @@ function streamTaskLogs(encodedTaskId) {
 }
 
 async function logout() {
-  if (activeEventSource) {
-    activeEventSource.close();
-    activeEventSource = null;
-  }
-  if (activeScanEventSource) {
-    activeScanEventSource.close();
-    activeScanEventSource = null;
-  }
+  resetSessionClientState();
   await apiFetch('/api/auth/logout', {method: 'POST'});
-  csrfToken = '';
   initApp();
 }
 
