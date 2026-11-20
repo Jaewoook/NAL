@@ -1012,9 +1012,3 @@ func TestSpoolStore_Round3_CLICoexistenceAndPostgresSnapshotColumns(t *testing.T
 		t.Fatal("expected rpi-extra added by CLI to sync to Postgres")
 	}
 }
-
-
-
-
-
-

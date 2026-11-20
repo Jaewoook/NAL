@@ -13,6 +13,17 @@ var cmdRunner = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
 
+// SetCmdRunner overrides the command runner for tests and returns a restore function.
+func SetCmdRunner(fn func(name string, args ...string) ([]byte, error)) func() {
+	prev := cmdRunner
+	if fn != nil {
+		cmdRunner = fn
+	}
+	return func() {
+		cmdRunner = prev
+	}
+}
+
 const LaunchdLabel = "me.jaewook.nal.security-hub"
 
 const (

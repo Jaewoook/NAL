@@ -150,7 +150,14 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 		t.Fatalf("expected exit code 1 on unknown service install flag, got %d", code)
 	}
 
-	// Verify agent service status runs cleanly
+	// Verify agent service status runs cleanly (stubbing host service manager for headless CI runners)
+	restoreCmd := service.SetCmdRunner(func(name string, args ...string) ([]byte, error) {
+		if name == "systemctl" {
+			return []byte("inactive\n"), nil
+		}
+		return []byte("PID\tStatus\tLabel\n"), nil
+	})
+	defer restoreCmd()
 	out.Reset()
 	code = runCLI([]string{"agent", "service", "status"}, &out)
 	if code != 0 {

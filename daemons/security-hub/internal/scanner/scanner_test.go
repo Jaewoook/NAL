@@ -1282,4 +1282,3 @@ func TestOrchestrator_DirectScanRejectsWhenScanInProgress(t *testing.T) {
 		t.Fatalf("expected clean idle scan state after FinishScan, got scanning=%v activeID=%q nodes=%v", scanning, activeID, nodes)
 	}
 }
-

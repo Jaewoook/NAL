@@ -1492,5 +1492,3 @@ func TestUpdater_Round4Regressions(t *testing.T) {
 		t.Fatalf("expected Manager.Wait to complete after RunUpdateSync finishes: %v", err)
 	}
 }
-
-

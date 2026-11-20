@@ -91,7 +91,7 @@ func TestAgentService_GenerateLaunchdAndSystemd(t *testing.T) {
 
 func TestAgentService_InstallCustomPathAndRestrictedPermissions(t *testing.T) {
 	tmpDir := t.TempDir()
-	customPath := filepath.Join(tmpDir, "custom-agent-service.file")
+	plistPath := filepath.Join(tmpDir, "custom-agent-service.plist")
 
 	opts := service.AgentServiceOptions{
 		BinaryPath: "/usr/local/bin/security-hub",
@@ -100,36 +100,61 @@ func TestAgentService_InstallCustomPathAndRestrictedPermissions(t *testing.T) {
 		Port:       10247,
 		Token:      "tok123",
 		HubURL:     "http://hub.lan:10311",
-		CustomPath: customPath,
+		CustomPath: plistPath,
 	}
 
 	if err := service.InstallAgent(opts); err != nil {
-		t.Fatalf("InstallAgent with CustomPath failed: %v", err)
+		t.Fatalf("InstallAgent with .plist CustomPath failed: %v", err)
 	}
 
-	st, err := os.Stat(customPath)
+	st, err := os.Stat(plistPath)
 	if err != nil {
-		t.Fatalf("failed to stat custom service file: %v", err)
+		t.Fatalf("failed to stat custom plist service file: %v", err)
 	}
 	if st.Mode().Perm() != 0600 {
-		t.Fatalf("expected 0600 permissions on installed service file, got %o", st.Mode().Perm())
+		t.Fatalf("expected 0600 permissions on installed plist file, got %o", st.Mode().Perm())
 	}
 
-	content, err := os.ReadFile(customPath)
+	content, err := os.ReadFile(plistPath)
 	if err != nil {
-		t.Fatalf("failed to read installed custom service file: %v", err)
+		t.Fatalf("failed to read installed custom plist file: %v", err)
 	}
 	sContent := string(content)
 	if !strings.Contains(sContent, "agent") || !strings.Contains(sContent, "tok123") {
-		t.Fatalf("installed content missing expected fields: %s", sContent)
+		t.Fatalf("installed plist content missing expected fields: %s", sContent)
 	}
 
-	// Custom systemd .service creates a 0600 EnvironmentFile instead of inline secret
+	// Custom systemd .service on Linux creates a 0600 EnvironmentFile instead of inlining the secret
 	systemdPath := filepath.Join(tmpDir, "security-hub-agent.service")
 	optsSystemd := opts
 	optsSystemd.CustomPath = systemdPath
-	// Simulate non-.plist CustomPath handling by directly calling on non-plist or testing validation
-	_ = service.InstallAgent(optsSystemd)
+	if err := service.InstallAgent(optsSystemd); err != nil {
+		t.Fatalf("InstallAgent with .service CustomPath failed: %v", err)
+	}
+	sysSt, err := os.Stat(systemdPath)
+	if err != nil {
+		t.Fatalf("failed to stat custom systemd file: %v", err)
+	}
+	if sysSt.Mode().Perm() != 0600 {
+		t.Fatalf("expected 0600 permissions on installed service file, got %o", sysSt.Mode().Perm())
+	}
+	sysContentBytes, err := os.ReadFile(systemdPath)
+	if err != nil {
+		t.Fatalf("failed to read installed service file: %v", err)
+	}
+	sysContent := string(sysContentBytes)
+	envPath := systemdPath + ".env"
+	if !strings.Contains(sysContent, "EnvironmentFile=") || strings.Contains(sysContent, "tok123") {
+		t.Fatalf("expected systemd unit to reference EnvironmentFile without inlining secret: %s", sysContent)
+	}
+	envSt, envErr := os.Stat(envPath)
+	if envErr != nil || envSt.Mode().Perm() != 0600 {
+		t.Fatalf("expected 0600 permissions on env file %s, got err=%v st=%v", envPath, envErr, envSt)
+	}
+	envBytes, envReadErr := os.ReadFile(envPath)
+	if envReadErr != nil || !strings.Contains(string(envBytes), "tok123") {
+		t.Fatalf("expected env file to contain token, got err=%v content=%q", envReadErr, string(envBytes))
+	}
 }
 
 func TestAgentService_SystemdWhitespaceQuoting(t *testing.T) {

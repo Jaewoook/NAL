@@ -68,11 +68,11 @@ type AgentServiceManager struct{}
 var AgentService = AgentServiceManager{}
 
 func (AgentServiceManager) Install(opts AgentServiceOptions) error { return InstallAgent(opts) }
-func (AgentServiceManager) Uninstall() error                      { return UninstallAgent() }
-func (AgentServiceManager) Start() error                          { return StartAgent() }
-func (AgentServiceManager) Stop() error                           { return StopAgent() }
-func (AgentServiceManager) Restart() error                        { return RestartAgent() }
-func (AgentServiceManager) Status() (string, error)               { return StatusAgent() }
+func (AgentServiceManager) Uninstall() error                       { return UninstallAgent() }
+func (AgentServiceManager) Start() error                           { return StartAgent() }
+func (AgentServiceManager) Stop() error                            { return StopAgent() }
+func (AgentServiceManager) Restart() error                         { return RestartAgent() }
+func (AgentServiceManager) Status() (string, error)                { return StatusAgent() }
 func (AgentServiceManager) GenerateLaunchdPlist(opts AgentServiceOptions) string {
 	return GenerateAgentLaunchdPlist(opts)
 }

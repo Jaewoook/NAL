@@ -53,9 +53,9 @@ func NewManager(cfg *config.Config, store db.Store, runner scanner.CommandRunner
 		runner = scanner.NewOSCommandRunner()
 	}
 	return &Manager{
-		cfg:   cfg,
-		store: store,
-		runner: runner,
+		cfg:     cfg,
+		store:   store,
+		runner:  runner,
 		alerter: alerter,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Minute,

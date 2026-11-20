@@ -337,4 +337,3 @@ func TestStartAnnouncer_NilConfigAndRedirectSafety(t *testing.T) {
 	for range errCh2 {
 	}
 }
-
