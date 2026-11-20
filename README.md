@@ -92,7 +92,7 @@ Start, stop, or restart one or more services with:
       <td align="center">Service</td>
       <td align="center">N/A</td>
       <td>Cloudflare dynamic DNS updater for automated DNS record updates (<a href="./services/cloudflare-ddns"><code>services/cloudflare-ddns</code></a>)</td>
-      <td>Stable</td>
+      <td>Deprecated</td>
     </tr>
     <tr>
       <td>Tunnel</td>
