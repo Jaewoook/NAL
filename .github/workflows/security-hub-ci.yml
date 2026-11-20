@@ -1,0 +1,99 @@
+name: Security Hub CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'daemons/security-hub/**'
+      - '.github/workflows/security-hub-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'daemons/security-hub/**'
+      - '.github/workflows/security-hub-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend Build & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: daemons/security-hub/frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+          cache-dependency-path: daemons/security-hub/frontend/yarn.lock
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Typecheck TypeScript
+        run: yarn typecheck
+
+      - name: Run frontend tests
+        run: yarn test
+
+      - name: Build production bundle
+        run: yarn build
+
+      - name: Verify embedded static assets are up to date
+        run: |
+          test -s ../internal/web/static/index.html
+          test -s ../internal/web/static/app.js
+          test -s ../internal/web/static/styles.css
+          if [ -n "$(git status --porcelain -- ../internal/web/static)" ]; then
+            echo "Embedded static assets in internal/web/static are out of date. Run 'yarn build' and commit the updated files."
+            git diff --stat -- ../internal/web/static
+            exit 1
+          fi
+
+  go:
+    name: Go Verify & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: daemons/security-hub
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: daemons/security-hub/go.sum
+
+      - name: Verify Go formatting (gofmt)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following Go files are not formatted with gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Verify Go modules
+        run: go mod verify
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run Go tests with race detector
+        run: go test -v -race -count=1 ./...
+
+      - name: Build security-hub binary
+        run: go build -o /tmp/security-hub ./cmd/security-hub
