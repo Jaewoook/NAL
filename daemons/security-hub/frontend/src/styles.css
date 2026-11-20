@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(1.3);
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-slate-900 text-slate-50 leading-normal pb-15 antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+  }
+}
+
+@layer components {
+  .dot {
+    @apply w-2 h-2 rounded-full inline-block shrink-0;
+  }
+  .dot.green {
+    @apply bg-emerald-500;
+  }
+  .dot.red {
+    @apply bg-red-500;
+  }
+  .dot.amber {
+    @apply bg-amber-500;
+  }
+  .dot.scanning {
+    @apply bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)];
+    animation: pulse-dot 1.2s infinite ease-in-out;
+  }
+
+  .node-pill {
+    @apply bg-slate-800 border border-slate-700 text-slate-400 px-3.5 py-1.5 rounded-full text-[13px] font-semibold cursor-pointer inline-flex items-center gap-2 transition-colors;
+  }
+  .node-pill.active {
+    @apply border-sky-400 text-slate-50 bg-sky-400/12;
+  }
+  .node-pill.scanning {
+    @apply border-amber-500 bg-amber-500/14 text-slate-50;
+  }
+
+  .node-scan-status {
+    @apply text-[10px] font-bold px-1.75 py-0.25 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/40 inline-flex items-center gap-1 tracking-wide;
+  }
+
+  .scan-node-option {
+    @apply flex items-center justify-between px-3.5 py-2.5 border border-slate-700 rounded-lg bg-slate-800 cursor-pointer transition-all hover:bg-[#263449] hover:border-sky-400;
+  }
+  .scan-node-option input[type="radio"] {
+    @apply mr-3 cursor-pointer accent-sky-400;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.25 px-2.25 py-0.75 rounded-md text-xs font-semibold;
+  }
+  .badge.crit {
+    @apply bg-red-500/15 text-red-300 border border-red-500/35;
+  }
+  .badge.warn {
+    @apply bg-amber-500/15 text-amber-300 border border-amber-500/35;
+  }
+  .badge.ok {
+    @apply bg-emerald-500/15 text-emerald-300 border border-emerald-500/35;
+  }
+  .badge.skip {
+    @apply bg-slate-500/20 text-slate-300 border border-slate-600;
+  }
+
+  .btn {
+    @apply px-3 py-1.5 rounded-md text-[12.5px] font-semibold cursor-pointer border border-transparent transition-colors disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply bg-sky-400 text-slate-900 hover:not-disabled:bg-sky-300;
+  }
+  .btn-secondary {
+    @apply bg-slate-700 text-slate-50 border-slate-600 hover:not-disabled:bg-slate-600 hover:not-disabled:text-white;
+  }
+  .btn-danger {
+    @apply bg-red-500 text-white hover:not-disabled:bg-red-600;
+  }
+  .btn-ghost {
+    @apply bg-transparent border-slate-700 text-slate-400 hover:not-disabled:text-slate-50 hover:not-disabled:border-slate-400;
+  }
+
+  .tooltip-wrapper {
+    @apply relative inline-flex items-center cursor-default;
+  }
+  .tooltip-box {
+    @apply invisible opacity-0 absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 bg-[#0b1120] text-slate-50 border border-slate-700 px-3 py-2 rounded-lg text-[11.5px] font-medium whitespace-normal min-w-[180px] max-w-[300px] shadow-[0_10px_25px_-5px_rgba(0,0,0,0.7)] z-50 pointer-events-none transition-all duration-150 text-center leading-snug;
+  }
+  .tooltip-box::after {
+    content: "";
+    @apply absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-solid border-t-[#0b1120] border-x-transparent border-b-transparent;
+  }
+  .tooltip-wrapper:hover .tooltip-box {
+    @apply visible opacity-100;
+  }
+
+  select.ver-select {
+    @apply bg-slate-900 text-slate-50 border border-slate-700 py-1.5 pl-3 pr-8 rounded-md text-[12.5px] font-mono cursor-pointer transition-colors appearance-none hover:border-sky-400 focus:border-sky-400 focus:outline-none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 12px;
+  }
+}

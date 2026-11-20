@@ -921,29 +921,47 @@ func TestWebAssets_PendingNodesAndScanProgress(t *testing.T) {
 	}
 
 	for _, elem := range []string{
-		"btn-test-node",
-		"pending-nodes-banner",
-		"scan-progress-pill",
-		"pending-nodes-container",
-		"scan-progress-box",
-		"test-node-result",
-		"pending-nodes-section",
-		"pending-nodes-list",
-		"btn-scan-node",
-		"btn-scan-now",
-		"modal-scan-node",
-		"scan-node-modal-list",
-		"btn-confirm-scan-node",
+		`id="root"`,
+		"/app.js",
+		"/styles.css",
 	} {
 		if !strings.Contains(indexHTML, elem) {
-			t.Errorf("expected embedded index.html to contain element %q", elem)
+			t.Errorf("expected embedded index.html to contain %q", elem)
 		}
 		if !strings.Contains(wIndex.Body.String(), elem) {
-			t.Errorf("expected served /index.html to contain element %q", elem)
+			t.Errorf("expected served /index.html to contain %q", elem)
 		}
 	}
 
-	// 2. Verify app.js via direct embed and via HTTP server
+	// 2. Verify styles.css via direct embed and via HTTP server
+	cssBytes, err := staticEmbedFS.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatalf("failed to read embedded styles.css: %v", err)
+	}
+	cssText := string(cssBytes)
+
+	reqCSS := httptest.NewRequest(http.MethodGet, "/styles.css", nil)
+	wCSS := httptest.NewRecorder()
+	h.ServeHTTP(wCSS, reqCSS)
+	if wCSS.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /styles.css, got %d", wCSS.Code)
+	}
+
+	for _, selector := range []string{
+		".node-pill.scanning",
+		".dot.scanning",
+		".node-scan-status",
+		".scan-node-option",
+	} {
+		if !strings.Contains(cssText, selector) {
+			t.Errorf("expected embedded styles.css to contain %q", selector)
+		}
+		if !strings.Contains(wCSS.Body.String(), selector) {
+			t.Errorf("expected served /styles.css to contain %q", selector)
+		}
+	}
+
+	// 3. Verify compiled React app.js via direct embed and via HTTP server
 	appBytes, err := staticEmbedFS.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatalf("failed to read embedded app.js: %v", err)
@@ -958,20 +976,26 @@ func TestWebAssets_PendingNodesAndScanProgress(t *testing.T) {
 	}
 
 	for _, token := range []string{
-		"testRemoteNodeConnection",
-		"approveNode",
-		"rejectNode",
-		"triggerScan",
-		"openScanNodeModal",
-		"confirmAndStartNodeScan",
-		"renderScanNodeModalList",
+		"btn-test-node",
+		"pending-nodes-banner",
+		"scan-progress-pill",
+		"pending-nodes-container",
+		"scan-progress-box",
+		"test-node-result",
+		"pending-nodes-section",
+		"pending-nodes-list",
+		"btn-scan-node",
+		"btn-scan-now",
+		"modal-scan-node",
+		"scan-node-modal-list",
+		"btn-confirm-scan-node",
 		"node-scan-status",
-		"renderPendingNodesBanner",
-		"renderNodesModalList",
 		"/api/nodes/approve",
 		"/api/nodes/reject",
 		"/api/nodes/test",
 		"/api/tasks/",
+		"/api/scan",
+		"/api/dashboard",
 		"EventSource",
 	} {
 		if !strings.Contains(appJS, token) {
@@ -1441,14 +1465,14 @@ func TestRaspberryPiAgent_AptScanAndRemoteUpgrade(t *testing.T) {
 		t.Fatalf("expected succeeded task with logs from RPi-01, got task=%+v logs=%+v", finalTask, logs)
 	}
 
-	// 5. Verify Web UI assets include shared System Packages tab, security fixes, and node-scoped skip
-	indexBytes, _ := staticEmbedFS.ReadFile("static/index.html")
+	// 5. Verify Web UI assets include shared System Packages tab, security checks, and node-scoped skip
 	appBytes, _ := staticEmbedFS.ReadFile("static/app.js")
-	if !strings.Contains(string(indexBytes), "System Packages (`brew` / `apt`)") {
-		t.Error("expected index.html to display shared System Packages (`brew` / `apt`) tab")
+	appText := string(appBytes)
+	if !strings.Contains(appText, "System Packages (`brew` / `apt`)") {
+		t.Error("expected app.js bundle to display shared System Packages (`brew` / `apt`) tab")
 	}
-	if !strings.Contains(string(appBytes), "item.target_type === 'apt'") || !strings.Contains(string(appBytes), "isSafeHttpUrl") {
-		t.Error("expected app.js to handle item.target_type === 'apt' and isSafeHttpUrl")
+	if !strings.Contains(appText, `target_type==="apt"`) || !strings.Contains(appText, `/^https?:\/\//i`) {
+		t.Error("expected app.js bundle to handle item.target_type === 'apt' and validate safe HTTP URLs")
 	}
 
 	// 6. Verify node-scoped POST/DELETE /api/skip isolates RPi-01 from RPi-02
@@ -2015,6 +2039,3 @@ func TestServer_SingleNodeScanAndDashboardScanningNodes(t *testing.T) {
 		}
 	}
 }
-
-
-
