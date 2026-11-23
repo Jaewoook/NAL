@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import type React from 'react';
+import { useEffect, useState } from 'react';
 import type { PendingUpdateRequest } from '../types';
 import { Modal } from './Modal';
 
@@ -47,7 +48,8 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ request, onConfirm, on
       {request && (
         <>
           <p id="modal-desc" className="text-slate-400 text-[13px] mt-2.5 mb-4">
-            Updating {request.target_name} on {request.node} from {request.current_version} → {request.target_version}
+            Updating {request.target_name} on {request.node} from {request.current_version} →{' '}
+            {request.target_version}
           </p>
 
           {isDocker && (
@@ -55,7 +57,8 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ request, onConfirm, on
               <label id="lbl-snapshot" className="flex gap-2 items-center">
                 <input type="checkbox" checked readOnly disabled />
                 <span>
-                  <strong>Save Rollback Snapshot</strong> (records current image digest &amp; compose/env files)
+                  <strong>Save Rollback Snapshot</strong> (records current image digest &amp;
+                  compose/env files)
                 </span>
               </label>
               <label id="lbl-deadman" className="flex gap-2 items-center cursor-pointer">
@@ -66,7 +69,8 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ request, onConfirm, on
                   onChange={(e) => setEnableDeadMan(e.target.checked)}
                 />
                 <span>
-                  <strong>60s Automatic Dead-Man&apos;s Rollback</strong> if container healthcheck fails
+                  <strong>60s Automatic Dead-Man&apos;s Rollback</strong> if container healthcheck
+                  fails
                 </span>
               </label>
               <label id="lbl-backup" className="flex gap-2 items-center cursor-pointer">
@@ -77,7 +81,8 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ request, onConfirm, on
                   onChange={(e) => setRunBackup(e.target.checked)}
                 />
                 <span>
-                  <strong>Run Pre-Update Volume Backup</strong> (<code>./batch/backup-volumes.sh</code>)
+                  <strong>Run Pre-Update Volume Backup</strong> (
+                  <code>./batch/backup-volumes.sh</code>)
                 </span>
               </label>
             </div>

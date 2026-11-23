@@ -1,5 +1,7 @@
-import React, { useEffect, useRef } from 'react';
-import { cn } from '../api';
+import type React from 'react';
+import { useEffect, useRef } from 'react';
+import { cn } from '../lib/cn';
+import { hubApi } from '../lib/http';
 import type { RenderedLogEntry, Task } from '../types';
 
 interface TaskLogsPanelProps {
@@ -21,10 +23,10 @@ export const TaskLogsPanel: React.FC<TaskLogsPanelProps> = ({
   const terminalRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (terminalRef.current) {
+    if (logs.length > 0 && terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
-  }, [logs]);
+  }, [logs.length]);
 
   const getStreamClass = (stream?: string): string => {
     if (stream === 'cmd') return 'text-sky-400 font-semibold';
@@ -88,13 +90,15 @@ export const TaskLogsPanel: React.FC<TaskLogsPanelProps> = ({
         <div>
           <div className="bg-[#141d2f] border border-slate-700 border-b-0 rounded-t-[10px] px-4 py-2.5 flex justify-between items-center text-[12.5px]">
             <div id="active-task-title">
-              {activeTaskId ? `Task ${activeTaskId} — Execution Output` : 'Select a task to view stdout/stderr logs'}
+              {activeTaskId
+                ? `Task ${activeTaskId} — Execution Output`
+                : 'Select a task to view stdout/stderr logs'}
             </div>
             {activeTaskId && (
               <a
                 id="download-log-link"
                 className="btn btn-ghost inline-flex no-underline"
-                href={`/api/tasks/${encodeURIComponent(activeTaskId)}/download`}
+                href={hubApi.taskDownloadUrl(activeTaskId)}
                 target="_blank"
                 rel="noopener noreferrer"
               >

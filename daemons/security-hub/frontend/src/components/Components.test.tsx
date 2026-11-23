@@ -1,9 +1,10 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { NodeInfo } from '../types';
+import { ConfirmModal } from './ConfirmModal';
 import { NodeBar } from './NodeBar';
 import { ScanNodeModal } from './ScanNodeModal';
 import { UpdateModal } from './UpdateModal';
-import type { NodeInfo } from '../types';
 
 const sampleNodes: NodeInfo[] = [
   { name: 'Axis', role: 'hub', status: 'approved', online: true },
@@ -77,7 +78,6 @@ describe('ScanNodeModal', () => {
     fireEvent.click(screen.getByDisplayValue('Axis'));
     expect((screen.getByDisplayValue('Axis') as HTMLInputElement).checked).toBe(true);
 
-    // Closing and reopening with currentNodeFilter="Atlas" must reset back to Atlas
     rerender(
       <ScanNodeModal
         open={false}
@@ -130,5 +130,33 @@ describe('UpdateModal', () => {
 
     expect(screen.queryByText(/Save Rollback Snapshot/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Apply Package Upgrade/i })).toBeInTheDocument();
+  });
+});
+
+describe('ConfirmModal', () => {
+  it('invokes confirm and cancel callbacks cleanly', async () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <ConfirmModal
+        state={{
+          open: true,
+          title: 'Remove Compute Node',
+          description: 'Remove compute node "Atlas"?',
+          confirmLabel: 'Remove Node',
+          danger: true,
+        }}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+
+    const confirmBtn = await screen.findByRole('button', { name: 'Remove Node' });
+    expect(confirmBtn).toHaveClass('btn-danger');
+    fireEvent.click(confirmBtn);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

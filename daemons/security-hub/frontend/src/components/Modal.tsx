@@ -1,6 +1,6 @@
-import React from 'react';
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react';
-import { cn } from '../api';
+import type React from 'react';
+import { cn } from '../lib/cn';
 
 interface ModalProps {
   id: string;
@@ -9,6 +9,7 @@ interface ModalProps {
   title: React.ReactNode;
   titleId?: string;
   panelClassName?: string;
+  zIndexClassName?: string;
   children: React.ReactNode;
 }
 
@@ -22,12 +23,13 @@ export const Modal: React.FC<ModalProps> = ({
   title,
   titleId,
   panelClassName,
+  zIndexClassName = 'z-50',
   children,
 }) => {
   if (!open) return null;
 
   return (
-    <Dialog id={id} open={open} onClose={onClose} className="relative z-50">
+    <Dialog id={id} open={open} onClose={onClose} className={cn('relative', zIndexClassName)}>
       <DialogBackdrop className="fixed inset-0 bg-slate-900/78" />
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <DialogPanel
@@ -36,7 +38,11 @@ export const Modal: React.FC<ModalProps> = ({
             panelClassName
           )}
         >
-          <DialogTitle id={titleId} as="h3" className="text-base font-bold flex items-center gap-2 flex-wrap">
+          <DialogTitle
+            id={titleId}
+            as="h3"
+            className="text-base font-bold flex items-center gap-2 flex-wrap"
+          >
             {title}
           </DialogTitle>
           {children}

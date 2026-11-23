@@ -41,6 +41,11 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
+      - name: Run Biome linter & formatter check
+        run: |
+          yarn lint
+          yarn format:check
+
       - name: Typecheck TypeScript
         run: yarn typecheck
 

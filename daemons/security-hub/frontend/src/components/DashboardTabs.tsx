@@ -1,5 +1,5 @@
-import React from 'react';
-import { cn } from '../api';
+import type React from 'react';
+import { cn } from '../lib/cn';
 import type { TabType } from '../types';
 
 const TABS: { id: TabType; label: string; badgeId: string }[] = [

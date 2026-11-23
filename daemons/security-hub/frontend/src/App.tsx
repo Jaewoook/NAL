@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, getItemSortRank, isAxiosUnauthorized } from './api';
+import type React from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { BrokenLinkageModal } from './components/BrokenLinkageModal';
+import { ConfirmModal } from './components/ConfirmModal';
 import { DashboardTabs } from './components/DashboardTabs';
 import { Header } from './components/Header';
 import { ItemsTable } from './components/ItemsTable';
@@ -13,107 +13,67 @@ import { SummaryGrid } from './components/SummaryGrid';
 import { TaskLogsPanel } from './components/TaskLogsPanel';
 import { UpdateModal } from './components/UpdateModal';
 import { useAuth } from './hooks/useAuth';
+import { useConfirmDialog } from './hooks/useConfirmDialog';
 import { useDashboardActions } from './hooks/useDashboardActions';
+import { useDashboardData } from './hooks/useDashboardData';
 import { useScanStream } from './hooks/useScanStream';
 import { useTaskLogStream } from './hooks/useTaskLogStream';
-import type { DashboardResponse, NodeInfo, PendingUpdateRequest, TabType } from './types';
+import type { PendingUpdateRequest, TabType } from './types';
 
 /**
- * Root presentation shell composing auth, dashboard queries, scan/log streams, and modals.
+ * Root presentation shell composing auth, dashboard data, SSE streams, and action modals.
  */
 export const App: React.FC = () => {
-  const queryClient = useQueryClient();
-
   const [currentTab, setCurrentTab] = useState<TabType>('docker');
-  const [currentNodeFilter, setCurrentNodeFilter] = useState<string>('all');
+  const [pollFallback, setPollFallback] = useState(false);
   const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({});
   const [pendingUpdateReq, setPendingUpdateReq] = useState<PendingUpdateRequest | null>(null);
   const [nodesModalOpen, setNodesModalOpen] = useState(false);
   const [scanNodeModalOpen, setScanNodeModalOpen] = useState(false);
-  const [linkageModal, setLinkageModal] = useState<{ pkgName: string; details: string } | null>(null);
+  const [linkageModal, setLinkageModal] = useState<{ pkgName: string; details: string } | null>(
+    null
+  );
 
-  const resetStreamsRef = useRef<() => void>(() => undefined);
+  const confirm = useConfirmDialog();
+  const streamResettersRef = useRef<{ scan?: () => void; task?: () => void }>({});
 
   const resetUIState = useCallback(() => {
-    resetStreamsRef.current();
+    streamResettersRef.current.scan?.();
+    streamResettersRef.current.task?.();
+    confirm.cancelConfirm();
     setSelectedVersions({});
     setPendingUpdateReq(null);
     setNodesModalOpen(false);
     setScanNodeModalOpen(false);
     setLinkageModal(null);
-  }, []);
+  }, [confirm.cancelConfirm]);
 
   const auth = useAuth({ onSessionReset: resetUIState });
 
-  const refreshDashboard = useCallback(
-    () => queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-    [queryClient]
-  );
-
-  const [pollFallback, setPollFallback] = useState(false);
-
-  const dashboardQuery = useQuery({
-    queryKey: ['dashboard'],
-    enabled: auth.authenticated,
-    refetchInterval: pollFallback ? 2000 : false,
-    queryFn: async () => {
-      try {
-        const { data } = await apiClient.get<DashboardResponse>('/api/dashboard');
-        return data;
-      } catch (err) {
-        if (isAxiosUnauthorized(err)) {
-          auth.handleUnauthorized();
-        }
-        throw err;
-      }
-    },
+  const dashboard = useDashboardData({
+    authenticated: auth.authenticated,
+    pollFallback,
+    currentTab,
+    onUnauthorized: auth.handleUnauthorized,
   });
-
-  const dashboardData = dashboardQuery.data ?? null;
-  const hubNode = dashboardData?.hub_node || 'local';
-
-  const allNodes: NodeInfo[] = useMemo(() => {
-    if (dashboardData?.nodes) return dashboardData.nodes;
-    return [{ name: hubNode, role: 'hub', status: 'approved', online: true }];
-  }, [dashboardData, hubNode]);
-
-  const approvedNodes = useMemo(
-    () => allNodes.filter((n) => !n.status || n.status === 'approved'),
-    [allNodes]
-  );
-
-  useEffect(() => {
-    if (!dashboardData || currentNodeFilter === 'all') return;
-    const stillApproved = approvedNodes.some(
-      (n) => n.name.toLowerCase() === currentNodeFilter.toLowerCase()
-    );
-    if (!stillApproved) setCurrentNodeFilter('all');
-  }, [dashboardData, approvedNodes, currentNodeFilter]);
 
   const scanStream = useScanStream({
     authenticated: auth.authenticated,
-    dashboardData,
-    approvedNodes,
+    dashboardData: dashboard.dashboardData,
+    approvedNodes: dashboard.approvedNodes,
     authEpochRef: auth.authEpochRef,
+    onPollFallbackChange: setPollFallback,
     onUnauthorized: auth.handleUnauthorized,
-    refreshDashboard,
+    refreshDashboard: dashboard.refreshDashboard,
   });
-
-  useEffect(() => {
-    setPollFallback(scanStream.pollFallback);
-  }, [scanStream.pollFallback]);
 
   const taskLogStream = useTaskLogStream({
     authEpochRef: auth.authEpochRef,
-    refreshDashboard,
+    refreshDashboard: dashboard.refreshDashboard,
   });
 
-  useEffect(() => {
-    resetStreamsRef.current = () => {
-      scanStream.resetScanState();
-      taskLogStream.resetTaskLogs();
-    };
-  }, [scanStream.resetScanState, taskLogStream.resetTaskLogs]);
+  streamResettersRef.current.scan = scanStream.resetScanState;
+  streamResettersRef.current.task = taskLogStream.resetTaskLogs;
 
   const handleOpenTaskLog = useCallback(
     (taskId: string) => {
@@ -124,49 +84,15 @@ export const App: React.FC = () => {
   );
 
   const actions = useDashboardActions({
-    hubNode,
-    currentNodeFilter,
+    hubNode: dashboard.hubNode,
+    currentNodeFilter: dashboard.currentNodeFilter,
     authEpochRef: auth.authEpochRef,
     onUnauthorized: auth.handleUnauthorized,
-    refreshDashboard,
+    refreshDashboard: dashboard.refreshDashboard,
     onOpenTaskLog: handleOpenTaskLog,
-    onResetNodeFilter: () => setCurrentNodeFilter('all'),
+    onResetNodeFilter: () => dashboard.setCurrentNodeFilter('all'),
+    requestConfirm: confirm.requestConfirm,
   });
-
-  const pendingNodesCount = useMemo(
-    () => allNodes.filter((n) => n.status === 'pending').length,
-    [allNodes]
-  );
-
-  const nodeFilteredItems = useMemo(() => {
-    const allItems = dashboardData?.scan?.items || [];
-    if (currentNodeFilter === 'all') return allItems;
-    return allItems.filter((item) => (item.node || hubNode) === currentNodeFilter);
-  }, [dashboardData, currentNodeFilter, hubNode]);
-
-  const tabCounts = useMemo(
-    () => ({
-      docker: nodeFilteredItems.filter((i) => i.target_type === 'docker').length,
-      brew: nodeFilteredItems.filter((i) => i.target_type === 'brew' || i.target_type === 'apt').length,
-      daemons: nodeFilteredItems.filter((i) => i.target_type === 'daemon' || i.target_type === 'macos').length,
-      logs: (dashboardData?.recent_tasks || []).length,
-    }),
-    [nodeFilteredItems, dashboardData]
-  );
-
-  const sortedTabItems = useMemo(() => {
-    const filtered = nodeFilteredItems.filter((item) => {
-      if (currentTab === 'docker') return item.target_type === 'docker';
-      if (currentTab === 'brew') return item.target_type === 'brew' || item.target_type === 'apt';
-      return item.target_type === 'daemon' || item.target_type === 'macos';
-    });
-    return [...filtered].sort((a, b) => {
-      const rankDiff = getItemSortRank(a) - getItemSortRank(b);
-      return rankDiff !== 0
-        ? rankDiff
-        : (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
-    });
-  }, [nodeFilteredItems, currentTab]);
 
   return (
     <>
@@ -174,7 +100,7 @@ export const App: React.FC = () => {
         authenticated={auth.authenticated}
         username={auth.username}
         authMethod={auth.authMethod}
-        pendingNodesCount={pendingNodesCount}
+        pendingNodesCount={dashboard.pendingNodesCount}
         isScanning={scanStream.effectiveScanActive}
         scanProgressText={scanStream.scanProgressText}
         onOpenNodesModal={() => setNodesModalOpen(true)}
@@ -193,32 +119,36 @@ export const App: React.FC = () => {
         {auth.authenticated && (
           <div id="view-dashboard">
             <SummaryGrid
-              items={nodeFilteredItems}
-              tasksCount={tabCounts.logs}
-              scannedAt={dashboardData?.scan?.scanned_at}
+              items={dashboard.nodeFilteredItems}
+              tasksCount={dashboard.tabCounts.logs}
+              scannedAt={dashboard.dashboardData?.scan?.scanned_at}
             />
 
             <NodeBar
-              approvedNodes={approvedNodes}
+              approvedNodes={dashboard.approvedNodes}
               scanningNodes={scanStream.scanningNodes}
-              currentNodeFilter={currentNodeFilter}
-              onSelectNodeFilter={setCurrentNodeFilter}
+              currentNodeFilter={dashboard.currentNodeFilter}
+              onSelectNodeFilter={dashboard.setCurrentNodeFilter}
               onOpenNodesModal={() => setNodesModalOpen(true)}
             />
 
-            <DashboardTabs currentTab={currentTab} counts={tabCounts} onSelectTab={setCurrentTab} />
+            <DashboardTabs
+              currentTab={currentTab}
+              counts={dashboard.tabCounts}
+              onSelectTab={setCurrentTab}
+            />
 
             {currentTab === 'logs' ? (
               <TaskLogsPanel
-                tasks={dashboardData?.recent_tasks || []}
+                tasks={dashboard.dashboardData?.recent_tasks || []}
                 activeTaskId={taskLogStream.activeTaskId}
                 logs={taskLogStream.taskLogLines}
                 onSelectTask={taskLogStream.streamTaskLogs}
               />
             ) : (
               <ItemsTable
-                items={sortedTabItems}
-                hubNode={hubNode}
+                items={dashboard.sortedTabItems}
+                hubNode={dashboard.hubNode}
                 selectedVersions={selectedVersions}
                 onSelectVersion={(itemKey, version) =>
                   setSelectedVersions((prev) => ({ ...prev, [itemKey]: version }))
@@ -226,7 +156,7 @@ export const App: React.FC = () => {
                 onOpenBrokenLinkage={(pkgName, details) => setLinkageModal({ pkgName, details })}
                 onOpenUpdateModal={(item, targetVersion) =>
                   setPendingUpdateReq({
-                    node: item.node || hubNode || 'local',
+                    node: item.node || dashboard.hubNode || 'local',
                     target_type: item.target_type,
                     target_name: item.name,
                     current_version: item.current_version,
@@ -237,7 +167,9 @@ export const App: React.FC = () => {
                 }
                 onSkipItem={actions.skipItem}
                 onUnskipItem={actions.unskipItem}
-                onRollbackService={(nodeName, svcName) => void actions.rollbackService(nodeName, svcName)}
+                onRollbackService={(nodeName, svcName) =>
+                  void actions.rollbackService(nodeName, svcName)
+                }
               />
             )}
           </div>
@@ -254,10 +186,10 @@ export const App: React.FC = () => {
 
         <NodesModal
           open={nodesModalOpen}
-          nodes={allNodes}
+          nodes={dashboard.allNodes}
           onApproveNode={actions.approveNode}
-          onRejectNode={actions.rejectNode}
-          onDeleteNode={actions.deleteNode}
+          onRejectNode={(name) => void actions.rejectNode(name)}
+          onDeleteNode={(name) => void actions.deleteNode(name)}
           onSaveNode={actions.saveNode}
           onUnauthorized={auth.handleUnauthorized}
           onClose={() => setNodesModalOpen(false)}
@@ -272,12 +204,18 @@ export const App: React.FC = () => {
 
         <ScanNodeModal
           open={scanNodeModalOpen}
-          approvedNodes={approvedNodes}
+          approvedNodes={dashboard.approvedNodes}
           scanningNodes={scanStream.scanningNodes}
-          currentNodeFilter={currentNodeFilter}
+          currentNodeFilter={dashboard.currentNodeFilter}
           isScanActive={scanStream.effectiveScanActive}
           onStartNodeScan={(targetNode) => void scanStream.triggerScan(targetNode)}
           onClose={() => setScanNodeModalOpen(false)}
+        />
+
+        <ConfirmModal
+          state={confirm.confirmDialog}
+          onConfirm={confirm.acceptConfirm}
+          onCancel={confirm.cancelConfirm}
         />
       </div>
     </>

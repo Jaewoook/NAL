@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 
 interface LoginViewProps {
   onPasskeyLogin: () => void;
@@ -28,9 +28,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onPasskeyLogin }) => {
         🔐 Sign in with NAL Account (Authentik SSO)
       </a>
 
-      <div className="my-3.5 text-slate-400 text-xs">
-        — OR EMERGENCY / OFFLINE ACCESS —
-      </div>
+      <div className="my-3.5 text-slate-400 text-xs">— OR EMERGENCY / OFFLINE ACCESS —</div>
 
       <button
         type="button"
@@ -41,7 +39,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onPasskeyLogin }) => {
       </button>
 
       <p className="text-[11.5px] text-slate-400 mt-4 text-left bg-slate-900 p-2.5 rounded-lg">
-        <strong>Offline Resilience:</strong> Passkey verification and active sessions run locally on the Mac mini host daemon, remaining accessible even while <code>auth</code> (Authentik) or <code>db</code> (PostgreSQL) is restarting.
+        <strong>Offline Resilience:</strong> Passkey verification and active sessions run locally on
+        the Mac mini host daemon, remaining accessible even while <code>auth</code> (Authentik) or{' '}
+        <code>db</code> (PostgreSQL) is restarting.
       </p>
     </div>
   );

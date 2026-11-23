@@ -1,25 +1,17 @@
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { type MutableRefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import {
-  apiClient,
-  getAxiosErrorMessage,
-  isAxiosUnauthorized,
-  isStreamableScanTaskId,
-  removeScanningNodeName,
-} from '../api';
-import type { DashboardResponse, NodeInfo, TaskLogLine } from '../types';
-
-interface ScanTriggerResp {
-  task_id?: string;
-  scanning_nodes?: string[];
-}
+import { isStreamableScanTaskId, removeScanningNodeName } from '../lib/domain';
+import { getAxiosErrorMessage, hubApi, isAxiosUnauthorized } from '../lib/http';
+import { subscribeTaskSSE } from '../lib/sse';
+import type { DashboardResponse, NodeInfo } from '../types';
 
 interface UseScanStreamOptions {
   authenticated: boolean;
   dashboardData: DashboardResponse | null;
   approvedNodes: NodeInfo[];
   authEpochRef: MutableRefObject<number>;
+  onPollFallbackChange: (enabled: boolean) => void;
   onUnauthorized: () => void;
   refreshDashboard: () => Promise<void>;
 }
@@ -32,6 +24,7 @@ export function useScanStream({
   dashboardData,
   approvedNodes,
   authEpochRef,
+  onPollFallbackChange,
   onUnauthorized,
   refreshDashboard,
 }: UseScanStreamOptions) {
@@ -39,9 +32,8 @@ export function useScanStream({
   const [scanningNodes, setScanningNodes] = useState<string[]>([]);
   const [isScanActive, setIsScanActive] = useState(false);
   const [scanProgressText, setScanProgressText] = useState('');
-  const [pollFallback, setPollFallback] = useState(false);
 
-  const activeScanEventSourceRef = useRef<EventSource | null>(null);
+  const activeScanSubscriptionRef = useRef<{ close: () => void } | null>(null);
   const failedStreamTaskIdsRef = useRef<Set<string>>(new Set());
   const hubNodeRef = useRef<string>('local');
 
@@ -50,137 +42,133 @@ export function useScanStream({
   }, [dashboardData]);
 
   const closeScanStream = useCallback(() => {
-    if (activeScanEventSourceRef.current) {
-      activeScanEventSourceRef.current.close();
-      activeScanEventSourceRef.current = null;
+    if (activeScanSubscriptionRef.current) {
+      activeScanSubscriptionRef.current.close();
+      activeScanSubscriptionRef.current = null;
     }
   }, []);
 
   const resetScanState = useCallback(() => {
     closeScanStream();
     failedStreamTaskIdsRef.current.clear();
-    setPollFallback(false);
+    onPollFallbackChange(false);
     setScanningNodes([]);
     setIsScanActive(false);
     setScanProgressText('');
-  }, [closeScanStream]);
+  }, [closeScanStream, onPollFallbackChange]);
 
   useEffect(() => closeScanStream, [closeScanStream]);
 
   const attachScanStream = useCallback(
     (taskId: string) => {
-      setPollFallback(false);
+      onPollFallbackChange(false);
       closeScanStream();
       setIsScanActive(true);
       setScanProgressText((prev) => prev || 'Scanning in progress...');
 
       if (!isStreamableScanTaskId(taskId, failedStreamTaskIdsRef.current)) {
-        setPollFallback(true);
+        onPollFallbackChange(true);
         return;
       }
 
       const epoch = authEpochRef.current;
-      const es = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/stream`);
-      activeScanEventSourceRef.current = es;
+      const sub = subscribeTaskSSE({
+        taskId,
+        isValidEpoch: () => epoch === authEpochRef.current,
+        onMessage: (event) => {
+          failedStreamTaskIdsRef.current.delete(String(taskId));
+          const lineText = event.kind === 'structured' ? event.payload.line : event.text;
+          if (!lineText) return;
 
-      es.onmessage = (e: MessageEvent) => {
-        if (epoch !== authEpochRef.current || activeScanEventSourceRef.current !== es) return;
-        failedStreamTaskIdsRef.current.delete(String(taskId));
-
-        let lineText = '';
-        try {
-          const parsed = JSON.parse(e.data) as Partial<TaskLogLine>;
-          lineText = parsed.line || '';
-        } catch {
-          lineText = typeof e.data === 'string' ? e.data : '';
-        }
-
-        if (lineText) {
           setScanProgressText(lineText);
           const hubName = hubNodeRef.current || 'local';
           if (/^\[Hub\] Scanned \d+ local\b/.test(lineText)) {
-            setScanningNodes((prev) => (prev.length > 1 ? removeScanningNodeName(prev, hubName) : prev));
+            setScanningNodes((prev) =>
+              prev.length > 1 ? removeScanningNodeName(prev, hubName) : prev
+            );
           } else {
-            const m = lineText.match(/^\[([^\]]+)\] (?:Scanned \d+ remote\b|Remote agent unreachable\b)/);
-            if (m && m[1]) {
+            const m = lineText.match(
+              /^\[([^\]]+)\] (?:Scanned \d+ remote\b|Remote agent unreachable\b)/
+            );
+            if (m?.[1]) {
               const finishedNode = m[1];
               setScanningNodes((prev) =>
                 prev.length > 1 ? removeScanningNodeName(prev, finishedNode) : prev
               );
             }
           }
-        }
-      };
-
-      es.addEventListener('done', () => {
-        if (activeScanEventSourceRef.current !== es) return;
-        es.close();
-        activeScanEventSourceRef.current = null;
-        if (epoch !== authEpochRef.current) return;
-        setPollFallback(false);
-        setScanningNodes([]);
-        setIsScanActive(false);
-        setScanProgressText('');
-        queryClient.setQueryData<DashboardResponse>(['dashboard'], (prev) =>
-          prev ? { ...prev, scanning: false, scanning_nodes: [] } : prev
-        );
-        void refreshDashboard();
+        },
+        onDone: () => {
+          if (activeScanSubscriptionRef.current === sub) {
+            activeScanSubscriptionRef.current = null;
+          }
+          onPollFallbackChange(false);
+          setScanningNodes([]);
+          setIsScanActive(false);
+          setScanProgressText('');
+          queryClient.setQueryData<DashboardResponse>(['dashboard'], (prev) =>
+            prev ? { ...prev, scanning: false, scanning_nodes: [] } : prev
+          );
+          void refreshDashboard();
+        },
+        onError: () => {
+          if (activeScanSubscriptionRef.current === sub) {
+            activeScanSubscriptionRef.current = null;
+          }
+          failedStreamTaskIdsRef.current.add(String(taskId));
+          onPollFallbackChange(true);
+        },
       });
-
-      es.onerror = () => {
-        if (activeScanEventSourceRef.current !== es) return;
-        es.close();
-        activeScanEventSourceRef.current = null;
-        if (epoch !== authEpochRef.current) return;
-        failedStreamTaskIdsRef.current.add(String(taskId));
-        setPollFallback(true);
-      };
+      activeScanSubscriptionRef.current = sub;
     },
-    [authEpochRef, closeScanStream, queryClient, refreshDashboard]
+    [authEpochRef, closeScanStream, onPollFallbackChange, queryClient, refreshDashboard]
   );
 
   useEffect(() => {
     if (!authenticated || !dashboardData) return;
     if (dashboardData.scanning) {
-      setScanningNodes(Array.isArray(dashboardData.scanning_nodes) ? dashboardData.scanning_nodes : []);
+      setScanningNodes(
+        Array.isArray(dashboardData.scanning_nodes) ? dashboardData.scanning_nodes : []
+      );
       setIsScanActive(true);
       const activeId = dashboardData.active_scan_task_id;
-      if (!activeScanEventSourceRef.current) {
+      if (!activeScanSubscriptionRef.current) {
         if (activeId && isStreamableScanTaskId(activeId, failedStreamTaskIdsRef.current)) {
           attachScanStream(activeId);
         } else {
           setScanProgressText((prev) => prev || 'Scanning in progress...');
-          setPollFallback(true);
+          onPollFallbackChange(true);
         }
       }
-    } else if (!activeScanEventSourceRef.current) {
-      setPollFallback(false);
+    } else if (!activeScanSubscriptionRef.current) {
+      onPollFallbackChange(false);
       setScanningNodes([]);
       setIsScanActive(false);
       setScanProgressText('');
     }
-  }, [authenticated, dashboardData, attachScanStream]);
+  }, [authenticated, dashboardData, attachScanStream, onPollFallbackChange]);
 
   const triggerScan = useCallback(
     async (targetNode = '') => {
       const epoch = authEpochRef.current;
-      setPollFallback(false);
+      onPollFallbackChange(false);
       setIsScanActive(true);
       setScanningNodes(targetNode ? [targetNode] : approvedNodes.map((n) => n.name));
       setScanProgressText(
-        targetNode ? `Initializing scan for [${targetNode}]...` : 'Initializing full security scan...'
+        targetNode
+          ? `Initializing scan for [${targetNode}]...`
+          : 'Initializing full security scan...'
       );
 
       try {
-        const res = await apiClient.post<ScanTriggerResp>(
-          '/api/scan',
-          targetNode ? { node: targetNode } : undefined,
-          { validateStatus: (s) => (s >= 200 && s < 300) || s === 409 }
-        );
+        const res = await hubApi.triggerScan(targetNode);
         if (epoch !== authEpochRef.current) return;
 
         const data = res.data || {};
-        if (Array.isArray(data.scanning_nodes) && (res.status === 409 || data.scanning_nodes.length > 0)) {
+        if (
+          Array.isArray(data.scanning_nodes) &&
+          (res.status === 409 || data.scanning_nodes.length > 0)
+        ) {
           setScanningNodes(data.scanning_nodes);
         }
         if (res.status === 409) {
@@ -207,14 +195,21 @@ export function useScanStream({
         setScanProgressText('');
       }
     },
-    [approvedNodes, attachScanStream, authEpochRef, onUnauthorized, refreshDashboard]
+    [
+      approvedNodes,
+      attachScanStream,
+      authEpochRef,
+      onPollFallbackChange,
+      onUnauthorized,
+      refreshDashboard,
+    ]
   );
 
   return {
     scanningNodes,
     scanProgressText,
-    pollFallback,
-    effectiveScanActive: isScanActive || Boolean(dashboardData?.scanning) || scanningNodes.length > 0,
+    effectiveScanActive:
+      isScanActive || Boolean(dashboardData?.scanning) || scanningNodes.length > 0,
     triggerScan,
     resetScanState,
   };

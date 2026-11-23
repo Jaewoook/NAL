@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
-import type { RenderedLogEntry, TaskLogLine } from '../types';
+import { type MutableRefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { subscribeTaskSSE } from '../lib/sse';
+import type { RenderedLogEntry } from '../types';
 
 interface UseTaskLogStreamOptions {
   authEpochRef: MutableRefObject<number>;
@@ -12,13 +13,13 @@ interface UseTaskLogStreamOptions {
 export function useTaskLogStream({ authEpochRef, refreshDashboard }: UseTaskLogStreamOptions) {
   const [activeTaskId, setActiveTaskId] = useState('');
   const [taskLogLines, setTaskLogLines] = useState<RenderedLogEntry[]>([]);
-  const activeTaskEventSourceRef = useRef<EventSource | null>(null);
+  const activeTaskSubRef = useRef<{ close: () => void } | null>(null);
   const logSeqRef = useRef(0);
 
   const closeTaskStream = useCallback(() => {
-    if (activeTaskEventSourceRef.current) {
-      activeTaskEventSourceRef.current.close();
-      activeTaskEventSourceRef.current = null;
+    if (activeTaskSubRef.current) {
+      activeTaskSubRef.current.close();
+      activeTaskSubRef.current = null;
     }
   }, []);
 
@@ -37,42 +38,42 @@ export function useTaskLogStream({ authEpochRef, refreshDashboard }: UseTaskLogS
       setActiveTaskId(taskId);
       setTaskLogLines([]);
 
-      const es = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/stream`);
-      activeTaskEventSourceRef.current = es;
-
-      es.onmessage = (e: MessageEvent) => {
-        if (epoch !== authEpochRef.current || activeTaskEventSourceRef.current !== es) return;
-        logSeqRef.current += 1;
-        const entryKey = `${taskId}-${logSeqRef.current}`;
-        try {
-          const line = JSON.parse(e.data) as TaskLogLine;
-          setTaskLogLines((prev) => [
-            ...prev,
-            { key: entryKey, loggedAt: line.logged_at, stream: line.stream, line: line.line },
-          ]);
-        } catch {
-          setTaskLogLines((prev) => [
-            ...prev,
-            { key: entryKey, line: typeof e.data === 'string' ? e.data : '', rawText: true },
-          ]);
-        }
-      };
-
-      es.addEventListener('done', () => {
-        if (activeTaskEventSourceRef.current === es) {
-          es.close();
-          activeTaskEventSourceRef.current = null;
-        }
-        if (epoch !== authEpochRef.current) return;
-        void refreshDashboard();
+      const sub = subscribeTaskSSE({
+        taskId,
+        isValidEpoch: () => epoch === authEpochRef.current,
+        onMessage: (event) => {
+          logSeqRef.current += 1;
+          const entryKey = `${taskId}-${logSeqRef.current}`;
+          if (event.kind === 'structured') {
+            setTaskLogLines((prev) => [
+              ...prev,
+              {
+                key: entryKey,
+                loggedAt: event.payload.logged_at,
+                stream: event.payload.stream,
+                line: event.payload.line,
+              },
+            ]);
+          } else {
+            setTaskLogLines((prev) => [
+              ...prev,
+              { key: entryKey, line: event.text, rawText: true },
+            ]);
+          }
+        },
+        onDone: () => {
+          if (activeTaskSubRef.current === sub) {
+            activeTaskSubRef.current = null;
+          }
+          void refreshDashboard();
+        },
+        onError: () => {
+          if (activeTaskSubRef.current === sub) {
+            activeTaskSubRef.current = null;
+          }
+        },
       });
-
-      es.onerror = () => {
-        if (activeTaskEventSourceRef.current === es) {
-          es.close();
-          activeTaskEventSourceRef.current = null;
-        }
-      };
+      activeTaskSubRef.current = sub;
     },
     [authEpochRef, closeTaskStream, refreshDashboard]
   );

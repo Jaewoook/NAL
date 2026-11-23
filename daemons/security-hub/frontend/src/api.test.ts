@@ -1,21 +1,21 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InternalAxiosRequestConfig } from 'axios';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cn } from './lib/cn';
 import {
-  apiClient,
-  cn,
   getItemSortRank,
   isNodeScanningName,
   isSafeHttpUrl,
   isStreamableScanTaskId,
   removeScanningNodeName,
-  setCsrfToken,
-} from './api';
+  resolveTargetVersion,
+} from './lib/domain';
+import { apiClient, setCsrfToken } from './lib/http';
+import { parseTaskStreamMessage } from './lib/sse';
 import type { ManagedItem } from './types';
 
-describe('api helpers', () => {
+describe('frontend domain, http, and sse helpers', () => {
   afterEach(() => {
     setCsrfToken('');
-    document.cookie = 'nal_csrf_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
     vi.restoreAllMocks();
   });
 
@@ -50,12 +50,13 @@ describe('api helpers', () => {
     expect(removeScanningNodeName(after, 'unknown')).toBe(after);
   });
 
-  it('sorts items by severity rank', () => {
+  it('sorts items by severity rank and resolves target version defaults', () => {
     const base: ManagedItem = {
       target_type: 'docker',
       name: 'svc',
       current_version: '1.0',
-      latest_version: '1.0',
+      latest_version: '1.2',
+      available_tags: ['1.1', '1.2'],
       outdated: false,
       skipped: false,
       broken_linkage: false,
@@ -69,6 +70,33 @@ describe('api helpers', () => {
     expect(getItemSortRank({ ...base, eol: { status: 'expiring_soon' } })).toBe(1);
     expect(getItemSortRank({ ...base, outdated: true })).toBe(2);
     expect(getItemSortRank(base)).toBe(3);
+
+    expect(resolveTargetVersion(base)).toEqual({ tags: ['1.1', '1.2'], selectedVer: '1.2' });
+    expect(resolveTargetVersion(base, '1.1')).toEqual({
+      tags: ['1.1', '1.2'],
+      selectedVer: '1.1',
+    });
+    expect(resolveTargetVersion(base, 'stale-tag')).toEqual({
+      tags: ['1.1', '1.2'],
+      selectedVer: '1.2',
+    });
+  });
+
+  it('parses structured JSON and plain text SSE log lines', () => {
+    const structured = parseTaskStreamMessage(
+      JSON.stringify({ logged_at: '2026-11-24T00:00:00Z', stream: 'cmd', line: 'docker pull' })
+    );
+    expect(structured).toEqual({
+      kind: 'structured',
+      payload: {
+        task_id: undefined,
+        seq: undefined,
+        logged_at: '2026-11-24T00:00:00Z',
+        stream: 'cmd',
+        line: 'docker pull',
+      },
+    });
+    expect(parseTaskStreamMessage('plain output')).toEqual({ kind: 'raw', text: 'plain output' });
   });
 
   it('attaches X-CSRF-Token on mutating Axios requests but not GET', async () => {

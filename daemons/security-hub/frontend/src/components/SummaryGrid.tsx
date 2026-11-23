@@ -1,4 +1,5 @@
-import React, { useMemo } from 'react';
+import type React from 'react';
+import { useMemo } from 'react';
 import type { ManagedItem } from '../types';
 
 interface SummaryGridProps {
@@ -40,7 +41,9 @@ export const SummaryGrid: React.FC<SummaryGridProps> = ({ items, tasksCount, sca
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       <div className="bg-slate-800 border border-slate-700 border-l-4 border-l-red-500 rounded-xl px-5 py-4.5">
-        <div className="text-xs uppercase tracking-wider text-slate-400">Security Vulnerabilities</div>
+        <div className="text-xs uppercase tracking-wider text-slate-400">
+          Security Vulnerabilities
+        </div>
         <div className="text-[28px] font-extrabold my-1.5 text-red-300" id="stat-cves">
           {stats.crit} Critical / {stats.high} High
         </div>
@@ -68,7 +71,9 @@ export const SummaryGrid: React.FC<SummaryGridProps> = ({ items, tasksCount, sca
       </div>
 
       <div className="bg-slate-800 border border-slate-700 border-l-4 border-l-emerald-500 rounded-xl px-5 py-4.5">
-        <div className="text-xs uppercase tracking-wider text-slate-400">Task Logs &amp; Snapshots</div>
+        <div className="text-xs uppercase tracking-wider text-slate-400">
+          Task Logs &amp; Snapshots
+        </div>
         <div className="text-[28px] font-extrabold my-1.5 text-emerald-300" id="stat-tasks">
           {tasksCount} Runs
         </div>

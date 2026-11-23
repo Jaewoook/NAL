@@ -1,5 +1,6 @@
-import React from 'react';
-import { cn, isNodeScanningName } from '../api';
+import type React from 'react';
+import { cn } from '../lib/cn';
+import { isNodeScanningName } from '../lib/domain';
 import type { NodeInfo } from '../types';
 
 interface NodeBarProps {
@@ -21,14 +22,19 @@ export const NodeBar: React.FC<NodeBarProps> = ({
   onOpenNodesModal,
 }) => {
   const isAllScanning =
-    approvedNodes.length > 0 && approvedNodes.every((n) => isNodeScanningName(scanningNodes, n.name));
+    approvedNodes.length > 0 &&
+    approvedNodes.every((n) => isNodeScanningName(scanningNodes, n.name));
 
   return (
     <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
       <div className="flex gap-2 flex-wrap" id="node-pills-container">
         <button
           type="button"
-          className={cn('node-pill', currentNodeFilter === 'all' && 'active', isAllScanning && 'scanning')}
+          className={cn(
+            'node-pill',
+            currentNodeFilter === 'all' && 'active',
+            isAllScanning && 'scanning'
+          )}
           onClick={() => onSelectNodeFilter('all')}
         >
           <span>All Nodes ({approvedNodes.length})</span>
@@ -49,7 +55,11 @@ export const NodeBar: React.FC<NodeBarProps> = ({
             <button
               type="button"
               key={n.name}
-              className={cn('node-pill', currentNodeFilter === n.name && 'active', scanning && 'scanning')}
+              className={cn(
+                'node-pill',
+                currentNodeFilter === n.name && 'active',
+                scanning && 'scanning'
+              )}
               title={title}
               onClick={() => onSelectNodeFilter(n.name)}
             >

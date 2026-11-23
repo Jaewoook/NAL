@@ -1,5 +1,5 @@
-import React from 'react';
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
+import type React from 'react';
 
 interface HeaderProps {
   authenticated: boolean;

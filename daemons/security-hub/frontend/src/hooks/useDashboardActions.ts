@@ -1,13 +1,15 @@
-import { useCallback, type MutableRefObject } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { type MutableRefObject, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
+  type AxiosRequestConfig,
   apiClient,
   getAxiosErrorMessage,
+  hubApi,
   isAxiosUnauthorized,
-  type AxiosRequestConfig,
-} from '../api';
+} from '../lib/http';
 import type { ManagedItem, PendingUpdateRequest } from '../types';
+import type { ConfirmDialogOptions } from './useConfirmDialog';
 
 interface UseDashboardActionsOptions {
   hubNode: string;
@@ -17,6 +19,7 @@ interface UseDashboardActionsOptions {
   refreshDashboard: () => Promise<void>;
   onOpenTaskLog: (taskId: string) => void;
   onResetNodeFilter: () => void;
+  requestConfirm: (options: ConfirmDialogOptions) => Promise<boolean>;
 }
 
 /**
@@ -30,6 +33,7 @@ export function useDashboardActions({
   refreshDashboard,
   onOpenTaskLog,
   onResetNodeFilter,
+  requestConfirm,
 }: UseDashboardActionsOptions) {
   const apiMutation = useMutation({
     onMutate: () => ({ epoch: authEpochRef.current }),
@@ -56,20 +60,7 @@ export function useDashboardActions({
       const epoch = authEpochRef.current;
       try {
         const task = (await apiMutation.mutateAsync({
-          config: {
-            url: '/api/update',
-            method: 'POST',
-            data: {
-              node: req.node,
-              target_type: req.target_type,
-              target_name: req.target_name,
-              target_version: req.target_version,
-              broken_linkage: req.broken_linkage,
-              stateful: req.stateful,
-              run_backup: runBackup,
-              enable_dead_man: enableDeadMan,
-            },
-          },
+          config: hubApi.updateConfig(req, runBackup, enableDeadMan),
           errPrefix: 'Update failed',
         })) as { id?: string } | null;
         if (epoch !== authEpochRef.current) return;
@@ -83,13 +74,18 @@ export function useDashboardActions({
 
   const rollbackService = useCallback(
     async (nodeName: string, serviceName: string) => {
-      if (!window.confirm(`Roll back ${serviceName} on ${nodeName} to its previous snapshot version and digest?`)) {
-        return;
-      }
+      const confirmed = await requestConfirm({
+        title: 'Confirm Service Rollback',
+        description: `Roll back ${serviceName} on ${nodeName} to its previous snapshot version and digest?`,
+        confirmLabel: 'Roll Back',
+        danger: true,
+      });
+      if (!confirmed) return;
+
       const epoch = authEpochRef.current;
       try {
         const task = (await apiMutation.mutateAsync({
-          config: { url: '/api/rollback', method: 'POST', data: { node: nodeName, service_name: serviceName } },
+          config: hubApi.rollbackConfig(nodeName, serviceName),
           errPrefix: 'Rollback failed',
         })) as { id?: string } | null;
         if (epoch !== authEpochRef.current) return;
@@ -98,22 +94,18 @@ export function useDashboardActions({
         // Error toast handled by apiMutation.onError
       }
     },
-    [apiMutation, authEpochRef, onOpenTaskLog]
+    [apiMutation, authEpochRef, onOpenTaskLog, requestConfirm]
   );
 
   const skipItem = useCallback(
     (item: ManagedItem, targetVersion: string) => {
       apiMutation.mutate({
-        config: {
-          url: '/api/skip',
-          method: 'POST',
-          data: {
-            node: item.node || hubNode || 'local',
-            target_type: item.target_type,
-            target_name: item.name,
-            version: targetVersion,
-          },
-        },
+        config: hubApi.skipConfig(
+          item.node || hubNode || 'local',
+          item.target_type,
+          item.name,
+          targetVersion
+        ),
         errPrefix: 'Failed to skip version',
       });
     },
@@ -123,15 +115,7 @@ export function useDashboardActions({
   const unskipItem = useCallback(
     (item: ManagedItem) => {
       apiMutation.mutate({
-        config: {
-          url: '/api/skip',
-          method: 'DELETE',
-          params: {
-            node: item.node || hubNode || 'local',
-            target_type: item.target_type,
-            target_name: item.name,
-          },
-        },
+        config: hubApi.unskipConfig(item.node || hubNode || 'local', item.target_type, item.name),
         errPrefix: 'Failed to unskip version',
       });
     },
@@ -141,7 +125,7 @@ export function useDashboardActions({
   const approveNode = useCallback(
     (name: string) => {
       apiMutation.mutate({
-        config: { url: '/api/nodes/approve', method: 'POST', params: { name } },
+        config: hubApi.approveNodeConfig(name),
         errPrefix: 'Failed to approve node',
       });
     },
@@ -149,14 +133,21 @@ export function useDashboardActions({
   );
 
   const rejectNode = useCallback(
-    (name: string) => {
-      if (!window.confirm(`Dismiss registration for "${name}"?`)) return;
+    async (name: string) => {
+      const confirmed = await requestConfirm({
+        title: 'Dismiss Agent Registration',
+        description: `Dismiss pending registration for "${name}"?`,
+        confirmLabel: 'Dismiss',
+        danger: true,
+      });
+      if (!confirmed) return;
+
       apiMutation.mutate({
-        config: { url: '/api/nodes/reject', method: 'POST', params: { name } },
+        config: hubApi.rejectNodeConfig(name),
         errPrefix: 'Failed to dismiss node',
       });
     },
-    [apiMutation]
+    [apiMutation, requestConfirm]
   );
 
   const saveNode = useCallback(
@@ -164,7 +155,7 @@ export function useDashboardActions({
       const epoch = authEpochRef.current;
       try {
         await apiMutation.mutateAsync({
-          config: { url: '/api/nodes', method: 'POST', data: { name, url, token } },
+          config: hubApi.saveNodeConfig(name, url, token),
           errPrefix: 'Failed to save node',
         });
         if (epoch !== authEpochRef.current) return false;
@@ -178,11 +169,18 @@ export function useDashboardActions({
   );
 
   const deleteNode = useCallback(
-    (name: string) => {
-      if (!window.confirm(`Remove compute node "${name}" from the registry?`)) return;
+    async (name: string) => {
+      const confirmed = await requestConfirm({
+        title: 'Remove Compute Node',
+        description: `Remove compute node "${name}" from the registry?`,
+        confirmLabel: 'Remove Node',
+        danger: true,
+      });
+      if (!confirmed) return;
+
       apiMutation.mutate(
         {
-          config: { url: '/api/nodes', method: 'DELETE', params: { name } },
+          config: hubApi.deleteNodeConfig(name),
           errPrefix: 'Failed to remove node',
         },
         {
@@ -192,7 +190,7 @@ export function useDashboardActions({
         }
       );
     },
-    [apiMutation, currentNodeFilter, onResetNodeFilter]
+    [apiMutation, currentNodeFilter, onResetNodeFilter, requestConfirm]
   );
 
   return {

@@ -1,25 +1,13 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   browserSupportsWebAuthn,
   startAuthentication,
   startRegistration,
 } from '@simplewebauthn/browser';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import { apiClient, getAxiosErrorMessage, isAxiosUnauthorized, setCsrfToken } from '../api';
+import { getAxiosErrorMessage, hubApi, isAxiosUnauthorized, setCsrfToken } from '../lib/http';
 import type { SessionResponse } from '../types';
-
-interface PasskeyRegisterBeginResp {
-  challenge: string;
-  rp_id?: string;
-  user: string;
-}
-
-interface PasskeyLoginBeginResp {
-  challenge: string;
-  rp_id?: string;
-  allow_credentials?: string[] | null;
-}
 
 interface UseAuthOptions {
   onSessionReset: () => void;
@@ -37,6 +25,14 @@ export function useAuth({ onSessionReset }: UseAuthOptions) {
     onSessionResetRef.current = onSessionReset;
   }, [onSessionReset]);
 
+  const clearCachedSession = useCallback(() => {
+    queryClient.setQueryData<SessionResponse>(['session'], (prev) => ({
+      ...prev,
+      authenticated: false,
+      csrf_token: '',
+    }));
+  }, [queryClient]);
+
   const resetSession = useCallback(() => {
     authEpochRef.current += 1;
     setCsrfToken('');
@@ -50,14 +46,6 @@ export function useAuth({ onSessionReset }: UseAuthOptions) {
     };
   }, []);
 
-  const clearCachedSession = useCallback(() => {
-    queryClient.setQueryData<SessionResponse>(['session'], (prev) => ({
-      ...prev,
-      authenticated: false,
-      csrf_token: '',
-    }));
-  }, [queryClient]);
-
   const handleUnauthorized = useCallback(() => {
     clearCachedSession();
     resetSession();
@@ -67,7 +55,7 @@ export function useAuth({ onSessionReset }: UseAuthOptions) {
   const sessionQuery = useQuery({
     queryKey: ['session'],
     queryFn: async () => {
-      const { data } = await apiClient.get<SessionResponse>('/api/auth/session');
+      const { data } = await hubApi.getSession();
       return data;
     },
   });
@@ -88,7 +76,7 @@ export function useAuth({ onSessionReset }: UseAuthOptions) {
   const logout = useCallback(async () => {
     authEpochRef.current += 1;
     onSessionResetRef.current();
-    await apiClient.post('/api/auth/logout').catch(() => undefined);
+    await hubApi.logout().catch(() => undefined);
     clearCachedSession();
     resetSession();
     await queryClient.invalidateQueries({ queryKey: ['session'] });
@@ -101,9 +89,7 @@ export function useAuth({ onSessionReset }: UseAuthOptions) {
     }
     const epoch = authEpochRef.current;
     try {
-      const { data: opts } = await apiClient.post<PasskeyRegisterBeginResp>(
-        '/api/auth/passkey/register/begin'
-      );
+      const { data: opts } = await hubApi.beginPasskeyRegister();
       if (epoch !== authEpochRef.current) return;
 
       const randomUserId = crypto.randomUUID().replace(/-/g, '');
@@ -118,7 +104,7 @@ export function useAuth({ onSessionReset }: UseAuthOptions) {
       });
       if (epoch !== authEpochRef.current) return;
 
-      await apiClient.post('/api/auth/passkey/register/finish', {
+      await hubApi.finishPasskeyRegister({
         credential_id: attResp.id,
         label: `${navigator.platform || 'Device'} Passkey`,
         attestation_object: attResp.response.attestationObject,
@@ -142,9 +128,7 @@ export function useAuth({ onSessionReset }: UseAuthOptions) {
       return;
     }
     try {
-      const { data: opts } = await apiClient.post<PasskeyLoginBeginResp>(
-        '/api/auth/passkey/login/begin'
-      );
+      const { data: opts } = await hubApi.beginPasskeyLogin();
       if (!opts.allow_credentials || opts.allow_credentials.length === 0) {
         toast.info(
           'No Passkey registered yet. Sign in via SSO or run "./security-hub auth login-link" first.'
@@ -159,7 +143,7 @@ export function useAuth({ onSessionReset }: UseAuthOptions) {
           timeout: 60000,
         },
       });
-      await apiClient.post('/api/auth/passkey/login/finish', {
+      await hubApi.finishPasskeyLogin({
         credential_id: assertion.id,
         authenticator_data: assertion.response.authenticatorData,
         client_data_json: assertion.response.clientDataJSON,

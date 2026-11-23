@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import type React from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { cn, isNodeScanningName } from '../api';
+import { cn } from '../lib/cn';
+import { isNodeScanningName } from '../lib/domain';
 import type { NodeInfo } from '../types';
 import { Modal } from './Modal';
 
