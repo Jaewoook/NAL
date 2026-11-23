@@ -77,6 +77,42 @@ func (o *Orchestrator) safeAgentHTTPClient() *http.Client {
 	return &c
 }
 
+func (o *Orchestrator) hubNodeName() string {
+	if o.cfg != nil && o.cfg.NodeName != "" {
+		return o.cfg.NodeName
+	}
+	return config.DefaultNodeName()
+}
+
+func (o *Orchestrator) logTask(ctx context.Context, taskID, stream, msg string) {
+	if taskID == "" || o.store == nil {
+		return
+	}
+	_, _ = o.store.AppendTaskLog(ctx, taskID, stream, msg)
+}
+
+func (o *Orchestrator) failScanTask(lockID, taskID, logStream, logMsg, taskErr string) {
+	o.FinishScanTask(lockID)
+	if o.store != nil && taskID != "" {
+		abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer abortCancel()
+		if logMsg != "" {
+			_, _ = o.store.AppendTaskLog(abortCtx, taskID, logStream, logMsg)
+		}
+		_ = o.store.FinishTask(abortCtx, taskID, "failed", taskErr)
+	}
+}
+
+func (o *Orchestrator) newHubNodeInfo(hubName string) models.NodeInfo {
+	return models.NodeInfo{
+		Name:       hubName,
+		Role:       "hub",
+		Status:     models.NodeStatusApproved,
+		Online:     true,
+		LastSeenAt: time.Now().UTC(),
+	}
+}
+
 // IsScanning reports whether a scan is currently running and returns the active task ID if so.
 func (o *Orchestrator) IsScanning() (bool, string) {
 	o.scanMu.Lock()
@@ -279,13 +315,7 @@ func ApplySkippedAndSummarize(items []models.ManagedItem, skipped map[string]str
 }
 
 func (o *Orchestrator) ScanLocalNode(ctx context.Context) ([]models.ManagedItem, error) {
-	nodeName := ""
-	if o.cfg != nil {
-		nodeName = o.cfg.NodeName
-	}
-	if nodeName == "" {
-		nodeName = config.DefaultNodeName()
-	}
+	nodeName := o.hubNodeName()
 
 	var localItems []models.ManagedItem
 	var scanErrs []error
@@ -398,6 +428,44 @@ func applyDockerSnapshots(items []models.ManagedItem, snapshots map[string]model
 	}
 }
 
+func (o *Orchestrator) finalizeScanResult(ctx context.Context, lockID, taskID, hubName string, allItems []models.ManagedItem, nodesList []models.NodeInfo) (*models.ScanResult, error) {
+	o.logTask(ctx, taskID, "info", "Analyzing CVEs against vulnerability feeds...")
+
+	skipped := make(map[string]string)
+	snapshots := make(map[string]models.RollbackSnapshot)
+	if o.store != nil {
+		skipped, _ = o.store.ListSkippedVersions(ctx)
+		snapshots, _ = o.store.ListSnapshots(ctx)
+	}
+	applyDockerSnapshots(allItems, snapshots, hubName)
+
+	res := ApplySkippedAndSummarize(allItems, skipped)
+	res.Nodes = nodesList
+
+	totalCVEs := 0
+	for _, it := range res.Items {
+		totalCVEs += len(it.Vulnerabilities)
+	}
+
+	if ctx.Err() != nil {
+		o.failScanTask(lockID, taskID, "error", fmt.Sprintf("Scan aborted: %v", ctx.Err()), ctx.Err().Error())
+		return nil, ctx.Err()
+	}
+
+	if o.store != nil {
+		_ = o.store.SaveScanResult(ctx, res)
+		if taskID != "" {
+			o.logTask(ctx, taskID, "info", fmt.Sprintf("Scan complete: %d items scanned, %d CVEs found.", len(res.Items), totalCVEs))
+			o.FinishScanTask(lockID)
+			_ = o.store.FinishTask(ctx, taskID, "succeeded", "")
+			return res, nil
+		}
+	}
+
+	o.FinishScanTask(lockID)
+	return res, nil
+}
+
 func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (*models.ScanResult, error) {
 	lockID, err := o.claimOrVerifyScanLock(taskID)
 	if err != nil {
@@ -407,23 +475,11 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 		o.FinishScanTask(lockID)
 	}()
 	if ctx.Err() != nil {
-		o.FinishScanTask(lockID)
-		if o.store != nil && taskID != "" {
-			abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer abortCancel()
-			_, _ = o.store.AppendTaskLog(abortCtx, taskID, "error", fmt.Sprintf("Scan aborted: %v", ctx.Err()))
-			_ = o.store.FinishTask(abortCtx, taskID, "failed", ctx.Err().Error())
-		}
+		o.failScanTask(lockID, taskID, "error", fmt.Sprintf("Scan aborted: %v", ctx.Err()), ctx.Err().Error())
 		return nil, ctx.Err()
 	}
 
-	hubName := ""
-	if o.cfg != nil {
-		hubName = o.cfg.NodeName
-	}
-	if hubName == "" {
-		hubName = config.DefaultNodeName()
-	}
+	hubName := o.hubNodeName()
 	if taskID == "" && o.store != nil {
 		if t, err := o.store.CreateTask(ctx, &models.Task{
 			Node:        hubName,
@@ -452,28 +508,16 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 		o.setScanningNodes(initial)
 	}
 
-	if taskID != "" && o.store != nil {
-		_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("Starting full scan on Hub (%s)...", hubName))
-	}
+	o.logTask(ctx, taskID, "info", fmt.Sprintf("Starting full scan on Hub (%s)...", hubName))
 
 	localItems, localErr := o.ScanLocalNode(ctx)
-	if localErr != nil && taskID != "" && o.store != nil {
-		_, _ = o.store.AppendTaskLog(ctx, taskID, "warn", fmt.Sprintf("[Hub] Partial local scan warning: %v", localErr))
+	if localErr != nil {
+		o.logTask(ctx, taskID, "warn", fmt.Sprintf("[Hub] Partial local scan warning: %v", localErr))
 	}
 	allItems := append([]models.ManagedItem(nil), localItems...)
-	if taskID != "" && o.store != nil {
-		_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[Hub] Scanned %d local components...", len(localItems)))
-	}
+	o.logTask(ctx, taskID, "info", fmt.Sprintf("[Hub] Scanned %d local components...", len(localItems)))
 
-	nodesList := []models.NodeInfo{
-		{
-			Name:       hubName,
-			Role:       "hub",
-			Status:     models.NodeStatusApproved,
-			Online:     true,
-			LastSeenAt: time.Now().UTC(),
-		},
-	}
+	nodesList := []models.NodeInfo{o.newHubNodeInfo(hubName)}
 
 	if o.store != nil {
 		prevScan, _ := o.store.LoadLatestScanResult(ctx)
@@ -501,9 +545,7 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 		results := make([]nodeScanResult, len(approvedRemoteNodes))
 
 		for i, rn := range approvedRemoteNodes {
-			if taskID != "" && o.store != nil {
-				_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[%s] Querying remote agent (%s)...", rn.Name, rn.URL))
-			}
+			o.logTask(ctx, taskID, "info", fmt.Sprintf("[%s] Querying remote agent (%s)...", rn.Name, rn.URL))
 			wg.Add(1)
 			go func(idx int, node models.NodeInfo) {
 				defer wg.Done()
@@ -511,14 +553,12 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 				defer cancel()
 				items, err := o.fetchRemoteAgentScan(scanCtx, node)
 				results[idx] = nodeScanResult{node: node, items: items, err: err}
-				if taskID != "" && o.store != nil {
-					if err != nil {
-						logCtx, logCancel := context.WithTimeout(ctx, 3*time.Second)
-						_, _ = o.store.AppendTaskLog(logCtx, taskID, "stderr", fmt.Sprintf("[%s] Remote agent unreachable (%v) — retaining cached items if available", node.Name, err))
-						logCancel()
-					} else {
-						_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[%s] Scanned %d remote components...", node.Name, len(items)))
-					}
+				if err != nil {
+					logCtx, logCancel := context.WithTimeout(ctx, 3*time.Second)
+					o.logTask(logCtx, taskID, "stderr", fmt.Sprintf("[%s] Remote agent unreachable (%v) — retaining cached items if available", node.Name, err))
+					logCancel()
+				} else {
+					o.logTask(ctx, taskID, "info", fmt.Sprintf("[%s] Scanned %d remote components...", node.Name, len(items)))
 				}
 				o.removeScanningNodeIfMultiple(node.Name)
 			}(i, rn)
@@ -559,69 +599,15 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 		}
 	}
 
-	if taskID != "" && o.store != nil {
-		_, _ = o.store.AppendTaskLog(ctx, taskID, "info", "Analyzing CVEs against vulnerability feeds...")
-	}
-
-	skipped := make(map[string]string)
-	snapshots := make(map[string]models.RollbackSnapshot)
-	if o.store != nil {
-		skipped, _ = o.store.ListSkippedVersions(ctx)
-		snapshots, _ = o.store.ListSnapshots(ctx)
-	}
-	applyDockerSnapshots(allItems, snapshots, hubName)
-
-	res := ApplySkippedAndSummarize(allItems, skipped)
-	res.Nodes = nodesList
-
-	totalCVEs := 0
-	for _, it := range res.Items {
-		totalCVEs += len(it.Vulnerabilities)
-	}
-
-	if ctx.Err() != nil {
-		o.FinishScanTask(lockID)
-		if o.store != nil && taskID != "" {
-			abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer abortCancel()
-			_, _ = o.store.AppendTaskLog(abortCtx, taskID, "error", fmt.Sprintf("Scan aborted: %v", ctx.Err()))
-			_ = o.store.FinishTask(abortCtx, taskID, "failed", ctx.Err().Error())
-		}
-		return nil, ctx.Err()
-	}
-
-	if o.store != nil {
-		_ = o.store.SaveScanResult(ctx, res)
-		if taskID != "" {
-			_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("Scan complete: %d items scanned, %d CVEs found.", len(res.Items), totalCVEs))
-			o.FinishScanTask(lockID)
-			_ = o.store.FinishTask(ctx, taskID, "succeeded", "")
-			return res, nil
-		}
-	}
-
-	o.FinishScanTask(lockID)
-	return res, nil
+	return o.finalizeScanResult(ctx, lockID, taskID, hubName, allItems, nodesList)
 }
 
 // ResolveTargetNode finds and validates an approved compute node (Hub or Agent) by name.
 func (o *Orchestrator) ResolveTargetNode(ctx context.Context, requested string) (models.NodeInfo, error) {
-	hubName := ""
-	if o.cfg != nil {
-		hubName = o.cfg.NodeName
-	}
-	if hubName == "" {
-		hubName = config.DefaultNodeName()
-	}
+	hubName := o.hubNodeName()
 	target := strings.TrimSpace(requested)
 	if target == "" || strings.EqualFold(target, hubName) {
-		return models.NodeInfo{
-			Name:       hubName,
-			Role:       "hub",
-			Status:     models.NodeStatusApproved,
-			Online:     true,
-			LastSeenAt: time.Now().UTC(),
-		}, nil
+		return o.newHubNodeInfo(hubName), nil
 	}
 	if o.store == nil {
 		return models.NodeInfo{}, ErrScanNodeNotFound
@@ -656,36 +642,17 @@ func (o *Orchestrator) RunNodeScanWithTask(ctx context.Context, nodeName string,
 		o.FinishScanTask(lockID)
 	}()
 	if ctx.Err() != nil {
-		o.FinishScanTask(lockID)
-		if o.store != nil && taskID != "" {
-			abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer abortCancel()
-			_, _ = o.store.AppendTaskLog(abortCtx, taskID, "error", fmt.Sprintf("Scan aborted: %v", ctx.Err()))
-			_ = o.store.FinishTask(abortCtx, taskID, "failed", ctx.Err().Error())
-		}
+		o.failScanTask(lockID, taskID, "error", fmt.Sprintf("Scan aborted: %v", ctx.Err()), ctx.Err().Error())
 		return nil, ctx.Err()
 	}
 
 	targetNode, err := o.ResolveTargetNode(ctx, nodeName)
 	if err != nil {
-		o.FinishScanTask(lockID)
-		if o.store != nil && taskID != "" {
-			abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer abortCancel()
-			_, _ = o.store.AppendTaskLog(abortCtx, taskID, "error", fmt.Sprintf("Node scan failed: %v", err))
-			_ = o.store.FinishTask(abortCtx, taskID, "failed", err.Error())
-		}
+		o.failScanTask(lockID, taskID, "error", fmt.Sprintf("Node scan failed: %v", err), err.Error())
 		return nil, err
 	}
 
-	hubName := ""
-	if o.cfg != nil {
-		hubName = o.cfg.NodeName
-	}
-	if hubName == "" {
-		hubName = config.DefaultNodeName()
-	}
-
+	hubName := o.hubNodeName()
 	if taskID == "" && o.store != nil {
 		if t, err := o.store.CreateTask(ctx, &models.Task{
 			Node:        targetNode.Name,
@@ -706,58 +673,35 @@ func (o *Orchestrator) RunNodeScanWithTask(ctx context.Context, nodeName string,
 	isHub := strings.EqualFold(targetNode.Name, hubName) || targetNode.Role == "hub"
 
 	if isHub {
-		if taskID != "" && o.store != nil {
-			_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("Starting single-node scan on Hub (%s)...", hubName))
-		}
+		o.logTask(ctx, taskID, "info", fmt.Sprintf("Starting single-node scan on Hub (%s)...", hubName))
 		localItems, localErr := o.ScanLocalNode(ctx)
-		if localErr != nil && taskID != "" && o.store != nil {
-			_, _ = o.store.AppendTaskLog(ctx, taskID, "warn", fmt.Sprintf("[Hub] Partial local scan warning: %v", localErr))
+		if localErr != nil {
+			o.logTask(ctx, taskID, "warn", fmt.Sprintf("[Hub] Partial local scan warning: %v", localErr))
 		}
 		nodeItems = localItems
-		if taskID != "" && o.store != nil {
-			_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[Hub] Scanned %d local components...", len(nodeItems)))
-		}
+		o.logTask(ctx, taskID, "info", fmt.Sprintf("[Hub] Scanned %d local components...", len(nodeItems)))
 	} else {
-		if taskID != "" && o.store != nil {
-			_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[%s] Starting single-node scan on remote agent (%s)...", targetNode.Name, targetNode.URL))
-		}
+		o.logTask(ctx, taskID, "info", fmt.Sprintf("[%s] Starting single-node scan on remote agent (%s)...", targetNode.Name, targetNode.URL))
 		scanCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		defer cancel()
 		fetchedItems, fetchErr := o.fetchRemoteAgentScan(scanCtx, targetNode)
 		if fetchErr != nil {
 			o.FinishScanTask(lockID)
-			if o.store != nil {
-				if ctx.Err() == nil {
-					_ = o.store.UpdateNodeHealth(ctx, targetNode.Name, false, time.Time{}, fetchErr.Error())
-				}
-				if taskID != "" {
-					abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
-					defer abortCancel()
-					_, _ = o.store.AppendTaskLog(abortCtx, taskID, "stderr", fmt.Sprintf("[%s] Remote agent unreachable (%v)", targetNode.Name, fetchErr))
-					_ = o.store.FinishTask(abortCtx, taskID, "failed", fetchErr.Error())
-				}
+			if o.store != nil && ctx.Err() == nil {
+				_ = o.store.UpdateNodeHealth(ctx, targetNode.Name, false, time.Time{}, fetchErr.Error())
 			}
+			o.failScanTask(lockID, taskID, "stderr", fmt.Sprintf("[%s] Remote agent unreachable (%v)", targetNode.Name, fetchErr), fetchErr.Error())
 			return nil, fetchErr
 		}
 		if o.store != nil {
 			_ = o.store.UpdateNodeHealth(ctx, targetNode.Name, true, time.Now().UTC(), "")
-			if taskID != "" {
-				_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("[%s] Scanned %d remote components...", targetNode.Name, len(fetchedItems)))
-			}
 		}
+		o.logTask(ctx, taskID, "info", fmt.Sprintf("[%s] Scanned %d remote components...", targetNode.Name, len(fetchedItems)))
 		nodeItems = fetchedItems
 	}
 
 	// Build nodesList with Hub first, then approved remote nodes
-	nodesList := []models.NodeInfo{
-		{
-			Name:       hubName,
-			Role:       "hub",
-			Status:     models.NodeStatusApproved,
-			Online:     true,
-			LastSeenAt: time.Now().UTC(),
-		},
-	}
+	nodesList := []models.NodeInfo{o.newHubNodeInfo(hubName)}
 	canonicalByLower := map[string]string{
 		strings.ToLower(hubName): hubName,
 	}
@@ -804,47 +748,5 @@ func (o *Orchestrator) RunNodeScanWithTask(ctx context.Context, nodeName string,
 		allItems = append(allItems, nodeItems...)
 	}
 
-	if taskID != "" && o.store != nil {
-		_, _ = o.store.AppendTaskLog(ctx, taskID, "info", "Analyzing CVEs and applying skip policies...")
-	}
-
-	skipped := make(map[string]string)
-	snapshots := make(map[string]models.RollbackSnapshot)
-	if o.store != nil {
-		skipped, _ = o.store.ListSkippedVersions(ctx)
-		snapshots, _ = o.store.ListSnapshots(ctx)
-	}
-	applyDockerSnapshots(allItems, snapshots, hubName)
-
-	res := ApplySkippedAndSummarize(allItems, skipped)
-	res.Nodes = nodesList
-
-	targetCVEs := 0
-	for _, it := range nodeItems {
-		targetCVEs += len(it.Vulnerabilities)
-	}
-
-	if ctx.Err() != nil {
-		o.FinishScanTask(lockID)
-		if o.store != nil && taskID != "" {
-			abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer abortCancel()
-			_, _ = o.store.AppendTaskLog(abortCtx, taskID, "error", fmt.Sprintf("Scan aborted: %v", ctx.Err()))
-			_ = o.store.FinishTask(abortCtx, taskID, "failed", ctx.Err().Error())
-		}
-		return nil, ctx.Err()
-	}
-
-	if o.store != nil {
-		_ = o.store.SaveScanResult(ctx, res)
-		if taskID != "" {
-			_, _ = o.store.AppendTaskLog(ctx, taskID, "info", fmt.Sprintf("Scan complete for node %s: %d items scanned, %d CVEs found.", targetNode.Name, len(nodeItems), targetCVEs))
-			o.FinishScanTask(lockID)
-			_ = o.store.FinishTask(ctx, taskID, "succeeded", "")
-			return res, nil
-		}
-	}
-
-	o.FinishScanTask(lockID)
-	return res, nil
+	return o.finalizeScanResult(ctx, lockID, taskID, hubName, allItems, nodesList)
 }
