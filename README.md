@@ -28,7 +28,7 @@ All infrastructure is running on the following hardwares.
 
 ### Apple Mac Studio (Atlas)
 
-- Role: Dedicated Local AI Compute Server
+- Role: Dedicated Local AI Compute Server ([`nodes/atlas`](./nodes/atlas))
 - Processor: Apple M5 Max
 - RAM: 128GB Unified Memory
 - Storage: 1TB SSD
