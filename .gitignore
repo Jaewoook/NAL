@@ -18,9 +18,8 @@ backup
 # config for cloudflare-ddns
 services/cloudflare-ddns/config.json
 
-# config and data for cloudflare-tunnel
+# Cloudflare Tunnel secret
 services/cloudflare-tunnel/token
-services/cloudflare-tunnel/data
 
 # Documentation / agent plans
 docs/

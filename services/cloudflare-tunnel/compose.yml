@@ -8,7 +8,7 @@ services:
       - default
     volumes:
       - ./token:/home/nonroot/token
-      - ./data:/home/nonroot/.cloudflared/
+      - ./data/hosts.yml:/home/nonroot/.cloudflared/config.yml
     environment:
       - TUNNEL_TOKEN_FILE=/home/nonroot/token
     # For host ssh
