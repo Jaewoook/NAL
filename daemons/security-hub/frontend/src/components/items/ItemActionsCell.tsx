@@ -1,8 +1,7 @@
 import type React from 'react';
-import { isSafeHttpUrl } from '../../lib/domain';
+import { isItemUpdatable, isSafeHttpUrl } from '../../lib/domain';
 import type { ManagedItem } from '../../types';
-import { Badge } from '../ui/Badge';
-import { Button } from '../ui/Button';
+import { Badge, Button } from '../ui';
 
 export interface ItemActionsCellProps {
   item: ManagedItem;
@@ -26,15 +25,11 @@ export const ItemActionsCell: React.FC<ItemActionsCellProps> = ({
   onUnskipItem,
   onRollbackService,
 }) => {
-  const isUpdatable =
-    item.target_type === 'docker' ||
-    item.target_type === 'brew' ||
-    item.target_type === 'apt' ||
-    (item.target_type === 'daemon' && item.name === 'ollama');
+  const updatable = isItemUpdatable(item);
 
   return (
     <div className="flex gap-1.5 items-center flex-wrap">
-      {isUpdatable && (
+      {updatable && (
         <>
           <Button
             variant={item.crit_count > 0 || item.broken_linkage ? 'danger' : 'primary'}

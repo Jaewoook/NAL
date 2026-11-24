@@ -1,8 +1,7 @@
 import type React from 'react';
 import { getItemKey, resolveTargetVersion } from '../../lib/domain';
 import type { ManagedItem } from '../../types';
-import { Badge } from '../ui/Badge';
-import { type DotStatus, StatusDot } from '../ui/StatusDot';
+import { Badge, type DotStatus, StatusDot } from '../ui';
 import { EolStatusCell } from './EolStatusCell';
 import { ItemActionsCell } from './ItemActionsCell';
 import { SecurityBadgeCell } from './SecurityBadgeCell';
@@ -17,6 +16,16 @@ interface ItemRowProps {
   onSkipItem: (item: ManagedItem, targetVersion: string) => void;
   onUnskipItem: (item: ManagedItem) => void;
   onRollbackService: (nodeName: string, serviceName: string) => void;
+}
+
+function getItemStatusDot(item: ManagedItem): DotStatus {
+  if (item.crit_count > 0 || item.broken_linkage || item.eol?.status === 'expired') {
+    return 'red';
+  }
+  if (item.high_count > 0 || item.eol?.status === 'expiring_soon' || item.outdated) {
+    return 'amber';
+  }
+  return 'green';
 }
 
 /**
@@ -37,20 +46,13 @@ export const ItemRow: React.FC<ItemRowProps> = ({
   const itemKey = getItemKey(item, hubNode);
   const { tags, selectedVer } = resolveTargetVersion(item, chosenVersion);
 
-  const dotStatus: DotStatus =
-    item.crit_count > 0 || item.broken_linkage || item.eol?.status === 'expired'
-      ? 'red'
-      : item.high_count > 0 || item.eol?.status === 'expiring_soon' || item.outdated
-        ? 'amber'
-        : 'green';
-
   const subType =
     item.target_type === 'brew' || item.target_type === 'apt'
       ? item.target_type
       : item.image_ref || item.target_type;
 
   return (
-    <tr className="border-b border-slate-700 last:border-b-0 hover:bg-[#263449] transition-colors">
+    <tr className="border-b border-slate-700 last:border-b-0 hover:bg-surface-hover transition-colors">
       <td className="px-4 py-3.5 align-middle">
         <div className="flex flex-col gap-0.75">
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -64,7 +66,7 @@ export const ItemRow: React.FC<ItemRowProps> = ({
             )}
           </div>
           <div className="flex items-center gap-1.75 font-bold text-[14.5px] text-slate-50 my-0.25">
-            <StatusDot status={dotStatus} />
+            <StatusDot status={getItemStatusDot(item)} />
             <span>{item.name}</span>
           </div>
           <div className="text-xs text-slate-400 font-mono break-all">{subType}</div>
@@ -93,9 +95,9 @@ export const ItemRow: React.FC<ItemRowProps> = ({
           value={selectedVer}
           onChange={(e) => onSelectVersion(itemKey, e.target.value)}
         >
-          {tags.map((t) => (
-            <option key={t} value={t}>
-              {t}
+          {tags.map((tag) => (
+            <option key={tag} value={tag}>
+              {tag}
             </option>
           ))}
         </select>

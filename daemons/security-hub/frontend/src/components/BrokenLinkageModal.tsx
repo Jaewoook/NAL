@@ -1,7 +1,6 @@
 import type React from 'react';
 import { Modal } from './Modal';
-import { Badge } from './ui/Badge';
-import { Button } from './ui/Button';
+import { Badge, Button } from './ui';
 
 interface BrokenLinkageModalProps {
   pkgName: string;
@@ -39,7 +38,7 @@ export const BrokenLinkageModal: React.FC<BrokenLinkageModalProps> = ({
         missing or unsatisfied:
       </p>
       <div
-        className="bg-[#090d16] border border-slate-700 rounded-lg font-mono text-[12.5px] leading-relaxed text-slate-200 p-4 max-h-[260px] overflow-y-auto mb-4 whitespace-pre-wrap break-all"
+        className="bg-surface-terminal border border-slate-700 rounded-lg font-mono text-[12.5px] leading-relaxed text-slate-200 p-4 max-h-[260px] overflow-y-auto mb-4 whitespace-pre-wrap break-all"
         id="modal-linkage-body"
       >
         {details || 'Missing shared library dependency'}

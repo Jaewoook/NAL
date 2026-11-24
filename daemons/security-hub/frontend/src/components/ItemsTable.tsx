@@ -1,7 +1,7 @@
 import type React from 'react';
 import { getItemKey } from '../lib/domain';
 import type { ManagedItem } from '../types';
-import { ItemRow } from './items/ItemRow';
+import { ItemRow } from './items';
 
 interface ItemsTableProps {
   items: ManagedItem[];
@@ -49,7 +49,7 @@ export const ItemsTable: React.FC<ItemsTableProps> = ({
             {HEADERS.map((h) => (
               <th
                 key={h}
-                className="text-left px-4 py-3 bg-[#141d2f] text-slate-400 font-semibold text-xs uppercase border-b border-slate-700"
+                className="text-left px-4 py-3 bg-surface-bar text-slate-400 font-semibold text-xs uppercase border-b border-slate-700"
               >
                 {h}
               </th>

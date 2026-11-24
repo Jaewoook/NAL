@@ -3,13 +3,32 @@ import { useEffect, useRef } from 'react';
 import { cn } from '../lib/cn';
 import { hubApi } from '../lib/http';
 import type { RenderedLogEntry, Task } from '../types';
-import { Badge, type BadgeTone } from './ui/Badge';
+import { Badge, type BadgeTone } from './ui';
 
 interface TaskLogsPanelProps {
   tasks: Task[];
   activeTaskId: string;
   logs: RenderedLogEntry[];
   onSelectTask: (taskId: string) => void;
+}
+
+function getStreamClass(stream?: string): string {
+  if (stream === 'cmd') return 'text-sky-400 font-semibold';
+  if (stream === 'error' || stream === 'stderr') return 'text-red-400';
+  return 'text-slate-300';
+}
+
+function getTaskBadgeTone(status: string): BadgeTone {
+  if (status === 'succeeded') return 'ok';
+  if (status === 'rolled_back' || status === 'running') return 'warn';
+  return 'crit';
+}
+
+function formatTaskSubtitle(task: Task): string {
+  if (task.from_version || task.to_version) {
+    return `(${task.from_version || ''} → ${task.to_version || ''})`;
+  }
+  return task.target_type ? `(${task.target_type})` : '';
 }
 
 /**
@@ -22,7 +41,6 @@ export const TaskLogsPanel: React.FC<TaskLogsPanelProps> = ({
   onSelectTask,
 }) => {
   const terminalRef = useRef<HTMLDivElement | null>(null);
-
   const lastLogKey = logs[logs.length - 1]?.key;
 
   useEffect(() => {
@@ -30,12 +48,6 @@ export const TaskLogsPanel: React.FC<TaskLogsPanelProps> = ({
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
   }, [lastLogKey]);
-
-  const getStreamClass = (stream?: string): string => {
-    if (stream === 'cmd') return 'text-sky-400 font-semibold';
-    if (stream === 'error' || stream === 'stderr') return 'text-red-400';
-    return 'text-slate-300';
-  };
 
   return (
     <div id="panel-logs">
@@ -47,41 +59,30 @@ export const TaskLogsPanel: React.FC<TaskLogsPanelProps> = ({
           {tasks.length === 0 ? (
             <div className="p-5 text-slate-400 text-[13px]">No tasks recorded yet.</div>
           ) : (
-            tasks.map((t) => {
-              const badgeTone: BadgeTone =
-                t.status === 'succeeded'
-                  ? 'ok'
-                  : t.status === 'rolled_back' || t.status === 'running'
-                    ? 'warn'
-                    : 'crit';
-              const nodeLabel = t.node ? `[${t.node}] ` : '';
-              const hasVersions = Boolean(t.from_version || t.to_version);
-              const subDetail = hasVersions
-                ? `(${t.from_version || ''} → ${t.to_version || ''})`
-                : t.target_type
-                  ? `(${t.target_type})`
-                  : '';
+            tasks.map((task) => {
+              const nodeLabel = task.node ? `[${task.node}] ` : '';
+              const subDetail = formatTaskSubtitle(task);
 
               return (
                 <button
                   type="button"
-                  key={t.id}
-                  aria-pressed={activeTaskId === t.id}
+                  key={task.id}
+                  aria-pressed={activeTaskId === task.id}
                   className={cn(
-                    'w-full text-left bg-transparent border-0 border-b border-slate-700 px-3.5 py-3 cursor-pointer transition-colors hover:bg-[#263449] hover:border-l-[3px] hover:border-l-sky-400',
-                    activeTaskId === t.id && 'bg-[#263449] border-l-[3px] border-l-sky-400'
+                    'w-full text-left bg-transparent border-0 border-b border-slate-700 px-3.5 py-3 cursor-pointer transition-colors hover:bg-surface-hover hover:border-l-[3px] hover:border-l-sky-400',
+                    activeTaskId === task.id && 'bg-surface-hover border-l-[3px] border-l-sky-400'
                   )}
-                  onClick={() => onSelectTask(t.id)}
+                  onClick={() => onSelectTask(task.id)}
                 >
                   <div className="flex justify-between items-center gap-2">
                     <strong className="text-[13px] text-slate-50">
-                      {t.id} · {nodeLabel}
-                      {t.task_type}
+                      {task.id} · {nodeLabel}
+                      {task.task_type}
                     </strong>
-                    <Badge tone={badgeTone}>{t.status}</Badge>
+                    <Badge tone={getTaskBadgeTone(task.status)}>{task.status}</Badge>
                   </div>
                   <div className="text-xs text-slate-400 font-mono break-all mt-1">
-                    {t.target_name}
+                    {task.target_name}
                     {subDetail ? ` ${subDetail}` : ''}
                   </div>
                 </button>
@@ -91,7 +92,7 @@ export const TaskLogsPanel: React.FC<TaskLogsPanelProps> = ({
         </div>
 
         <div>
-          <div className="bg-[#141d2f] border border-slate-700 border-b-0 rounded-t-[10px] px-4 py-2.5 flex justify-between items-center text-[12.5px]">
+          <div className="bg-surface-bar border border-slate-700 border-b-0 rounded-t-[10px] px-4 py-2.5 flex justify-between items-center text-[12.5px]">
             <div id="active-task-title">
               {activeTaskId
                 ? `Task ${activeTaskId} — Execution Output`
@@ -110,7 +111,7 @@ export const TaskLogsPanel: React.FC<TaskLogsPanelProps> = ({
             )}
           </div>
           <div
-            className="bg-[#090d16] border border-slate-700 rounded-b-[10px] font-mono text-[12.5px] leading-relaxed text-slate-200 p-4 h-[440px] overflow-y-auto"
+            className="bg-surface-terminal border border-slate-700 rounded-b-[10px] font-mono text-[12.5px] leading-relaxed text-slate-200 p-4 h-[440px] overflow-y-auto"
             id="terminal-output"
             ref={terminalRef}
           >

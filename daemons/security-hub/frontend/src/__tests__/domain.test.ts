@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildPendingUpdateRequest,
   getItemKey,
   getItemSortRank,
+  isItemUpdatable,
   isNodeScanningName,
   isSafeHttpUrl,
   isStreamableScanTaskId,
@@ -90,5 +92,20 @@ describe('domain helpers', () => {
     expect(matchesDashboardTab(base, 'brew')).toBe(false);
     expect(matchesDashboardTab({ ...base, target_type: 'apt' }, 'brew')).toBe(true);
     expect(matchesDashboardTab({ ...base, target_type: 'macos' }, 'daemons')).toBe(true);
+
+    expect(isItemUpdatable(base)).toBe(true);
+    expect(isItemUpdatable({ ...base, target_type: 'daemon', name: 'ollama' })).toBe(true);
+    expect(isItemUpdatable({ ...base, target_type: 'daemon', name: 'other' })).toBe(false);
+    expect(isItemUpdatable({ ...base, target_type: 'macos' })).toBe(false);
+
+    expect(buildPendingUpdateRequest(base, '1.2', 'Axis')).toEqual({
+      node: 'Axis',
+      target_type: 'docker',
+      target_name: 'svc',
+      current_version: '1.0',
+      target_version: '1.2',
+      broken_linkage: false,
+      stateful: false,
+    });
   });
 });

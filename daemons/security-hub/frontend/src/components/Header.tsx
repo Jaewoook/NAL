@@ -1,7 +1,6 @@
 import type React from 'react';
 import { UserMenuDropdown } from './UserMenuDropdown';
-import { Badge } from './ui/Badge';
-import { Button } from './ui/Button';
+import { Badge, Button } from './ui';
 
 interface HeaderProps {
   authenticated: boolean;
@@ -36,9 +35,9 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
 }) => {
   return (
-    <header className="bg-[#0b1120] border-b border-slate-700 px-8 py-4 flex flex-wrap justify-between items-center gap-3 sticky top-0 z-20">
+    <header className="bg-surface-header border-b border-slate-700 px-8 py-4 flex flex-wrap justify-between items-center gap-3 sticky top-0 z-20">
       <div className="flex items-center gap-3 font-bold text-lg">
-        <span className="bg-gradient-to-br from-sky-400 to-indigo-400 text-[#0b1120] px-2 py-1 rounded-md text-xs font-extrabold">
+        <span className="bg-gradient-to-br from-sky-400 to-indigo-400 text-surface-header px-2 py-1 rounded-md text-xs font-extrabold">
           NAL
         </span>
         <span>Security Hub</span>

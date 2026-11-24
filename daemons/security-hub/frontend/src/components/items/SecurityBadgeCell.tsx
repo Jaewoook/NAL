@@ -1,6 +1,6 @@
 import type React from 'react';
 import type { ManagedItem } from '../../types';
-import { Badge } from '../ui/Badge';
+import { Badge } from '../ui';
 
 interface SecurityBadgeCellProps {
   item: ManagedItem;

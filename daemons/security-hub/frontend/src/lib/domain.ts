@@ -1,4 +1,4 @@
-import type { ManagedItem, TabType } from '../types';
+import type { ManagedItem, PendingUpdateRequest, TabType } from '../types';
 
 /**
  * Validates that an external link uses an HTTP/HTTPS URL scheme.
@@ -102,4 +102,35 @@ export function matchesDashboardTab(item: ManagedItem, tab: Exclude<TabType, 'lo
   if (tab === 'docker') return item.target_type === 'docker';
   if (tab === 'brew') return item.target_type === 'brew' || item.target_type === 'apt';
   return item.target_type === 'daemon' || item.target_type === 'macos';
+}
+
+/**
+ * Returns true when an item supports hub-orchestrated remote/local updates.
+ */
+export function isItemUpdatable(item: ManagedItem): boolean {
+  return (
+    item.target_type === 'docker' ||
+    item.target_type === 'brew' ||
+    item.target_type === 'apt' ||
+    (item.target_type === 'daemon' && item.name === 'ollama')
+  );
+}
+
+/**
+ * Builds the confirmation payload for triggering an update modal from a managed item row.
+ */
+export function buildPendingUpdateRequest(
+  item: ManagedItem,
+  targetVersion: string,
+  hubNode: string
+): PendingUpdateRequest {
+  return {
+    node: item.node || hubNode || 'local',
+    target_type: item.target_type,
+    target_name: item.name,
+    current_version: item.current_version,
+    target_version: targetVersion,
+    broken_linkage: Boolean(item.broken_linkage),
+    stateful: Boolean(item.stateful),
+  };
 }

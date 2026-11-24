@@ -1,8 +1,6 @@
 import type React from 'react';
 import type { NodeInfo } from '../../types';
-import { Badge } from '../ui/Badge';
-import { Button } from '../ui/Button';
-import { StatusDot } from '../ui/StatusDot';
+import { Badge, Button, StatusDot } from '../ui';
 
 interface RegisteredNodesListProps {
   activeNodes: NodeInfo[];
@@ -26,31 +24,28 @@ export const RegisteredNodesList: React.FC<RegisteredNodesListProps> = ({
         Registered Compute Nodes
       </div>
 
-      <div
-        id="nodes-modal-list"
-        className="bg-slate-900 p-3 rounded-lg border border-slate-700 text-[13px] flex flex-col gap-2.5 mb-3.5"
-      >
-        {activeNodes.map((n) => (
+      <div id="nodes-modal-list" className="inset-panel mb-3.5">
+        {activeNodes.map((node) => (
           <div
-            key={n.name}
+            key={node.name}
             className="flex justify-between items-center py-1.5 border-b border-slate-700 last:border-b-0"
           >
             <div>
-              <StatusDot status={n.online ? 'green' : 'amber'} /> <strong>{n.name}</strong>
+              <StatusDot status={node.online ? 'green' : 'amber'} /> <strong>{node.name}</strong>
               <Badge tone="skip" className="ml-1.5">
-                {n.role}
+                {node.role}
               </Badge>
-              {n.os_version && (
+              {node.os_version && (
                 <Badge tone="skip" className="ml-1 text-[10px]">
-                  {n.os_version}
+                  {node.os_version}
                 </Badge>
               )}
               <div className="text-xs text-slate-400 font-mono break-all">
-                {n.url || 'Local Hub Host'} {n.last_error ? `· ${n.last_error}` : ''}
+                {node.url || 'Local Hub Host'} {node.last_error ? `· ${node.last_error}` : ''}
               </div>
             </div>
-            {n.role !== 'hub' && (
-              <Button variant="danger" onClick={() => onDeleteNode(n.name)}>
+            {node.role !== 'hub' && (
+              <Button variant="danger" onClick={() => onDeleteNode(node.name)}>
                 Remove
               </Button>
             )}
@@ -62,32 +57,32 @@ export const RegisteredNodesList: React.FC<RegisteredNodesListProps> = ({
             <div className="text-[11px] font-semibold text-slate-400 uppercase mb-1.5">
               Dismissed Nodes ({rejectedNodes.length})
             </div>
-            {rejectedNodes.map((n) => (
+            {rejectedNodes.map((node) => (
               <div
-                key={n.name}
+                key={node.name}
                 className="flex justify-between items-center py-1.5 border-b border-slate-700 last:border-b-0 opacity-80"
               >
                 <div>
-                  <StatusDot status="red" /> <strong>{n.name}</strong>
+                  <StatusDot status="red" /> <strong>{node.name}</strong>
                   <Badge tone="warn" className="ml-1.5 text-[10px] px-1.25 py-0.25">
                     REJECTED
                   </Badge>
                   <div className="text-xs text-slate-400 font-mono break-all">
-                    {n.url || 'LAN Node'}
+                    {node.url || 'LAN Node'}
                   </div>
                 </div>
                 <div className="flex gap-1.5">
                   <Button
                     variant="primary"
                     className="px-2 py-0.5 text-[11px]"
-                    onClick={() => onApproveNode(n.name)}
+                    onClick={() => onApproveNode(node.name)}
                   >
                     Re-Approve
                   </Button>
                   <Button
                     variant="danger"
                     className="px-2 py-0.5 text-[11px]"
-                    onClick={() => onDeleteNode(n.name)}
+                    onClick={() => onDeleteNode(node.name)}
                   >
                     Remove
                   </Button>

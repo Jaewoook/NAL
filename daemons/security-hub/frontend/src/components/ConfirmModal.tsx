@@ -1,7 +1,7 @@
 import type React from 'react';
 import type { ActiveConfirmState } from '../hooks/useConfirmDialog';
 import { Modal } from './Modal';
-import { Button } from './ui/Button';
+import { Button } from './ui';
 
 interface ConfirmModalProps {
   state: ActiveConfirmState | null;

@@ -4,9 +4,7 @@ import { toast } from 'sonner';
 import { isNodeScanningName } from '../lib/domain';
 import type { NodeInfo } from '../types';
 import { Modal } from './Modal';
-import { Badge } from './ui/Badge';
-import { Button } from './ui/Button';
-import { type DotStatus, StatusDot } from './ui/StatusDot';
+import { Badge, Button, type DotStatus, StatusDot } from './ui';
 
 interface ScanNodeModalProps {
   open: boolean;
@@ -77,46 +75,43 @@ export const ScanNodeModal: React.FC<ScanNodeModalProps> = ({
         Select a registered compute node to execute a targeted security scan:
       </p>
 
-      <div
-        id="scan-node-modal-list"
-        className="bg-slate-900 p-3 rounded-lg border border-slate-700 text-[13px] flex flex-col gap-2.5 max-h-[320px] overflow-y-auto mb-4"
-      >
+      <div id="scan-node-modal-list" className="inset-panel max-h-[320px] overflow-y-auto mb-4">
         {approvedNodes.length === 0 ? (
           <div className="text-slate-400 text-[13px] p-3 text-center">
             No approved nodes available to scan.
           </div>
         ) : (
-          approvedNodes.map((n, idx) => {
-            const dot: DotStatus = n.online ? 'green' : 'amber';
-            const roleTag = n.role === 'hub' ? 'Hub' : 'Agent';
-            const scanning = isNodeScanningName(scanningNodes, n.name);
+          approvedNodes.map((node, idx) => {
+            const dot: DotStatus = node.online ? 'green' : 'amber';
+            const roleTag = node.role === 'hub' ? 'Hub' : 'Agent';
+            const scanning = isNodeScanningName(scanningNodes, node.name);
             const inputId = `scan-node-radio-${idx}`;
 
             return (
-              <label key={n.name} className="scan-node-option" htmlFor={inputId}>
+              <label key={node.name} className="scan-node-option" htmlFor={inputId}>
                 <div className="flex items-center gap-2.5 cursor-pointer flex-1">
                   <input
                     type="radio"
                     id={inputId}
                     name="scan-target-node"
-                    value={n.name}
-                    checked={selectedNode === n.name}
-                    onChange={() => setSelectedNode(n.name)}
+                    value={node.name}
+                    checked={selectedNode === node.name}
+                    onChange={() => setSelectedNode(node.name)}
                   />
                   <StatusDot status={scanning ? 'scanning' : dot} />
-                  <strong>{n.name}</strong>
+                  <strong>{node.name}</strong>
                   <span className="text-[10px] uppercase px-1.5 py-0.25 rounded bg-slate-700 text-slate-300">
                     {roleTag}
                   </span>
-                  {n.os_version && (
+                  {node.os_version && (
                     <Badge tone="skip" className="text-[10px] px-1.5 py-0.25">
-                      {n.os_version}
+                      {node.os_version}
                     </Badge>
                   )}
                   {scanning && <span className="node-scan-status">⟳ Scanning</span>}
                 </div>
                 <div className="text-xs text-slate-400 font-mono break-all">
-                  {n.url || 'Local Hub Host'}
+                  {node.url || 'Local Hub Host'}
                 </div>
               </label>
             );

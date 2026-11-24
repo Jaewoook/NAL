@@ -1,7 +1,6 @@
 import type React from 'react';
 import type { TestFeedback } from '../../hooks/useNodeConnectionTest';
-import { Badge } from '../ui/Badge';
-import { Button } from '../ui/Button';
+import { Badge, Button } from '../ui';
 
 interface NodeFormSectionProps {
   name: string;
@@ -39,12 +38,13 @@ export const NodeFormSection: React.FC<NodeFormSectionProps> = ({
   onClose,
 }) => {
   return (
-    <div className="bg-slate-900 p-3 rounded-lg border border-slate-700 text-[13px] flex flex-col gap-2.5">
+    <div className="inset-panel">
       <div className="font-bold text-xs text-slate-400 uppercase">
         Add / Update Remote Agent Node
       </div>
       <input
         id="inp-node-name"
+        aria-label="Device Name"
         className={INPUT_CLASS}
         placeholder="Device Name"
         value={name}
@@ -52,6 +52,7 @@ export const NodeFormSection: React.FC<NodeFormSectionProps> = ({
       />
       <input
         id="inp-node-url"
+        aria-label="LAN Agent URL"
         className={INPUT_CLASS}
         placeholder="LAN Agent URL (e.g. http://192.168.1.50:10247)"
         value={url}
@@ -59,6 +60,7 @@ export const NodeFormSection: React.FC<NodeFormSectionProps> = ({
       />
       <input
         id="inp-node-token"
+        aria-label="Shared Node Token Secret"
         className={INPUT_CLASS}
         type="password"
         placeholder="Shared X-NAL-Node-Token Secret"

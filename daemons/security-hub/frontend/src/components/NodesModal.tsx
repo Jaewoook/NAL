@@ -4,9 +4,7 @@ import { toast } from 'sonner';
 import { useNodeConnectionTest } from '../hooks/useNodeConnectionTest';
 import type { NodeInfo } from '../types';
 import { Modal } from './Modal';
-import { NodeFormSection } from './nodes/NodeFormSection';
-import { PendingNodesSection } from './nodes/PendingNodesSection';
-import { RegisteredNodesList } from './nodes/RegisteredNodesList';
+import { NodeFormSection, PendingNodesSection, RegisteredNodesList } from './nodes';
 
 interface NodesModalProps {
   open: boolean;

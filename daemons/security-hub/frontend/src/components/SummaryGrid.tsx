@@ -1,5 +1,6 @@
 import type React from 'react';
 import { useMemo } from 'react';
+import { cn } from '../lib/cn';
 import type { ManagedItem } from '../types';
 
 interface SummaryGridProps {
@@ -7,6 +8,41 @@ interface SummaryGridProps {
   tasksCount: number;
   scannedAt?: string;
 }
+
+interface StatCardProps {
+  accentBorderClass: string;
+  label: string;
+  value: string;
+  valueClass: string;
+  valueId: string;
+  subtitle: string;
+  subtitleId?: string;
+}
+
+const StatCard: React.FC<StatCardProps> = ({
+  accentBorderClass,
+  label,
+  value,
+  valueClass,
+  valueId,
+  subtitle,
+  subtitleId,
+}) => (
+  <div
+    className={cn(
+      'bg-slate-800 border border-slate-700 border-l-4 rounded-xl px-5 py-4.5',
+      accentBorderClass
+    )}
+  >
+    <div className="text-xs uppercase tracking-wider text-slate-400">{label}</div>
+    <div className={cn('text-[28px] font-extrabold my-1.5', valueClass)} id={valueId}>
+      {value}
+    </div>
+    <div className="text-xs text-slate-400" id={subtitleId}>
+      {subtitle}
+    </div>
+  </div>
+);
 
 /**
  * Displays aggregate CVE, EoL, outdated package, and task run counts for the selected node filter.
@@ -19,15 +55,15 @@ export const SummaryGrid: React.FC<SummaryGridProps> = ({ items, tasksCount, sca
     let outdated = 0;
     let skipped = 0;
     let broken = 0;
-    for (const it of items) {
-      crit += it.crit_count || 0;
-      high += it.high_count || 0;
-      if (it.eol && (it.eol.status === 'expired' || it.eol.status === 'expiring_soon')) {
+    for (const item of items) {
+      crit += item.crit_count || 0;
+      high += item.high_count || 0;
+      if (item.eol && (item.eol.status === 'expired' || item.eol.status === 'expiring_soon')) {
         eol++;
       }
-      if (it.outdated) outdated++;
-      if (it.skipped) skipped++;
-      if (it.broken_linkage) broken++;
+      if (item.outdated) outdated++;
+      if (item.skipped) skipped++;
+      if (item.broken_linkage) broken++;
     }
     return { crit, high, eol, outdated, skipped, broken };
   }, [items]);
@@ -40,47 +76,41 @@ export const SummaryGrid: React.FC<SummaryGridProps> = ({ items, tasksCount, sca
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      <div className="bg-slate-800 border border-slate-700 border-l-4 border-l-red-500 rounded-xl px-5 py-4.5">
-        <div className="text-xs uppercase tracking-wider text-slate-400">
-          Security Vulnerabilities
-        </div>
-        <div className="text-[28px] font-extrabold my-1.5 text-red-300" id="stat-cves">
-          {stats.crit} Critical / {stats.high} High
-        </div>
-        <div className="text-xs text-slate-400" id="stat-cves-sub">
-          OSV.dev + Trivy CVE Scanner
-        </div>
-      </div>
-
-      <div className="bg-slate-800 border border-slate-700 border-l-4 border-l-amber-500 rounded-xl px-5 py-4.5">
-        <div className="text-xs uppercase tracking-wider text-slate-400">LTS / EoL Window</div>
-        <div className="text-[28px] font-extrabold my-1.5 text-amber-300" id="stat-eol">
-          {stats.eol} Expiring/EoL
-        </div>
-        <div className="text-xs text-slate-400">Tracked via endoflife.date + Vendor Windows</div>
-      </div>
-
-      <div className="bg-slate-800 border border-slate-700 border-l-4 border-l-amber-500 rounded-xl px-5 py-4.5">
-        <div className="text-xs uppercase tracking-wider text-slate-400">Outdated Packages</div>
-        <div className="text-[28px] font-extrabold my-1.5 text-slate-50" id="stat-outdated">
-          {stats.outdated} Updates
-        </div>
-        <div className="text-xs text-slate-400" id="stat-outdated-sub">
-          {stats.skipped} Skipped · {stats.broken} Broken Linkage
-        </div>
-      </div>
-
-      <div className="bg-slate-800 border border-slate-700 border-l-4 border-l-emerald-500 rounded-xl px-5 py-4.5">
-        <div className="text-xs uppercase tracking-wider text-slate-400">
-          Task Logs &amp; Snapshots
-        </div>
-        <div className="text-[28px] font-extrabold my-1.5 text-emerald-300" id="stat-tasks">
-          {tasksCount} Runs
-        </div>
-        <div className="text-xs text-slate-400" id="stat-last-scan">
-          {lastScanLabel}
-        </div>
-      </div>
+      <StatCard
+        accentBorderClass="border-l-red-500"
+        label="Security Vulnerabilities"
+        value={`${stats.crit} Critical / ${stats.high} High`}
+        valueClass="text-red-300"
+        valueId="stat-cves"
+        subtitle="OSV.dev + Trivy CVE Scanner"
+        subtitleId="stat-cves-sub"
+      />
+      <StatCard
+        accentBorderClass="border-l-amber-500"
+        label="LTS / EoL Window"
+        value={`${stats.eol} Expiring/EoL`}
+        valueClass="text-amber-300"
+        valueId="stat-eol"
+        subtitle="Tracked via endoflife.date + Vendor Windows"
+      />
+      <StatCard
+        accentBorderClass="border-l-amber-500"
+        label="Outdated Packages"
+        value={`${stats.outdated} Updates`}
+        valueClass="text-slate-50"
+        valueId="stat-outdated"
+        subtitle={`${stats.skipped} Skipped · ${stats.broken} Broken Linkage`}
+        subtitleId="stat-outdated-sub"
+      />
+      <StatCard
+        accentBorderClass="border-l-emerald-500"
+        label="Task Logs & Snapshots"
+        value={`${tasksCount} Runs`}
+        valueClass="text-emerald-300"
+        valueId="stat-tasks"
+        subtitle={lastScanLabel}
+        subtitleId="stat-last-scan"
+      />
     </div>
   );
 };

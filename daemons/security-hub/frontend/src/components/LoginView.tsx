@@ -1,5 +1,5 @@
 import type React from 'react';
-import { Button } from './ui/Button';
+import { Button } from './ui';
 
 interface LoginViewProps {
   onPasskeyLogin: () => void;
@@ -14,7 +14,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onPasskeyLogin }) => {
       id="view-login"
       className="bg-slate-800 border border-slate-700 rounded-xl p-5 max-w-[460px] mx-auto my-12 text-center"
     >
-      <div className="inline-block mb-3 bg-gradient-to-br from-sky-400 to-indigo-400 text-[#0b1120] px-2 py-1 rounded-md text-xs font-extrabold">
+      <div className="inline-block mb-3 bg-gradient-to-br from-sky-400 to-indigo-400 text-surface-header px-2 py-1 rounded-md text-xs font-extrabold">
         NAL SECURITY
       </div>
       <h3 className="text-lg font-bold">NAL Security Hub</h3>

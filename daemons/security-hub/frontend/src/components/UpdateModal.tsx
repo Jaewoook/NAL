@@ -2,8 +2,7 @@ import type React from 'react';
 import { useEffect, useState } from 'react';
 import type { PendingUpdateRequest } from '../types';
 import { Modal } from './Modal';
-import { Badge } from './ui/Badge';
-import { Button } from './ui/Button';
+import { Badge, Button } from './ui';
 
 interface UpdateModalProps {
   request: PendingUpdateRequest | null;
@@ -55,7 +54,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ request, onConfirm, on
           </p>
 
           {isDocker && (
-            <div className="bg-slate-900 p-3 rounded-lg border border-slate-700 text-[13px] flex flex-col gap-2.5">
+            <div className="inset-panel">
               <label id="lbl-snapshot" className="flex gap-2 items-center">
                 <input type="checkbox" checked readOnly disabled />
                 <span>

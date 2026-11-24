@@ -2,8 +2,7 @@ import type React from 'react';
 import { cn } from '../lib/cn';
 import { isNodeScanningName } from '../lib/domain';
 import type { NodeInfo } from '../types';
-import { Button } from './ui/Button';
-import { type DotStatus, StatusDot } from './ui/StatusDot';
+import { Button, type DotStatus, StatusDot } from './ui';
 
 interface NodeBarProps {
   approvedNodes: NodeInfo[];
@@ -11,6 +10,17 @@ interface NodeBarProps {
   currentNodeFilter: string;
   onSelectNodeFilter: (nodeName: string) => void;
   onOpenNodesModal: () => void;
+}
+
+function getNodeStatusDot(node: NodeInfo, scanning: boolean): DotStatus {
+  if (scanning) return 'scanning';
+  return node.online ? 'green' : 'amber';
+}
+
+function getNodeTooltip(node: NodeInfo, scanning: boolean): string {
+  if (scanning) return 'Scanning in progress...';
+  if (node.last_error) return `Offline: ${node.last_error}`;
+  return node.url || 'Local Host';
 }
 
 /**
@@ -25,7 +35,7 @@ export const NodeBar: React.FC<NodeBarProps> = ({
 }) => {
   const isAllScanning =
     approvedNodes.length > 0 &&
-    approvedNodes.every((n) => isNodeScanningName(scanningNodes, n.name));
+    approvedNodes.every((node) => isNodeScanningName(scanningNodes, node.name));
 
   return (
     <div className="flex justify-between items-center mb-4 gap-3 flex-wrap">
@@ -43,30 +53,24 @@ export const NodeBar: React.FC<NodeBarProps> = ({
           {isAllScanning && <span className="node-scan-status">⟳ Scanning</span>}
         </button>
 
-        {approvedNodes.map((n) => {
-          const scanning = isNodeScanningName(scanningNodes, n.name);
-          const dot: DotStatus = scanning ? 'scanning' : n.online ? 'green' : 'amber';
-          const roleTag = n.role === 'hub' ? 'Hub' : 'Agent';
-          const title = scanning
-            ? 'Scanning in progress...'
-            : n.last_error
-              ? `Offline: ${n.last_error}`
-              : n.url || 'Local Host';
+        {approvedNodes.map((node) => {
+          const scanning = isNodeScanningName(scanningNodes, node.name);
+          const roleTag = node.role === 'hub' ? 'Hub' : 'Agent';
 
           return (
             <button
               type="button"
-              key={n.name}
+              key={node.name}
               className={cn(
                 'node-pill',
-                currentNodeFilter === n.name && 'active',
+                currentNodeFilter === node.name && 'active',
                 scanning && 'scanning'
               )}
-              title={title}
-              onClick={() => onSelectNodeFilter(n.name)}
+              title={getNodeTooltip(node, scanning)}
+              onClick={() => onSelectNodeFilter(node.name)}
             >
-              <StatusDot status={dot} />
-              <span>{n.name}</span>
+              <StatusDot status={getNodeStatusDot(node, scanning)} />
+              <span>{node.name}</span>
               <span className="text-[10px] uppercase px-1.5 py-0.25 rounded bg-slate-700 text-slate-300">
                 {roleTag}
               </span>

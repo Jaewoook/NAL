@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+@theme {
+  --color-surface-header: #0b1120;
+  --color-surface-hover: #263449;
+  --color-surface-terminal: #090d16;
+  --color-surface-bar: #141d2f;
+}
+
 @keyframes pulse-dot {
   0%,
   100% {
@@ -52,10 +59,14 @@
   }
 
   .scan-node-option {
-    @apply flex items-center justify-between px-3.5 py-2.5 border border-slate-700 rounded-lg bg-slate-800 cursor-pointer transition-all hover:bg-[#263449] hover:border-sky-400;
+    @apply flex items-center justify-between px-3.5 py-2.5 border border-slate-700 rounded-lg bg-slate-800 cursor-pointer transition-all hover:bg-surface-hover hover:border-sky-400;
   }
   .scan-node-option input[type="radio"] {
     @apply mr-3 cursor-pointer accent-sky-400;
+  }
+
+  .inset-panel {
+    @apply bg-slate-900 p-3 rounded-lg border border-slate-700 text-[13px] flex flex-col gap-2.5;
   }
 
   .badge {
@@ -94,11 +105,11 @@
     @apply relative inline-flex items-center cursor-default;
   }
   .tooltip-box {
-    @apply invisible opacity-0 absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 bg-[#0b1120] text-slate-50 border border-slate-700 px-3 py-2 rounded-lg text-[11.5px] font-medium whitespace-normal min-w-[180px] max-w-[300px] shadow-[0_10px_25px_-5px_rgba(0,0,0,0.7)] z-50 pointer-events-none transition-all duration-150 text-center leading-snug;
+    @apply invisible opacity-0 absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 bg-surface-header text-slate-50 border border-slate-700 px-3 py-2 rounded-lg text-[11.5px] font-medium whitespace-normal min-w-[180px] max-w-[300px] shadow-[0_10px_25px_-5px_rgba(0,0,0,0.7)] z-50 pointer-events-none transition-all duration-150 text-center leading-snug;
   }
   .tooltip-box::after {
     content: "";
-    @apply absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-solid border-t-[#0b1120] border-x-transparent border-b-transparent;
+    @apply absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-solid border-t-surface-header border-x-transparent border-b-transparent;
   }
   .tooltip-wrapper:hover .tooltip-box {
     @apply visible opacity-100;

@@ -19,6 +19,7 @@ import { useItemActions } from './hooks/useItemActions';
 import { useNodeActions } from './hooks/useNodeActions';
 import { useScanStream } from './hooks/useScanStream';
 import { useTaskLogStream } from './hooks/useTaskLogStream';
+import { buildPendingUpdateRequest } from './lib/domain';
 import type { PendingUpdateRequest, TabType } from './types';
 
 /**
@@ -159,15 +160,9 @@ export const App: React.FC = () => {
                 }
                 onOpenBrokenLinkage={(pkgName, details) => setLinkageModal({ pkgName, details })}
                 onOpenUpdateModal={(item, targetVersion) =>
-                  setPendingUpdateReq({
-                    node: item.node || dashboard.hubNode || 'local',
-                    target_type: item.target_type,
-                    target_name: item.name,
-                    current_version: item.current_version,
-                    target_version: targetVersion,
-                    broken_linkage: Boolean(item.broken_linkage),
-                    stateful: Boolean(item.stateful),
-                  })
+                  setPendingUpdateReq(
+                    buildPendingUpdateRequest(item, targetVersion, dashboard.hubNode)
+                  )
                 }
                 onSkipItem={itemActions.skipItem}
                 onUnskipItem={itemActions.unskipItem}
