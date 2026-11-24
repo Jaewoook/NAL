@@ -1,5 +1,6 @@
 import type React from 'react';
 import type { ManagedItem } from '../../types';
+import { Badge } from '../ui/Badge';
 
 interface SecurityBadgeCellProps {
   item: ManagedItem;
@@ -29,9 +30,9 @@ export const SecurityBadgeCell: React.FC<SecurityBadgeCellProps> = ({
         >
           ⚠ Broken Linkage (Details)
         </button>
-        <span className="badge crit">
+        <Badge tone="crit">
           ● {item.crit_count} Crit / {item.high_count} High
-        </span>
+        </Badge>
       </div>
     );
   }
@@ -52,11 +53,11 @@ export const SecurityBadgeCell: React.FC<SecurityBadgeCellProps> = ({
   if (hasHighOrCrit) {
     const firstId = item.vulnerabilities?.[0]?.id || 'CVE';
     return (
-      <span className="badge crit">
+      <Badge tone="crit">
         ● {item.crit_count} Crit / {item.high_count} High ({firstId})
-      </span>
+      </Badge>
     );
   }
 
-  return <span className="badge ok">✓ 0 CVEs</span>;
+  return <Badge tone="ok">✓ 0 CVEs</Badge>;
 };

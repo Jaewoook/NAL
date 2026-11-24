@@ -1,5 +1,7 @@
 import type React from 'react';
 import { Modal } from './Modal';
+import { Badge } from './ui/Badge';
+import { Button } from './ui/Button';
 
 interface BrokenLinkageModalProps {
   pkgName: string;
@@ -26,9 +28,9 @@ export const BrokenLinkageModal: React.FC<BrokenLinkageModalProps> = ({
       title={
         <>
           <span>Broken Linkage Details</span>
-          <span className="badge crit" id="modal-linkage-pkg">
+          <Badge tone="crit" id="modal-linkage-pkg">
             {pkgName}
-          </span>
+          </Badge>
         </>
       }
     >
@@ -43,9 +45,9 @@ export const BrokenLinkageModal: React.FC<BrokenLinkageModalProps> = ({
         {details || 'Missing shared library dependency'}
       </div>
       <div className="flex justify-end gap-2.5">
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
+        <Button variant="ghost" onClick={onClose}>
           Close
-        </button>
+        </Button>
       </div>
     </Modal>
   );

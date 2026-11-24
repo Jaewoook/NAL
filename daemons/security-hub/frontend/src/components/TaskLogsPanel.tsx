@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { cn } from '../lib/cn';
 import { hubApi } from '../lib/http';
 import type { RenderedLogEntry, Task } from '../types';
+import { Badge, type BadgeTone } from './ui/Badge';
 
 interface TaskLogsPanelProps {
   tasks: Task[];
@@ -45,7 +46,7 @@ export const TaskLogsPanel: React.FC<TaskLogsPanelProps> = ({
             <div className="p-5 text-slate-400 text-[13px]">No tasks recorded yet.</div>
           ) : (
             tasks.map((t) => {
-              const badgeClass =
+              const badgeTone: BadgeTone =
                 t.status === 'succeeded'
                   ? 'ok'
                   : t.status === 'rolled_back' || t.status === 'running'
@@ -75,7 +76,7 @@ export const TaskLogsPanel: React.FC<TaskLogsPanelProps> = ({
                       {t.id} · {nodeLabel}
                       {t.task_type}
                     </strong>
-                    <span className={cn('badge', badgeClass)}>{t.status}</span>
+                    <Badge tone={badgeTone}>{t.status}</Badge>
                   </div>
                   <div className="text-xs text-slate-400 font-mono break-all mt-1">
                     {t.target_name}

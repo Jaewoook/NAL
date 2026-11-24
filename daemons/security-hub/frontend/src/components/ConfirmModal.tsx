@@ -1,7 +1,7 @@
 import type React from 'react';
 import type { ActiveConfirmState } from '../hooks/useConfirmDialog';
-import { cn } from '../lib/cn';
 import { Modal } from './Modal';
+import { Button } from './ui/Button';
 
 interface ConfirmModalProps {
   state: ActiveConfirmState | null;
@@ -26,17 +26,16 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({ state, onConfirm, on
         <>
           <p className="text-slate-400 text-[13px] mt-2.5 mb-5">{state.description}</p>
           <div className="flex justify-end gap-2.5">
-            <button
-              type="button"
+            <Button
               id="btn-confirm-dialog"
-              className={cn('btn', state.danger ? 'btn-danger' : 'btn-primary')}
+              variant={state.danger ? 'danger' : 'primary'}
               onClick={onConfirm}
             >
               {state.confirmLabel || 'Confirm'}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={onCancel}>
+            </Button>
+            <Button variant="ghost" onClick={onCancel}>
               Cancel
-            </button>
+            </Button>
           </div>
         </>
       )}

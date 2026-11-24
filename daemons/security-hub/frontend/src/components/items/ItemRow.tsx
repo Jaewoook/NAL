@@ -1,8 +1,10 @@
 import type React from 'react';
-import { cn } from '../../lib/cn';
-import { getItemKey, isSafeHttpUrl, resolveTargetVersion } from '../../lib/domain';
+import { getItemKey, resolveTargetVersion } from '../../lib/domain';
 import type { ManagedItem } from '../../types';
+import { Badge } from '../ui/Badge';
+import { type DotStatus, StatusDot } from '../ui/StatusDot';
 import { EolStatusCell } from './EolStatusCell';
+import { ItemActionsCell } from './ItemActionsCell';
 import { SecurityBadgeCell } from './SecurityBadgeCell';
 
 interface ItemRowProps {
@@ -35,18 +37,12 @@ export const ItemRow: React.FC<ItemRowProps> = ({
   const itemKey = getItemKey(item, hubNode);
   const { tags, selectedVer } = resolveTargetVersion(item, chosenVersion);
 
-  const dotClass =
+  const dotStatus: DotStatus =
     item.crit_count > 0 || item.broken_linkage || item.eol?.status === 'expired'
       ? 'red'
       : item.high_count > 0 || item.eol?.status === 'expiring_soon' || item.outdated
         ? 'amber'
         : 'green';
-
-  const isUpdatable =
-    item.target_type === 'docker' ||
-    item.target_type === 'brew' ||
-    item.target_type === 'apt' ||
-    (item.target_type === 'daemon' && item.name === 'ollama');
 
   const subType =
     item.target_type === 'brew' || item.target_type === 'apt'
@@ -62,11 +58,13 @@ export const ItemRow: React.FC<ItemRowProps> = ({
               {nodeName}
             </span>
             {item.critical_path && (
-              <span className="badge warn text-[10px] px-1.5 py-0.25">Critical Path</span>
+              <Badge tone="warn" className="text-[10px] px-1.5 py-0.25">
+                Critical Path
+              </Badge>
             )}
           </div>
           <div className="flex items-center gap-1.75 font-bold text-[14.5px] text-slate-50 my-0.25">
-            <span className={cn('dot', dotClass)} />
+            <StatusDot status={dotStatus} />
             <span>{item.name}</span>
           </div>
           <div className="text-xs text-slate-400 font-mono break-all">{subType}</div>
@@ -104,66 +102,15 @@ export const ItemRow: React.FC<ItemRowProps> = ({
       </td>
 
       <td className="px-4 py-3.5 align-middle">
-        <div className="flex gap-1.5 items-center flex-wrap">
-          {isUpdatable && (
-            <>
-              <button
-                type="button"
-                className={cn(
-                  'btn',
-                  item.crit_count > 0 || item.broken_linkage ? 'btn-danger' : 'btn-primary'
-                )}
-                onClick={() => onOpenUpdateModal(item, selectedVer)}
-              >
-                {item.broken_linkage ? 'Upgrade & Fix' : 'Update'}
-              </button>
-
-              {item.skipped ? (
-                <>
-                  <span className="badge skip">Skipped {item.skipped_version}</span>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => onUnskipItem(item)}
-                  >
-                    Unskip
-                  </button>
-                </>
-              ) : (
-                item.outdated && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => onSkipItem(item, selectedVer)}
-                  >
-                    Skip
-                  </button>
-                )
-              )}
-
-              {item.has_rollback && (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => onRollbackService(nodeName, item.name)}
-                >
-                  Rollback ({item.rollback_version})
-                </button>
-              )}
-            </>
-          )}
-
-          {item.release_notes_url && isSafeHttpUrl(item.release_notes_url) && (
-            <a
-              className="btn btn-ghost no-underline"
-              href={item.release_notes_url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Notes ↗
-            </a>
-          )}
-        </div>
+        <ItemActionsCell
+          item={item}
+          nodeName={nodeName}
+          selectedVer={selectedVer}
+          onOpenUpdateModal={onOpenUpdateModal}
+          onSkipItem={onSkipItem}
+          onUnskipItem={onUnskipItem}
+          onRollbackService={onRollbackService}
+        />
       </td>
     </tr>
   );

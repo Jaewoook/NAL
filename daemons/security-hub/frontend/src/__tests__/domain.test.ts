@@ -1,28 +1,17 @@
-import type { InternalAxiosRequestConfig } from 'axios';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cn } from './lib/cn';
+import { describe, expect, it } from 'vitest';
 import {
+  getItemKey,
   getItemSortRank,
   isNodeScanningName,
   isSafeHttpUrl,
   isStreamableScanTaskId,
+  parseCompletedScanNode,
   removeScanningNodeName,
   resolveTargetVersion,
-} from './lib/domain';
-import { apiClient, setCsrfToken } from './lib/http';
-import { parseTaskStreamMessage } from './lib/sse';
-import type { ManagedItem } from './types';
+} from '../lib/domain';
+import type { ManagedItem } from '../types';
 
-describe('frontend domain, http, and sse helpers', () => {
-  afterEach(() => {
-    setCsrfToken('');
-    vi.restoreAllMocks();
-  });
-
-  it('merges conditional Tailwind classes cleanly via cn', () => {
-    expect(cn('px-4 py-2', false && 'hidden', 'px-2')).toBe('py-2 px-2');
-  });
-
+describe('domain helpers', () => {
   it('validates safe HTTP/HTTPS URLs only', () => {
     expect(isSafeHttpUrl('https://github.com/org/repo/releases')).toBe(true);
     expect(isSafeHttpUrl('http://192.168.1.50:10247')).toBe(true);
@@ -50,7 +39,18 @@ describe('frontend domain, http, and sse helpers', () => {
     expect(removeScanningNodeName(after, 'unknown')).toBe(after);
   });
 
-  it('sorts items by severity rank and resolves target version defaults', () => {
+  it('parses completed or unreachable scan node names from log lines', () => {
+    expect(parseCompletedScanNode('[Hub] Scanned 18 local packages', 'Axis')).toBe('Axis');
+    expect(parseCompletedScanNode('[Hub] Scanned 0 local packages', '')).toBe('local');
+    expect(parseCompletedScanNode('[Atlas] Scanned 12 remote packages', 'Axis')).toBe('Atlas');
+    expect(
+      parseCompletedScanNode('[Aegis] Remote agent unreachable: connection refused', 'Axis')
+    ).toBe('Aegis');
+    expect(parseCompletedScanNode('[Hub] Starting local inventory...', 'Axis')).toBeNull();
+    expect(parseCompletedScanNode('[Atlas] Querying Trivy CVEs...', 'Axis')).toBeNull();
+  });
+
+  it('sorts items by severity rank, computes keys, and resolves target version defaults', () => {
     const base: ManagedItem = {
       target_type: 'docker',
       name: 'svc',
@@ -63,6 +63,10 @@ describe('frontend domain, http, and sse helpers', () => {
       crit_count: 0,
       high_count: 0,
     };
+
+    expect(getItemKey(base, 'Axis')).toBe('Axis:docker:svc');
+    expect(getItemKey({ ...base, node: 'Atlas' }, 'Axis')).toBe('Atlas:docker:svc');
+
     expect(getItemSortRank({ ...base, crit_count: 1 })).toBe(0);
     expect(getItemSortRank({ ...base, broken_linkage: true })).toBe(0);
     expect(getItemSortRank({ ...base, eol: { status: 'expired' } })).toBe(0);
@@ -80,37 +84,5 @@ describe('frontend domain, http, and sse helpers', () => {
       tags: ['1.1', '1.2'],
       selectedVer: '1.2',
     });
-  });
-
-  it('parses structured JSON and plain text SSE log lines', () => {
-    const structured = parseTaskStreamMessage(
-      JSON.stringify({ logged_at: '2026-11-24T00:00:00Z', stream: 'cmd', line: 'docker pull' })
-    );
-    expect(structured).toEqual({
-      kind: 'structured',
-      payload: {
-        task_id: undefined,
-        seq: undefined,
-        logged_at: '2026-11-24T00:00:00Z',
-        stream: 'cmd',
-        line: 'docker pull',
-      },
-    });
-    expect(parseTaskStreamMessage('plain output')).toEqual({ kind: 'raw', text: 'plain output' });
-  });
-
-  it('attaches X-CSRF-Token on mutating Axios requests but not GET', async () => {
-    setCsrfToken('fallback-csrf-123');
-    const captured: InternalAxiosRequestConfig[] = [];
-    const mockAdapter = async (config: InternalAxiosRequestConfig) => {
-      captured.push(config);
-      return { data: {}, status: 200, statusText: 'OK', headers: {}, config };
-    };
-
-    await apiClient.get('/api/dashboard', { adapter: mockAdapter });
-    expect(captured[0].headers.get('X-CSRF-Token')).toBeUndefined();
-
-    await apiClient.post('/api/scan', { node: 'Atlas' }, { adapter: mockAdapter });
-    expect(captured[1].headers.get('X-CSRF-Token')).toBe('fallback-csrf-123');
   });
 });

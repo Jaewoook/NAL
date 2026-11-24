@@ -1,5 +1,7 @@
 import type React from 'react';
 import type { TestFeedback } from '../../hooks/useNodeConnectionTest';
+import { Badge } from '../ui/Badge';
+import { Button } from '../ui/Button';
 
 interface NodeFormSectionProps {
   name: string;
@@ -64,37 +66,40 @@ export const NodeFormSection: React.FC<NodeFormSectionProps> = ({
         onChange={(e) => onTokenChange(e.target.value)}
       />
       <div className="flex gap-2 mt-1">
-        <button type="button" className="btn btn-primary" disabled={saving} onClick={onSave}>
+        <Button variant="primary" disabled={saving} onClick={onSave}>
           {saving ? 'Saving...' : '+ Add / Save Node'}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           id="btn-test-node"
-          className="btn btn-secondary"
+          variant="secondary"
           disabled={testing}
           onClick={onTestConnection}
         >
           {testing ? '⚡ Testing...' : '⚡ Test Connection'}
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
           Close
-        </button>
+        </Button>
       </div>
 
       {testFeedback && (
         <div id="test-node-result" className="mt-2">
           {testFeedback.kind === 'info' && (
-            <div className="badge warn w-full justify-start px-3 py-2">{testFeedback.text}</div>
+            <Badge tone="warn" className="w-full justify-start px-3 py-2">
+              {testFeedback.text}
+            </Badge>
           )}
           {testFeedback.kind === 'ok' && (
-            <div className="badge ok w-full justify-start px-3 py-2 gap-2">
+            <Badge tone="ok" className="w-full justify-start px-3 py-2 gap-2">
               <span>✓ Connected!</span>
               {testFeedback.latency && <span>({testFeedback.latency})</span>}
               <span>OS: {testFeedback.osVersion}</span>
-            </div>
+            </Badge>
           )}
           {testFeedback.kind === 'error' && (
-            <div className="badge crit w-full justify-start px-3 py-2">✖ {testFeedback.text}</div>
+            <Badge tone="crit" className="w-full justify-start px-3 py-2">
+              ✖ {testFeedback.text}
+            </Badge>
           )}
         </div>
       )}

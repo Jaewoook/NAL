@@ -1,5 +1,6 @@
 import type React from 'react';
 import type { ManagedItem } from '../../types';
+import { Badge } from '../ui/Badge';
 
 interface EolStatusCellProps {
   item: ManagedItem;
@@ -10,7 +11,7 @@ interface EolStatusCellProps {
  */
 export const EolStatusCell: React.FC<EolStatusCellProps> = ({ item }) => {
   if (!item.eol) {
-    return <span className="badge ok">Supported</span>;
+    return <Badge tone="ok">Supported</Badge>;
   }
 
   if (item.eol.status === 'expired') {
@@ -19,7 +20,7 @@ export const EolStatusCell: React.FC<EolStatusCellProps> = ({ item }) => {
       (item.eol.eol_date ? `End of Life reached on ${item.eol.eol_date}` : 'End of Life reached');
     return (
       <div className="tooltip-wrapper">
-        <span className="badge crit">✖ EoL Expired</span>
+        <Badge tone="crit">✖ EoL Expired</Badge>
         <div className="tooltip-box">{tooltipText}</div>
       </div>
     );
@@ -32,7 +33,7 @@ export const EolStatusCell: React.FC<EolStatusCellProps> = ({ item }) => {
       `End of Life scheduled in ${daysRemaining}d (${item.eol.eol_date || 'soon'})`;
     return (
       <div className="tooltip-wrapper">
-        <span className="badge warn">⚠ EoL in {daysRemaining}d</span>
+        <Badge tone="warn">⚠ EoL in {daysRemaining}d</Badge>
         <div className="tooltip-box">{tooltipText}</div>
       </div>
     );
@@ -42,7 +43,7 @@ export const EolStatusCell: React.FC<EolStatusCellProps> = ({ item }) => {
     const tooltipText = item.eol.message || 'Lifecycle track not mapped';
     return (
       <div className="tooltip-wrapper">
-        <span className="badge skip">Not Tracked</span>
+        <Badge tone="skip">Not Tracked</Badge>
         <div className="tooltip-box">{tooltipText}</div>
       </div>
     );
@@ -51,11 +52,11 @@ export const EolStatusCell: React.FC<EolStatusCellProps> = ({ item }) => {
   if (item.eol.eol_date) {
     return (
       <div className="tooltip-wrapper">
-        <span className="badge ok">Supported</span>
+        <Badge tone="ok">Supported</Badge>
         <div className="tooltip-box">Supported until {item.eol.eol_date}</div>
       </div>
     );
   }
 
-  return <span className="badge ok">Supported</span>;
+  return <Badge tone="ok">Supported</Badge>;
 };

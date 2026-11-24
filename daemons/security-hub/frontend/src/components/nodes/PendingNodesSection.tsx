@@ -1,5 +1,8 @@
 import type React from 'react';
 import type { NodeInfo } from '../../types';
+import { Badge } from '../ui/Badge';
+import { Button } from '../ui/Button';
+import { StatusDot } from '../ui/StatusDot';
 
 interface PendingNodesSectionProps {
   pendingNodes: NodeInfo[];
@@ -21,9 +24,9 @@ export const PendingNodesSection: React.FC<PendingNodesSectionProps> = ({
     <div id="pending-nodes-section" className="mb-3.5">
       <div className="font-bold text-xs text-amber-500 uppercase mb-1.5 flex items-center gap-1.5">
         <span>⚠️ Pending Agent Registrations</span>
-        <span className="badge warn text-[11px] px-1.5 py-0.25" id="modal-pending-count">
+        <Badge tone="warn" className="text-[11px] px-1.5 py-0.25" id="modal-pending-count">
           {pendingNodes.length}
-        </span>
+        </Badge>
       </div>
 
       <div
@@ -37,11 +40,15 @@ export const PendingNodesSection: React.FC<PendingNodesSectionProps> = ({
           >
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="dot amber" />
+                <StatusDot status="amber" />
                 <strong>{n.name}</strong>
-                <span className="badge warn text-[10px] px-1.5 py-0.25">PENDING</span>
+                <Badge tone="warn" className="text-[10px] px-1.5 py-0.25">
+                  PENDING
+                </Badge>
                 {n.os_version && (
-                  <span className="badge skip text-[10px] px-1.5 py-0.25">{n.os_version}</span>
+                  <Badge tone="skip" className="text-[10px] px-1.5 py-0.25">
+                    {n.os_version}
+                  </Badge>
                 )}
               </div>
               <div className="text-xs text-slate-400 font-mono break-all mt-0.5">
@@ -49,16 +56,12 @@ export const PendingNodesSection: React.FC<PendingNodesSectionProps> = ({
               </div>
             </div>
             <div className="flex gap-1.5">
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => onApproveNode(n.name)}
-              >
+              <Button variant="primary" onClick={() => onApproveNode(n.name)}>
                 Approve
-              </button>
-              <button type="button" className="btn btn-danger" onClick={() => onRejectNode(n.name)}>
+              </Button>
+              <Button variant="danger" onClick={() => onRejectNode(n.name)}>
                 Dismiss
-              </button>
+              </Button>
             </div>
           </div>
         ))}

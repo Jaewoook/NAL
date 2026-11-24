@@ -1,10 +1,12 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { cn } from '../lib/cn';
 import { isNodeScanningName } from '../lib/domain';
 import type { NodeInfo } from '../types';
 import { Modal } from './Modal';
+import { Badge } from './ui/Badge';
+import { Button } from './ui/Button';
+import { type DotStatus, StatusDot } from './ui/StatusDot';
 
 interface ScanNodeModalProps {
   open: boolean;
@@ -85,7 +87,7 @@ export const ScanNodeModal: React.FC<ScanNodeModalProps> = ({
           </div>
         ) : (
           approvedNodes.map((n, idx) => {
-            const dot = n.online ? 'green' : 'amber';
+            const dot: DotStatus = n.online ? 'green' : 'amber';
             const roleTag = n.role === 'hub' ? 'Hub' : 'Agent';
             const scanning = isNodeScanningName(scanningNodes, n.name);
             const inputId = `scan-node-radio-${idx}`;
@@ -101,13 +103,15 @@ export const ScanNodeModal: React.FC<ScanNodeModalProps> = ({
                     checked={selectedNode === n.name}
                     onChange={() => setSelectedNode(n.name)}
                   />
-                  <span className={cn('dot', scanning ? 'scanning' : dot)} />
+                  <StatusDot status={scanning ? 'scanning' : dot} />
                   <strong>{n.name}</strong>
                   <span className="text-[10px] uppercase px-1.5 py-0.25 rounded bg-slate-700 text-slate-300">
                     {roleTag}
                   </span>
                   {n.os_version && (
-                    <span className="badge skip text-[10px] px-1.5 py-0.25">{n.os_version}</span>
+                    <Badge tone="skip" className="text-[10px] px-1.5 py-0.25">
+                      {n.os_version}
+                    </Badge>
                   )}
                   {scanning && <span className="node-scan-status">⟳ Scanning</span>}
                 </div>
@@ -121,18 +125,17 @@ export const ScanNodeModal: React.FC<ScanNodeModalProps> = ({
       </div>
 
       <div className="flex gap-2.5 justify-end">
-        <button
-          type="button"
+        <Button
           id="btn-confirm-scan-node"
-          className="btn btn-primary"
+          variant="primary"
           disabled={confirmDisabled}
           onClick={handleConfirm}
         >
           ↻ Start Scan
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
           Cancel
-        </button>
+        </Button>
       </div>
     </Modal>
   );

@@ -1,4 +1,5 @@
 import type React from 'react';
+import { Button } from './ui/Button';
 
 interface LoginViewProps {
   onPasskeyLogin: () => void;
@@ -30,13 +31,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onPasskeyLogin }) => {
 
       <div className="my-3.5 text-slate-400 text-xs">— OR EMERGENCY / OFFLINE ACCESS —</div>
 
-      <button
-        type="button"
-        className="btn btn-ghost w-full py-2.75 text-slate-50"
-        onClick={onPasskeyLogin}
-      >
+      <Button variant="ghost" className="w-full py-2.75 text-slate-50" onClick={onPasskeyLogin}>
         🔑 Sign in with Registered Passkey (TouchID / Hardware Key)
-      </button>
+      </Button>
 
       <p className="text-[11.5px] text-slate-400 mt-4 text-left bg-slate-900 p-2.5 rounded-lg">
         <strong>Offline Resilience:</strong> Passkey verification and active sessions run locally on

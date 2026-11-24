@@ -44,6 +44,17 @@ export function removeScanningNodeName(scanningNodes: string[], nodeName: string
 }
 
 /**
+ * Extracts the node name that finished scanning (or failed reachability) from a scan stream log line.
+ */
+export function parseCompletedScanNode(lineText: string, hubNode: string): string | null {
+  if (/^\[Hub\] Scanned \d+ local\b/.test(lineText)) {
+    return hubNode || 'local';
+  }
+  const m = lineText.match(/^\[([^\]]+)\] (?:Scanned \d+ remote\b|Remote agent unreachable\b)/);
+  return m?.[1] ?? null;
+}
+
+/**
  * Returns the sort priority rank (lower is more severe) for items table ordering.
  */
 export function getItemSortRank(item: ManagedItem): number {

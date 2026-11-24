@@ -2,6 +2,8 @@ import type React from 'react';
 import { cn } from '../lib/cn';
 import { isNodeScanningName } from '../lib/domain';
 import type { NodeInfo } from '../types';
+import { Button } from './ui/Button';
+import { type DotStatus, StatusDot } from './ui/StatusDot';
 
 interface NodeBarProps {
   approvedNodes: NodeInfo[];
@@ -43,7 +45,7 @@ export const NodeBar: React.FC<NodeBarProps> = ({
 
         {approvedNodes.map((n) => {
           const scanning = isNodeScanningName(scanningNodes, n.name);
-          const dot = scanning ? 'scanning' : n.online ? 'green' : 'amber';
+          const dot: DotStatus = scanning ? 'scanning' : n.online ? 'green' : 'amber';
           const roleTag = n.role === 'hub' ? 'Hub' : 'Agent';
           const title = scanning
             ? 'Scanning in progress...'
@@ -63,7 +65,7 @@ export const NodeBar: React.FC<NodeBarProps> = ({
               title={title}
               onClick={() => onSelectNodeFilter(n.name)}
             >
-              <span className={cn('dot', dot)} />
+              <StatusDot status={dot} />
               <span>{n.name}</span>
               <span className="text-[10px] uppercase px-1.5 py-0.25 rounded bg-slate-700 text-slate-300">
                 {roleTag}
@@ -74,9 +76,9 @@ export const NodeBar: React.FC<NodeBarProps> = ({
         })}
       </div>
 
-      <button type="button" className="btn btn-ghost" onClick={onOpenNodesModal}>
+      <Button variant="ghost" onClick={onOpenNodesModal}>
         ⚙ Manage Nodes
-      </button>
+      </Button>
     </div>
   );
 };

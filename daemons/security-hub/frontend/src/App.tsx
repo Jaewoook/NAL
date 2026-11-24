@@ -14,8 +14,9 @@ import { TaskLogsPanel } from './components/TaskLogsPanel';
 import { UpdateModal } from './components/UpdateModal';
 import { useAuth } from './hooks/useAuth';
 import { useConfirmDialog } from './hooks/useConfirmDialog';
-import { useDashboardActions } from './hooks/useDashboardActions';
 import { useDashboardData } from './hooks/useDashboardData';
+import { useItemActions } from './hooks/useItemActions';
+import { useNodeActions } from './hooks/useNodeActions';
 import { useScanStream } from './hooks/useScanStream';
 import { useTaskLogStream } from './hooks/useTaskLogStream';
 import type { PendingUpdateRequest, TabType } from './types';
@@ -83,13 +84,20 @@ export const App: React.FC = () => {
     [taskLogStream.streamTaskLogs]
   );
 
-  const actions = useDashboardActions({
+  const itemActions = useItemActions({
     hubNode: dashboard.hubNode,
-    currentNodeFilter: dashboard.currentNodeFilter,
     authEpochRef: auth.authEpochRef,
     onUnauthorized: auth.handleUnauthorized,
     refreshDashboard: dashboard.refreshDashboard,
     onOpenTaskLog: handleOpenTaskLog,
+    requestConfirm: confirm.requestConfirm,
+  });
+
+  const nodeActions = useNodeActions({
+    currentNodeFilter: dashboard.currentNodeFilter,
+    authEpochRef: auth.authEpochRef,
+    onUnauthorized: auth.handleUnauthorized,
+    refreshDashboard: dashboard.refreshDashboard,
     onResetNodeFilter: () => dashboard.setCurrentNodeFilter('all'),
     requestConfirm: confirm.requestConfirm,
   });
@@ -165,10 +173,10 @@ export const App: React.FC = () => {
                     stateful: Boolean(item.stateful),
                   })
                 }
-                onSkipItem={actions.skipItem}
-                onUnskipItem={actions.unskipItem}
+                onSkipItem={itemActions.skipItem}
+                onUnskipItem={itemActions.unskipItem}
                 onRollbackService={(nodeName, svcName) =>
-                  void actions.rollbackService(nodeName, svcName)
+                  void itemActions.rollbackService(nodeName, svcName)
                 }
               />
             )}
@@ -179,7 +187,7 @@ export const App: React.FC = () => {
           request={pendingUpdateReq}
           onConfirm={(req, runBackup, enableDeadMan) => {
             setPendingUpdateReq(null);
-            void actions.confirmUpdate(req, runBackup, enableDeadMan);
+            void itemActions.confirmUpdate(req, runBackup, enableDeadMan);
           }}
           onClose={() => setPendingUpdateReq(null)}
         />
@@ -187,10 +195,10 @@ export const App: React.FC = () => {
         <NodesModal
           open={nodesModalOpen}
           nodes={dashboard.allNodes}
-          onApproveNode={actions.approveNode}
-          onRejectNode={(name) => void actions.rejectNode(name)}
-          onDeleteNode={(name) => void actions.deleteNode(name)}
-          onSaveNode={actions.saveNode}
+          onApproveNode={nodeActions.approveNode}
+          onRejectNode={(name) => void nodeActions.rejectNode(name)}
+          onDeleteNode={(name) => void nodeActions.deleteNode(name)}
+          onSaveNode={nodeActions.saveNode}
           onUnauthorized={auth.handleUnauthorized}
           onClose={() => setNodesModalOpen(false)}
         />

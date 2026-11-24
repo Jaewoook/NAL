@@ -1,6 +1,8 @@
 import type React from 'react';
-import { cn } from '../../lib/cn';
 import type { NodeInfo } from '../../types';
+import { Badge } from '../ui/Badge';
+import { Button } from '../ui/Button';
+import { StatusDot } from '../ui/StatusDot';
 
 interface RegisteredNodesListProps {
   activeNodes: NodeInfo[];
@@ -34,17 +36,23 @@ export const RegisteredNodesList: React.FC<RegisteredNodesListProps> = ({
             className="flex justify-between items-center py-1.5 border-b border-slate-700 last:border-b-0"
           >
             <div>
-              <span className={cn('dot', n.online ? 'green' : 'amber')} /> <strong>{n.name}</strong>
-              <span className="badge skip ml-1.5">{n.role}</span>
-              {n.os_version && <span className="badge skip ml-1 text-[10px]">{n.os_version}</span>}
+              <StatusDot status={n.online ? 'green' : 'amber'} /> <strong>{n.name}</strong>
+              <Badge tone="skip" className="ml-1.5">
+                {n.role}
+              </Badge>
+              {n.os_version && (
+                <Badge tone="skip" className="ml-1 text-[10px]">
+                  {n.os_version}
+                </Badge>
+              )}
               <div className="text-xs text-slate-400 font-mono break-all">
                 {n.url || 'Local Hub Host'} {n.last_error ? `· ${n.last_error}` : ''}
               </div>
             </div>
             {n.role !== 'hub' && (
-              <button type="button" className="btn btn-danger" onClick={() => onDeleteNode(n.name)}>
+              <Button variant="danger" onClick={() => onDeleteNode(n.name)}>
                 Remove
-              </button>
+              </Button>
             )}
           </div>
         ))}
@@ -60,27 +68,29 @@ export const RegisteredNodesList: React.FC<RegisteredNodesListProps> = ({
                 className="flex justify-between items-center py-1.5 border-b border-slate-700 last:border-b-0 opacity-80"
               >
                 <div>
-                  <span className="dot red" /> <strong>{n.name}</strong>
-                  <span className="badge warn ml-1.5 text-[10px] px-1.25 py-0.25">REJECTED</span>
+                  <StatusDot status="red" /> <strong>{n.name}</strong>
+                  <Badge tone="warn" className="ml-1.5 text-[10px] px-1.25 py-0.25">
+                    REJECTED
+                  </Badge>
                   <div className="text-xs text-slate-400 font-mono break-all">
                     {n.url || 'LAN Node'}
                   </div>
                 </div>
                 <div className="flex gap-1.5">
-                  <button
-                    type="button"
-                    className="btn btn-primary px-2 py-0.5 text-[11px]"
+                  <Button
+                    variant="primary"
+                    className="px-2 py-0.5 text-[11px]"
                     onClick={() => onApproveNode(n.name)}
                   >
                     Re-Approve
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-danger px-2 py-0.5 text-[11px]"
+                  </Button>
+                  <Button
+                    variant="danger"
+                    className="px-2 py-0.5 text-[11px]"
                     onClick={() => onDeleteNode(n.name)}
                   >
                     Remove
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}

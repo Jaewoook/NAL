@@ -2,6 +2,8 @@ import type React from 'react';
 import { useEffect, useState } from 'react';
 import type { PendingUpdateRequest } from '../types';
 import { Modal } from './Modal';
+import { Badge } from './ui/Badge';
+import { Button } from './ui/Button';
 
 interface UpdateModalProps {
   request: PendingUpdateRequest | null;
@@ -37,9 +39,9 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ request, onConfirm, on
               Confirm Update on [{request.node}]: {request.target_name}
             </span>
             {isDocker && (
-              <span className="badge warn" id="modal-crit-badge">
+              <Badge tone="warn" id="modal-crit-badge">
                 60s Dead-Man&apos;s Rollback
-              </span>
+              </Badge>
             )}
           </>
         ) : null
@@ -89,17 +91,16 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({ request, onConfirm, on
           )}
 
           <div className="flex gap-2.5 mt-4">
-            <button
-              type="button"
+            <Button
               id="btn-confirm-update"
-              className="btn btn-primary"
+              variant="primary"
               onClick={() => onConfirm(request, runBackup, enableDeadMan)}
             >
               {isDocker ? 'Pull & Apply Update' : 'Apply Package Upgrade'}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={onClose}>
+            </Button>
+            <Button variant="ghost" onClick={onClose}>
               Cancel
-            </button>
+            </Button>
           </div>
         </>
       )}

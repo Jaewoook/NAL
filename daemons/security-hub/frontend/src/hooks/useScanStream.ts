@@ -1,7 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { type MutableRefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { isStreamableScanTaskId, removeScanningNodeName } from '../lib/domain';
+import {
+  isStreamableScanTaskId,
+  parseCompletedScanNode,
+  removeScanningNodeName,
+} from '../lib/domain';
 import { getAxiosErrorMessage, hubApi, isAxiosUnauthorized } from '../lib/http';
 import { subscribeTaskSSE } from '../lib/sse';
 import type { DashboardResponse, NodeInfo } from '../types';
@@ -81,21 +85,11 @@ export function useScanStream({
           if (!lineText) return;
 
           setScanProgressText(lineText);
-          const hubName = hubNodeRef.current || 'local';
-          if (/^\[Hub\] Scanned \d+ local\b/.test(lineText)) {
+          const finishedNode = parseCompletedScanNode(lineText, hubNodeRef.current);
+          if (finishedNode) {
             setScanningNodes((prev) =>
-              prev.length > 1 ? removeScanningNodeName(prev, hubName) : prev
+              prev.length > 1 ? removeScanningNodeName(prev, finishedNode) : prev
             );
-          } else {
-            const m = lineText.match(
-              /^\[([^\]]+)\] (?:Scanned \d+ remote\b|Remote agent unreachable\b)/
-            );
-            if (m?.[1]) {
-              const finishedNode = m[1];
-              setScanningNodes((prev) =>
-                prev.length > 1 ? removeScanningNodeName(prev, finishedNode) : prev
-              );
-            }
           }
         },
         onDone: () => {
