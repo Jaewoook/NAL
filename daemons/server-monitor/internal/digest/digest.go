@@ -65,21 +65,7 @@ func (e *Engine) Reset() {
 
 // FormatUptime formats seconds into a human-readable duration string.
 func FormatUptime(seconds uint64) string {
-	days := seconds / 86400
-	hours := (seconds % 86400) / 3600
-	mins := (seconds % 3600) / 60
-	secs := seconds % 60
-
-	if days > 0 {
-		return fmt.Sprintf("%dd %dh %dm %ds", days, hours, mins, secs)
-	}
-	if hours > 0 {
-		return fmt.Sprintf("%dh %dm %ds", hours, mins, secs)
-	}
-	if mins > 0 {
-		return fmt.Sprintf("%dm %ds", mins, secs)
-	}
-	return fmt.Sprintf("%ds", secs)
+	return models.FormatUptime(seconds)
 }
 
 // BuildDigest formats a clean health summary Alert without updating internal tick state.

@@ -22,9 +22,11 @@ import (
 type mockCollector struct {
 	metrics *models.SystemMetrics
 	err     error
+	calls   atomic.Int32
 }
 
 func (m *mockCollector) Collect() (*models.SystemMetrics, error) {
+	m.calls.Add(1)
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -378,5 +380,50 @@ func TestDaemonTemperatureAlert(t *testing.T) {
 	}
 	if !strings.Contains(ch.alerts[0].Message, "82.5°C") {
 		t.Errorf("expected 82.5°C in alert message, got %q", ch.alerts[0].Message)
+	}
+	if ch.alerts[0].Unit != "°C" {
+		t.Errorf("expected alert unit '°C', got %q", ch.alerts[0].Unit)
+	}
+}
+
+func TestDaemonStartupReusesInitialMetrics(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Server.Name = "reuse-host"
+	cfg.Alerting.NotifyOnStartup = true
+	cfg.Alerting.NotifyOnShutdown = false
+
+	coll := &mockCollector{
+		metrics: &models.SystemMetrics{
+			Timestamp:     time.Now(),
+			CPUPercent:    12.0,
+			MemoryPercent: 34.0,
+			DiskPercent:   56.0,
+			UptimeSeconds: 600,
+		},
+	}
+
+	ch := &mockChannel{name: "mock"}
+	d, err := New(cfg, WithCollector(coll), WithDispatcher(notifier.NewDispatcher(ch)))
+	if err != nil {
+		t.Fatalf("failed to create daemon: %v", err)
+	}
+	// Long interval so only the initial startup step runs before cancel
+	d.interval = time.Hour
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+
+	time.Sleep(25 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("unexpected Run error: %v", err)
+	}
+
+	if got := coll.calls.Load(); got != 1 {
+		t.Errorf("expected exactly 1 Collect() call on startup (reused by startup notification), got %d", got)
+	}
+	if len(ch.alerts) != 1 || !strings.Contains(ch.alerts[0].Message, "CPU: 12.0%") {
+		t.Errorf("expected startup notification with reused metrics, got %+v", ch.alerts)
 	}
 }

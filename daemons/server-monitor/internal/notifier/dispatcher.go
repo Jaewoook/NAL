@@ -1,6 +1,7 @@
 package notifier
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
@@ -54,36 +55,30 @@ func NewDispatcherFromConfig(cfg *config.NotificationsConfig, opts ...Dispatcher
 		opt(&dOpts)
 	}
 
-	if cfg.Telegram.Enabled {
-		ch := NewTelegramChannel(cfg.Telegram.BotToken, cfg.Telegram.ChatID)
+	registerHTTP := func(ch interface {
+		Channel
+		SetTransport(http.RoundTripper)
+	}) {
 		if dOpts.transport != nil {
 			ch.SetTransport(dOpts.transport)
 		}
 		d.Register(ch)
+	}
+
+	if cfg.Telegram.Enabled {
+		registerHTTP(NewTelegramChannel(cfg.Telegram.BotToken, cfg.Telegram.ChatID))
 	}
 	if cfg.Discord.Enabled {
-		ch := NewDiscordChannel(cfg.Discord.WebhookURL)
-		if dOpts.transport != nil {
-			ch.SetTransport(dOpts.transport)
-		}
-		d.Register(ch)
+		registerHTTP(NewDiscordChannel(cfg.Discord.WebhookURL))
 	}
 	if cfg.Slack.Enabled {
-		ch := NewSlackChannel(cfg.Slack.WebhookURL)
-		if dOpts.transport != nil {
-			ch.SetTransport(dOpts.transport)
-		}
-		d.Register(ch)
+		registerHTTP(NewSlackChannel(cfg.Slack.WebhookURL))
 	}
 	if cfg.Email.Enabled {
 		d.Register(NewEmailChannel(cfg.Email))
 	}
 	if cfg.Webhook.Enabled {
-		ch := NewWebhookChannel(cfg.Webhook.URL)
-		if dOpts.transport != nil {
-			ch.SetTransport(dOpts.transport)
-		}
-		d.Register(ch)
+		registerHTTP(NewWebhookChannel(cfg.Webhook.URL))
 	}
 
 	return d
@@ -111,6 +106,12 @@ func (d *Dispatcher) Channels() []Channel {
 // Dispatch broadcasts an alert concurrently across all registered channels.
 // It returns a map of channel names to errors for any channels that failed.
 func (d *Dispatcher) Dispatch(alert *models.Alert) map[string]error {
+	return d.DispatchContext(context.Background(), alert)
+}
+
+// DispatchContext broadcasts an alert concurrently across all registered channels,
+// propagating ctx to channels that implement ContextChannel.
+func (d *Dispatcher) DispatchContext(ctx context.Context, alert *models.Alert) map[string]error {
 	d.mu.RLock()
 	channels := make([]Channel, len(d.channels))
 	copy(channels, d.channels)
@@ -118,6 +119,9 @@ func (d *Dispatcher) Dispatch(alert *models.Alert) map[string]error {
 
 	if len(channels) == 0 || alert == nil {
 		return make(map[string]error)
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	type channelResult struct {
@@ -141,7 +145,12 @@ func (d *Dispatcher) Dispatch(alert *models.Alert) map[string]error {
 				}
 			}()
 
-			err := c.Send(alert)
+			var err error
+			if cc, ok := c.(ContextChannel); ok {
+				err = cc.SendContext(ctx, alert)
+			} else {
+				err = c.Send(alert)
+			}
 			resChan <- channelResult{
 				name: c.Name(),
 				err:  err,

@@ -1,37 +1,26 @@
 package notifier
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"time"
 
 	"github.com/jaewoook/server-monitor/internal/models"
 )
 
 // SlackChannel dispatches alerts to Slack channels via incoming webhooks.
 type SlackChannel struct {
+	httpPoster
 	webhookURL string
-	client     *http.Client
 }
 
 // NewSlackChannel creates a new SlackChannel.
 func NewSlackChannel(webhookURL string) *SlackChannel {
 	return &SlackChannel{
+		httpPoster: newHTTPPoster(),
 		webhookURL: webhookURL,
-		client: &http.Client{
-			Timeout: 5 * time.Second,
-		},
 	}
-}
-
-// SetTransport configures a custom HTTP transport (useful for tests or proxies).
-func (s *SlackChannel) SetTransport(rt http.RoundTripper) {
-	s.client.Transport = rt
 }
 
 // Name returns the channel identifier.
@@ -60,6 +49,11 @@ type slackPayload struct {
 
 // Send dispatches an alert to Slack via incoming webhook.
 func (s *SlackChannel) Send(alert *models.Alert) error {
+	return s.SendContext(context.Background(), alert)
+}
+
+// SendContext dispatches an alert to Slack via incoming webhook, honoring ctx.
+func (s *SlackChannel) SendContext(ctx context.Context, alert *models.Alert) error {
 	if alert == nil {
 		return errors.New("alert cannot be nil")
 	}
@@ -84,55 +78,36 @@ func (s *SlackChannel) Send(alert *models.Alert) error {
 	if alert.MetricName != "" {
 		fields = append(fields, slackField{Title: "Metric", Value: alert.MetricName, Short: true})
 	}
-	fields = append(fields, slackField{Title: "Current Value", Value: fmt.Sprintf("%.2f%%", alert.CurrentValue), Short: true})
+	fields = append(fields, slackField{Title: "Current Value", Value: alert.FormatValue(alert.CurrentValue), Short: true})
 	if alert.ThresholdValue > 0 {
-		fields = append(fields, slackField{Title: "Threshold", Value: fmt.Sprintf("%.2f%%", alert.ThresholdValue), Short: true})
+		fields = append(fields, slackField{Title: "Threshold", Value: alert.FormatValue(alert.ThresholdValue), Short: true})
 	}
 
 	desc := alert.Message
 	if len(alert.TopProcesses) > 0 {
-		table := formatProcessesTable(alert.TopProcesses)
+		table := models.FormatProcessesTable(alert.TopProcesses)
 		if table != "" {
 			desc += "\n\n*Top Processes:*\n```\n" + table + "\n```"
 		}
 	}
 
-	attachment := slackAttachment{
-		Color:     color,
-		Title:     fmt.Sprintf("[%s] %s", alert.Level, alert.Title),
-		Text:      desc,
-		Fields:    fields,
-		Timestamp: alert.Timestamp.Unix(),
-	}
-
 	payload := slackPayload{
-		Text:        fmt.Sprintf("*[%s] %s* on `%s`", alert.Level, alert.Title, alert.Hostname),
-		Attachments: []slackAttachment{attachment},
+		Text: fmt.Sprintf("*[%s] %s* on `%s`", alert.Level, alert.Title, alert.Hostname),
+		Attachments: []slackAttachment{{
+			Color:     color,
+			Title:     fmt.Sprintf("[%s] %s", alert.Level, alert.Title),
+			Text:      desc,
+			Fields:    fields,
+			Timestamp: alert.Timestamp.Unix(),
+		}},
 	}
 
-	bodyBytes, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal slack payload: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.webhookURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create slack request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := s.client.Do(req)
+	status, respBody, err := s.postJSON(ctx, s.webhookURL, payload, nil)
 	if err != nil {
 		return fmt.Errorf("slack request failed: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-		return fmt.Errorf("slack api error (status %d): %s", resp.StatusCode, string(respBody))
+	if status != http.StatusOK {
+		return fmt.Errorf("slack api error (status %d): %s", status, string(respBody))
 	}
 
 	return nil

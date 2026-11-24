@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -120,13 +121,14 @@ type SlackConfig struct {
 
 // EmailConfig defines SMTP settings for email alerting.
 type EmailConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	SMTPHost string `yaml:"smtp_host"`
-	SMTPPort int    `yaml:"smtp_port"`
-	UseTLS   bool   `yaml:"use_tls"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-	ToEmail  string `yaml:"to_email"`
+	Enabled   bool   `yaml:"enabled"`
+	SMTPHost  string `yaml:"smtp_host"`
+	SMTPPort  int    `yaml:"smtp_port"`
+	UseTLS    bool   `yaml:"use_tls"`
+	Username  string `yaml:"username"`
+	Password  string `yaml:"password"`
+	FromEmail string `yaml:"from_email"`
+	ToEmail   string `yaml:"to_email"`
 }
 
 // WebhookConfig defines generic HTTP webhook notification settings.
@@ -244,13 +246,14 @@ func DefaultConfig() *Config {
 				WebhookURL: "",
 			},
 			Email: EmailConfig{
-				Enabled:  false,
-				SMTPHost: "smtp.gmail.com",
-				SMTPPort: 587,
-				UseTLS:   true,
-				Username: "",
-				Password: "",
-				ToEmail:  "",
+				Enabled:   false,
+				SMTPHost:  "smtp.gmail.com",
+				SMTPPort:  587,
+				UseTLS:    true,
+				Username:  "",
+				Password:  "",
+				FromEmail: "",
+				ToEmail:   "",
 			},
 			Webhook: WebhookConfig{
 				Enabled: false,
@@ -297,110 +300,74 @@ func LoadConfig(path string) (*Config, error) {
 
 // ApplyEnvOverrides overrides configuration fields from environment variables.
 func ApplyEnvOverrides(cfg *Config) {
-	if val := getEnv("SERVER_NAME"); val != "" {
-		cfg.Server.Name = val
-	}
+	// Server
+	applyEnvString(&cfg.Server.Name, "SERVER_NAME")
+	applyEnvInt(&cfg.Server.CheckIntervalSeconds, 1, "CHECK_INTERVAL_SECONDS")
+
+	// CPU & Health thresholds
+	applyEnvFloat(&cfg.CPU.Spike.ThresholdPercent, 0.0001, "CPU_SPIKE_THRESHOLD")
+	applyEnvInt(&cfg.CPU.Spike.SustainedSeconds, 1, "CPU_SPIKE_SUSTAINED_SECONDS")
+	applyEnvFloat(&cfg.Health.Memory.ThresholdPercent, 0.0001, "MEMORY_THRESHOLD")
+	applyEnvFloat(&cfg.Health.Disk.ThresholdPercent, 0.0001, "DISK_THRESHOLD")
+
+	// Temperature
+	applyEnvBool(&cfg.Health.Temperature.Enabled, "TEMP_ENABLED", "TEMPERATURE_ENABLED")
+	applyEnvFloat(&cfg.Health.Temperature.CPUThresholdCelsius, 0.0001, "TEMP_CPU_THRESHOLD", "CPU_TEMP_THRESHOLD")
+	applyEnvFloat(&cfg.Health.Temperature.GPUThresholdCelsius, 0.0001, "TEMP_GPU_THRESHOLD", "GPU_TEMP_THRESHOLD")
+	applyEnvInt(&cfg.Health.Temperature.SustainedSeconds, 1, "TEMP_SUSTAINED_SECONDS")
+	applyEnvInt(&cfg.Health.Temperature.CooldownMinutes, 1, "TEMP_COOLDOWN_MINUTES")
+
+	// Notifications
 	if val := getEnv("TELEGRAM_BOT_TOKEN", "BOT_TOKEN"); val != "" {
 		cfg.Notifications.Telegram.BotToken = val
 		cfg.Notifications.Telegram.Enabled = true
 	}
-	if val := getEnv("TELEGRAM_CHAT_ID", "DEFAULT_CHAT_ID", "CHAT_ID"); val != "" {
-		cfg.Notifications.Telegram.ChatID = val
-	}
-	if val := getEnv("TELEGRAM_ENABLED"); val != "" {
-		cfg.Notifications.Telegram.Enabled = (val == "true" || val == "1" || val == "yes")
-	}
+	applyEnvString(&cfg.Notifications.Telegram.ChatID, "TELEGRAM_CHAT_ID", "DEFAULT_CHAT_ID", "CHAT_ID")
+	applyEnvBool(&cfg.Notifications.Telegram.Enabled, "TELEGRAM_ENABLED")
+
 	if val := getEnv("DISCORD_WEBHOOK_URL"); val != "" {
 		cfg.Notifications.Discord.WebhookURL = val
 		cfg.Notifications.Discord.Enabled = true
 	}
-	if val := getEnv("DISCORD_ENABLED"); val != "" {
-		cfg.Notifications.Discord.Enabled = (val == "true" || val == "1" || val == "yes")
-	}
+	applyEnvBool(&cfg.Notifications.Discord.Enabled, "DISCORD_ENABLED")
+
 	if val := getEnv("SLACK_WEBHOOK_URL"); val != "" {
 		cfg.Notifications.Slack.WebhookURL = val
 		cfg.Notifications.Slack.Enabled = true
 	}
-	if val := getEnv("SLACK_ENABLED"); val != "" {
-		cfg.Notifications.Slack.Enabled = (val == "true" || val == "1" || val == "yes")
-	}
-	if val := getEnv("EMAIL_USERNAME"); val != "" {
-		cfg.Notifications.Email.Username = val
-	}
-	if val := getEnv("EMAIL_PASSWORD"); val != "" {
-		cfg.Notifications.Email.Password = val
-	}
-	if val := getEnv("EMAIL_TO"); val != "" {
-		cfg.Notifications.Email.ToEmail = val
-	}
-	if val := getEnv("EMAIL_ENABLED"); val != "" {
-		cfg.Notifications.Email.Enabled = (val == "true" || val == "1" || val == "yes")
-	}
+	applyEnvBool(&cfg.Notifications.Slack.Enabled, "SLACK_ENABLED")
+
+	applyEnvString(&cfg.Notifications.Email.Username, "EMAIL_USERNAME")
+	applyEnvString(&cfg.Notifications.Email.Password, "EMAIL_PASSWORD")
+	applyEnvString(&cfg.Notifications.Email.FromEmail, "EMAIL_FROM")
+	applyEnvString(&cfg.Notifications.Email.ToEmail, "EMAIL_TO")
+	applyEnvBool(&cfg.Notifications.Email.Enabled, "EMAIL_ENABLED")
+
 	if val := getEnv("WEBHOOK_URL"); val != "" {
 		cfg.Notifications.Webhook.URL = val
 		cfg.Notifications.Webhook.Enabled = true
 	}
-	if val := getEnv("WEBHOOK_ENABLED"); val != "" {
-		cfg.Notifications.Webhook.Enabled = (val == "true" || val == "1" || val == "yes")
-	}
+	applyEnvBool(&cfg.Notifications.Webhook.Enabled, "WEBHOOK_ENABLED")
+
+	// Heartbeat
 	if val := getEnv("HEARTBEAT_URL"); val != "" {
 		cfg.Heartbeat.URL = val
 		cfg.Heartbeat.Enabled = true
 	}
-	if val := getEnv("HEARTBEAT_ENABLED"); val != "" {
-		cfg.Heartbeat.Enabled = (val == "true" || val == "1" || val == "yes")
-	}
-	if val := getEnv("NOTIFY_ON_RECOVERY"); val != "" {
-		cfg.Alerting.NotifyOnRecovery = (val == "true" || val == "1" || val == "yes")
-	}
-	if val := getEnv("NOTIFY_ON_STARTUP"); val != "" {
-		cfg.Alerting.NotifyOnStartup = (val == "true" || val == "1" || val == "yes")
-	}
-	if val := getEnv("NOTIFY_ON_SHUTDOWN"); val != "" {
-		cfg.Alerting.NotifyOnShutdown = (val == "true" || val == "1" || val == "yes")
-	}
-	if val := getEnv("LOG_FILE", "LOG_FILE_PATH"); val != "" {
-		cfg.Logging.FilePath = val
-	}
-	if val := getEnv("LOG_ENABLED"); val != "" {
-		cfg.Logging.Enabled = (val == "true" || val == "1" || val == "yes")
-	}
-	if val := getEnv("LOG_MAX_SIZE_MB"); val != "" {
-		if n, err := strconv.Atoi(val); err == nil && n > 0 {
-			cfg.Logging.MaxSizeMB = n
-		}
-	}
-	if val := getEnv("LOG_MAX_BACKUPS"); val != "" {
-		if n, err := strconv.Atoi(val); err == nil && n >= 0 {
-			cfg.Logging.MaxBackups = n
-		}
-	}
-	if val := getEnv("LOG_CONSOLE"); val != "" {
-		cfg.Logging.Console = (val == "true" || val == "1" || val == "yes")
-	}
-	if val := getEnv("TEMP_ENABLED", "TEMPERATURE_ENABLED"); val != "" {
-		cfg.Health.Temperature.Enabled = (val == "true" || val == "1" || val == "yes")
-	}
-	if val := getEnv("TEMP_CPU_THRESHOLD", "CPU_TEMP_THRESHOLD"); val != "" {
-		if f, err := strconv.ParseFloat(val, 64); err == nil && f > 0 {
-			cfg.Health.Temperature.CPUThresholdCelsius = f
-		}
-	}
-	if val := getEnv("TEMP_GPU_THRESHOLD", "GPU_TEMP_THRESHOLD"); val != "" {
-		if f, err := strconv.ParseFloat(val, 64); err == nil && f > 0 {
-			cfg.Health.Temperature.GPUThresholdCelsius = f
-		}
-	}
-	if val := getEnv("TEMP_SUSTAINED_SECONDS"); val != "" {
-		if n, err := strconv.Atoi(val); err == nil && n > 0 {
-			cfg.Health.Temperature.SustainedSeconds = n
-		}
-	}
-	if val := getEnv("TEMP_COOLDOWN_MINUTES"); val != "" {
-		if n, err := strconv.Atoi(val); err == nil && n > 0 {
-			cfg.Health.Temperature.CooldownMinutes = n
-		}
-	}
+	applyEnvBool(&cfg.Heartbeat.Enabled, "HEARTBEAT_ENABLED")
+	applyEnvInt(&cfg.Heartbeat.IntervalSeconds, 1, "HEARTBEAT_INTERVAL_SECONDS")
+
+	// Alerting
+	applyEnvBool(&cfg.Alerting.NotifyOnRecovery, "NOTIFY_ON_RECOVERY")
+	applyEnvBool(&cfg.Alerting.NotifyOnStartup, "NOTIFY_ON_STARTUP")
+	applyEnvBool(&cfg.Alerting.NotifyOnShutdown, "NOTIFY_ON_SHUTDOWN")
+
+	// Logging
+	applyEnvString(&cfg.Logging.FilePath, "LOG_FILE", "LOG_FILE_PATH")
+	applyEnvBool(&cfg.Logging.Enabled, "LOG_ENABLED")
+	applyEnvInt(&cfg.Logging.MaxSizeMB, 1, "LOG_MAX_SIZE_MB")
+	applyEnvInt(&cfg.Logging.MaxBackups, 0, "LOG_MAX_BACKUPS")
+	applyEnvBool(&cfg.Logging.Console, "LOG_CONSOLE")
 }
 
 func getEnv(keys ...string) string {
@@ -412,87 +379,97 @@ func getEnv(keys ...string) string {
 	return ""
 }
 
-// ValidateAndApplyDefaults ensures required fields have valid fallback values.
+func applyEnvString(dst *string, keys ...string) {
+	if val := getEnv(keys...); val != "" {
+		*dst = val
+	}
+}
+
+func applyEnvBool(dst *bool, keys ...string) {
+	if val := getEnv(keys...); val != "" {
+		switch strings.ToLower(strings.TrimSpace(val)) {
+		case "true", "1", "yes":
+			*dst = true
+		default:
+			*dst = false
+		}
+	}
+}
+
+func applyEnvInt(dst *int, minVal int, keys ...string) {
+	if val := getEnv(keys...); val != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(val)); err == nil && n >= minVal {
+			*dst = n
+		}
+	}
+}
+
+func applyEnvFloat(dst *float64, minVal float64, keys ...string) {
+	if val := getEnv(keys...); val != "" {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(val), 64); err == nil && f >= minVal {
+			*dst = f
+		}
+	}
+}
+
+func defaultInt(dst *int, fallback int) {
+	if *dst <= 0 {
+		*dst = fallback
+	}
+}
+
+func defaultFloat(dst *float64, fallback float64) {
+	if *dst <= 0 {
+		*dst = fallback
+	}
+}
+
+func defaultString(dst *string, fallback string) {
+	if *dst == "" {
+		*dst = fallback
+	}
+}
+
+// ValidateAndApplyDefaults ensures required fields have valid fallback values
+// sourced from DefaultConfig.
 func ValidateAndApplyDefaults(cfg *Config) {
-	if cfg.Server.CheckIntervalSeconds <= 0 {
-		cfg.Server.CheckIntervalSeconds = 5
-	}
-	if cfg.CPU.Spike.ThresholdPercent <= 0 {
-		cfg.CPU.Spike.ThresholdPercent = 85.0
-	}
-	if cfg.CPU.Spike.SustainedSeconds <= 0 {
-		cfg.CPU.Spike.SustainedSeconds = 15
-	}
-	if cfg.CPU.Spike.CooldownMinutes <= 0 {
-		cfg.CPU.Spike.CooldownMinutes = 30
-	}
-	if cfg.CPU.PlungeDrop.DeltaPercent <= 0 {
-		cfg.CPU.PlungeDrop.DeltaPercent = 40.0
-	}
-	if cfg.CPU.PlungeDrop.FromMinPercent <= 0 {
-		cfg.CPU.PlungeDrop.FromMinPercent = 50.0
-	}
-	if cfg.CPU.PlungeDrop.WindowSeconds <= 0 {
-		cfg.CPU.PlungeDrop.WindowSeconds = 15
-	}
-	if cfg.CPU.PlungeDrop.CooldownMinutes <= 0 {
-		cfg.CPU.PlungeDrop.CooldownMinutes = 15
-	}
-	if cfg.CPU.FloorDrop.ThresholdPercent <= 0 {
-		cfg.CPU.FloorDrop.ThresholdPercent = 5.0
-	}
-	if cfg.CPU.FloorDrop.SustainedSeconds <= 0 {
-		cfg.CPU.FloorDrop.SustainedSeconds = 30
-	}
-	if cfg.CPU.FloorDrop.CooldownMinutes <= 0 {
-		cfg.CPU.FloorDrop.CooldownMinutes = 30
-	}
-	if cfg.CPU.TopProcessesCount <= 0 {
-		cfg.CPU.TopProcessesCount = 5
-	}
-	if cfg.Health.Memory.ThresholdPercent <= 0 {
-		cfg.Health.Memory.ThresholdPercent = 90.0
-	}
-	if cfg.Health.Memory.SustainedSeconds <= 0 {
-		cfg.Health.Memory.SustainedSeconds = 15
-	}
-	if cfg.Health.Memory.CooldownMinutes <= 0 {
-		cfg.Health.Memory.CooldownMinutes = 30
-	}
-	if cfg.Health.Disk.ThresholdPercent <= 0 {
-		cfg.Health.Disk.ThresholdPercent = 85.0
-	}
-	if cfg.Health.Disk.MountPoint == "" {
-		cfg.Health.Disk.MountPoint = "/"
-	}
-	if cfg.Health.Disk.CooldownMinutes <= 0 {
-		cfg.Health.Disk.CooldownMinutes = 60
-	}
-	if cfg.Heartbeat.IntervalSeconds <= 0 {
-		cfg.Heartbeat.IntervalSeconds = 60
-	}
-	if cfg.Digest.IntervalHours <= 0 {
-		cfg.Digest.IntervalHours = 24
-	}
-	if cfg.Logging.FilePath == "" {
-		cfg.Logging.FilePath = "server-monitor.log"
-	}
-	if cfg.Logging.MaxSizeMB <= 0 {
-		cfg.Logging.MaxSizeMB = 10
-	}
-	if cfg.Logging.MaxBackups <= 0 {
-		cfg.Logging.MaxBackups = 3
-	}
-	if cfg.Health.Temperature.CPUThresholdCelsius <= 0 {
-		cfg.Health.Temperature.CPUThresholdCelsius = 75.0
-	}
-	if cfg.Health.Temperature.GPUThresholdCelsius <= 0 {
-		cfg.Health.Temperature.GPUThresholdCelsius = 75.0
-	}
-	if cfg.Health.Temperature.SustainedSeconds <= 0 {
-		cfg.Health.Temperature.SustainedSeconds = 30
-	}
-	if cfg.Health.Temperature.CooldownMinutes <= 0 {
-		cfg.Health.Temperature.CooldownMinutes = 30
+	def := DefaultConfig()
+
+	defaultInt(&cfg.Server.CheckIntervalSeconds, def.Server.CheckIntervalSeconds)
+
+	defaultFloat(&cfg.CPU.Spike.ThresholdPercent, def.CPU.Spike.ThresholdPercent)
+	defaultInt(&cfg.CPU.Spike.SustainedSeconds, def.CPU.Spike.SustainedSeconds)
+	defaultInt(&cfg.CPU.Spike.CooldownMinutes, def.CPU.Spike.CooldownMinutes)
+
+	defaultFloat(&cfg.CPU.PlungeDrop.DeltaPercent, def.CPU.PlungeDrop.DeltaPercent)
+	defaultFloat(&cfg.CPU.PlungeDrop.FromMinPercent, def.CPU.PlungeDrop.FromMinPercent)
+	defaultInt(&cfg.CPU.PlungeDrop.WindowSeconds, def.CPU.PlungeDrop.WindowSeconds)
+	defaultInt(&cfg.CPU.PlungeDrop.CooldownMinutes, def.CPU.PlungeDrop.CooldownMinutes)
+
+	defaultFloat(&cfg.CPU.FloorDrop.ThresholdPercent, def.CPU.FloorDrop.ThresholdPercent)
+	defaultInt(&cfg.CPU.FloorDrop.SustainedSeconds, def.CPU.FloorDrop.SustainedSeconds)
+	defaultInt(&cfg.CPU.FloorDrop.CooldownMinutes, def.CPU.FloorDrop.CooldownMinutes)
+	defaultInt(&cfg.CPU.TopProcessesCount, def.CPU.TopProcessesCount)
+
+	defaultFloat(&cfg.Health.Memory.ThresholdPercent, def.Health.Memory.ThresholdPercent)
+	defaultInt(&cfg.Health.Memory.SustainedSeconds, def.Health.Memory.SustainedSeconds)
+	defaultInt(&cfg.Health.Memory.CooldownMinutes, def.Health.Memory.CooldownMinutes)
+
+	defaultFloat(&cfg.Health.Disk.ThresholdPercent, def.Health.Disk.ThresholdPercent)
+	defaultString(&cfg.Health.Disk.MountPoint, def.Health.Disk.MountPoint)
+	defaultInt(&cfg.Health.Disk.CooldownMinutes, def.Health.Disk.CooldownMinutes)
+
+	defaultFloat(&cfg.Health.Temperature.CPUThresholdCelsius, def.Health.Temperature.CPUThresholdCelsius)
+	defaultFloat(&cfg.Health.Temperature.GPUThresholdCelsius, def.Health.Temperature.GPUThresholdCelsius)
+	defaultInt(&cfg.Health.Temperature.SustainedSeconds, def.Health.Temperature.SustainedSeconds)
+	defaultInt(&cfg.Health.Temperature.CooldownMinutes, def.Health.Temperature.CooldownMinutes)
+
+	defaultInt(&cfg.Heartbeat.IntervalSeconds, def.Heartbeat.IntervalSeconds)
+	defaultInt(&cfg.Digest.IntervalHours, def.Digest.IntervalHours)
+
+	defaultString(&cfg.Logging.FilePath, def.Logging.FilePath)
+	defaultInt(&cfg.Logging.MaxSizeMB, def.Logging.MaxSizeMB)
+	if cfg.Logging.MaxBackups < 0 {
+		cfg.Logging.MaxBackups = def.Logging.MaxBackups
 	}
 }

@@ -21,16 +21,48 @@ type MetricsCollector interface {
 	Collect() (*models.SystemMetrics, error)
 }
 
+// TopProcessPopulator is an optional extension of MetricsCollector that can
+// lazily populate top process diagnostics when an anomaly is detected.
+type TopProcessPopulator interface {
+	PopulateTopProcesses(*models.SystemMetrics)
+}
+
+// AnomalyDetector evaluates system metrics and emits raw condition events.
+type AnomalyDetector interface {
+	Evaluate(*models.SystemMetrics) []models.RawConditionEvent
+}
+
+// AlertProcessor converts raw condition events into actionable alerts with cooldowns.
+type AlertProcessor interface {
+	ProcessEvents([]models.RawConditionEvent, *models.SystemMetrics) []models.Alert
+}
+
+// AlertDispatcher delivers alerts to configured notification channels.
+type AlertDispatcher interface {
+	DispatchContext(context.Context, *models.Alert) map[string]error
+}
+
+// HeartbeatSender performs periodic dead-man's-switch aliveness pings.
+type HeartbeatSender interface {
+	TickContext(context.Context, time.Time) bool
+}
+
+// DigestEngine generates periodic health summary alerts.
+type DigestEngine interface {
+	Tick(time.Time, *models.SystemMetrics) (*models.Alert, error)
+}
+
 // Daemon coordinates continuous system metric collection, anomaly detection,
 // alert dispatching, heartbeat pings, and periodic digests.
 type Daemon struct {
 	cfg        *config.Config
 	collector  MetricsCollector
-	detector   *detector.Detector
-	alertMgr   *alert.Manager
-	dispatcher *notifier.Dispatcher
-	heartbeat  *heartbeat.Sender
-	digest     *digest.Engine
+	detector   AnomalyDetector
+	alertMgr   AlertProcessor
+	dispatcher AlertDispatcher
+	heartbeat  HeartbeatSender
+	digest     DigestEngine
+	logger     *log.Logger
 	interval   time.Duration
 }
 
@@ -47,6 +79,10 @@ func WithCollector(c MetricsCollector) Option {
 // WithDetector overrides the default Detector.
 func WithDetector(det *detector.Detector) Option {
 	return func(d *Daemon) {
+		if det == nil {
+			d.detector = nil
+			return
+		}
 		d.detector = det
 	}
 }
@@ -54,6 +90,10 @@ func WithDetector(det *detector.Detector) Option {
 // WithAlertManager overrides the default alert Manager.
 func WithAlertManager(mgr *alert.Manager) Option {
 	return func(d *Daemon) {
+		if mgr == nil {
+			d.alertMgr = nil
+			return
+		}
 		d.alertMgr = mgr
 	}
 }
@@ -61,6 +101,10 @@ func WithAlertManager(mgr *alert.Manager) Option {
 // WithDispatcher overrides the default notification Dispatcher.
 func WithDispatcher(disp *notifier.Dispatcher) Option {
 	return func(d *Daemon) {
+		if disp == nil {
+			d.dispatcher = nil
+			return
+		}
 		d.dispatcher = disp
 	}
 }
@@ -68,6 +112,10 @@ func WithDispatcher(disp *notifier.Dispatcher) Option {
 // WithHeartbeat overrides the default heartbeat Sender.
 func WithHeartbeat(hb *heartbeat.Sender) Option {
 	return func(d *Daemon) {
+		if hb == nil {
+			d.heartbeat = nil
+			return
+		}
 		d.heartbeat = hb
 	}
 }
@@ -75,8 +123,27 @@ func WithHeartbeat(hb *heartbeat.Sender) Option {
 // WithDigest overrides the default digest Engine.
 func WithDigest(dig *digest.Engine) Option {
 	return func(d *Daemon) {
+		if dig == nil {
+			d.digest = nil
+			return
+		}
 		d.digest = dig
 	}
+}
+
+// WithLogger configures a custom logger for daemon operational logs.
+func WithLogger(l *log.Logger) Option {
+	return func(d *Daemon) {
+		d.logger = l
+	}
+}
+
+func (d *Daemon) logf(format string, args ...any) {
+	if d.logger != nil {
+		d.logger.Printf(format, args...)
+		return
+	}
+	log.Printf(format, args...)
 }
 
 // New creates and initializes a Daemon with the provided configuration and options.
@@ -90,41 +157,37 @@ func New(cfg *config.Config, opts ...Option) (*Daemon, error) {
 		interval = 5 * time.Second
 	}
 
-	coll := collector.New(cfg.CPU.TopProcessesCount, cfg.Health.Disk.MountPoint)
-	// Optimize continuous monitoring loop: avoid scanning full process table on every tick
-	// unless CPU utilization is elevated.
-	if cfg.CPU.Spike.ThresholdPercent > 0 {
-		elevatedThreshold := cfg.CPU.Spike.ThresholdPercent * 0.7
-		if cfg.CPU.PlungeDrop.FromMinPercent > 0 && cfg.CPU.PlungeDrop.FromMinPercent < elevatedThreshold {
-			elevatedThreshold = cfg.CPU.PlungeDrop.FromMinPercent
-		}
-		coll.SetLazyTopProcessesThreshold(elevatedThreshold)
-	}
-
 	det := detector.New(cfg)
 
+	coll := collector.New(cfg.CPU.TopProcessesCount, cfg.Health.Disk.MountPoint)
+	if elevated := det.ElevatedCPUThreshold(); elevated > 0 {
+		coll.SetLazyTopProcessesThreshold(elevated)
+	}
+
 	cooldowns := map[string]time.Duration{
-		detector.RuleCPUSpike:  time.Duration(cfg.CPU.Spike.CooldownMinutes) * time.Minute,
-		detector.RuleCPUPlunge: time.Duration(cfg.CPU.PlungeDrop.CooldownMinutes) * time.Minute,
-		detector.RuleCPUFloor:  time.Duration(cfg.CPU.FloorDrop.CooldownMinutes) * time.Minute,
-		detector.RuleMemory:    time.Duration(cfg.Health.Memory.CooldownMinutes) * time.Minute,
-		detector.RuleDisk:      time.Duration(cfg.Health.Disk.CooldownMinutes) * time.Minute,
-		detector.RuleCPUTemp:   time.Duration(cfg.Health.Temperature.CooldownMinutes) * time.Minute,
-		detector.RuleGPUTemp:   time.Duration(cfg.Health.Temperature.CooldownMinutes) * time.Minute,
+		models.RuleCPUSpike:  time.Duration(cfg.CPU.Spike.CooldownMinutes) * time.Minute,
+		models.RuleCPUPlunge: time.Duration(cfg.CPU.PlungeDrop.CooldownMinutes) * time.Minute,
+		models.RuleCPUFloor:  time.Duration(cfg.CPU.FloorDrop.CooldownMinutes) * time.Minute,
+		models.RuleMemory:    time.Duration(cfg.Health.Memory.CooldownMinutes) * time.Minute,
+		models.RuleDisk:      time.Duration(cfg.Health.Disk.CooldownMinutes) * time.Minute,
+		models.RuleCPUTemp:   time.Duration(cfg.Health.Temperature.CooldownMinutes) * time.Minute,
+		models.RuleGPUTemp:   time.Duration(cfg.Health.Temperature.CooldownMinutes) * time.Minute,
 	}
 	mgr := alert.NewManager(cfg.Server.Name, cooldowns, cfg.Alerting.NotifyOnRecovery)
-
 	disp := notifier.NewDispatcherFromConfig(&cfg.Notifications)
 
-	var hb *heartbeat.Sender
+	var hb HeartbeatSender
+	var hbConcrete *heartbeat.Sender
 	if cfg.Heartbeat.Enabled && cfg.Heartbeat.URL != "" {
-		hb = heartbeat.New(cfg.Heartbeat.URL, time.Duration(cfg.Heartbeat.IntervalSeconds)*time.Second)
+		hbConcrete = heartbeat.New(cfg.Heartbeat.URL, time.Duration(cfg.Heartbeat.IntervalSeconds)*time.Second)
+		hb = hbConcrete
 	}
 
-	var dig *digest.Engine
+	var dig DigestEngine
 	if cfg.Digest.Enabled {
-		dig = digest.New(cfg.Server.Name, time.Duration(cfg.Digest.IntervalHours)*time.Hour)
-		dig.SetLastTick(time.Now())
+		digEngine := digest.New(cfg.Server.Name, time.Duration(cfg.Digest.IntervalHours)*time.Hour)
+		digEngine.SetLastTick(time.Now())
+		dig = digEngine
 	}
 
 	d := &Daemon{
@@ -142,25 +205,34 @@ func New(cfg *config.Config, opts ...Option) (*Daemon, error) {
 		opt(d)
 	}
 
+	if d.logger != nil && hbConcrete != nil {
+		hbConcrete.SetLogger(d.logger)
+	}
+
 	return d, nil
 }
 
 // Step performs a single monitoring iteration: collecting metrics, evaluating
 // anomaly rules, dispatching alerts, triggering heartbeat, and running digest checks.
 func (d *Daemon) Step(ctx context.Context) error {
+	_, err := d.step(ctx)
+	return err
+}
+
+func (d *Daemon) step(ctx context.Context) (*models.SystemMetrics, error) {
 	now := time.Now()
 
 	// 1. Gather point-in-time system telemetry
 	metrics, err := d.collector.Collect()
 	if err != nil {
-		log.Printf("[daemon] warning: metric collection failed: %v", err)
+		d.logf("[daemon] warning: metric collection failed: %v", err)
 	}
 
 	// 2. Evaluate anomaly detection and process alert state machine
 	if metrics != nil && d.detector != nil && d.alertMgr != nil {
 		events := d.detector.Evaluate(metrics)
 		if len(events) > 0 && len(metrics.TopProcesses) == 0 {
-			if populator, ok := d.collector.(interface{ PopulateTopProcesses(*models.SystemMetrics) }); ok {
+			if populator, ok := d.collector.(TopProcessPopulator); ok {
 				populator.PopulateTopProcesses(metrics)
 				for i := range events {
 					if len(events[i].TopProcesses) == 0 {
@@ -171,54 +243,54 @@ func (d *Daemon) Step(ctx context.Context) error {
 		}
 
 		alerts := d.alertMgr.ProcessEvents(events, metrics)
-
 		for _, a := range alerts {
 			alertCopy := a
-			if d.dispatcher != nil {
-				errs := d.dispatcher.Dispatch(&alertCopy)
-				for chName, chErr := range errs {
-					log.Printf("[daemon] failed to dispatch alert %q to channel %q: %v", alertCopy.Title, chName, chErr)
-				}
-			}
+			d.dispatch(ctx, &alertCopy, fmt.Sprintf("alert %q", alertCopy.Title))
 		}
 
 		// 3. Periodic health digest check
 		if d.digest != nil && d.cfg.Digest.Enabled {
 			digestAlert, err := d.digest.Tick(now, metrics)
 			if err != nil {
-				log.Printf("[daemon] digest generation failed: %v", err)
+				d.logf("[daemon] digest generation failed: %v", err)
 			} else if digestAlert != nil {
-				if d.dispatcher != nil {
-					errs := d.dispatcher.Dispatch(digestAlert)
-					for chName, chErr := range errs {
-						log.Printf("[daemon] failed to dispatch digest to channel %q: %v", chName, chErr)
-					}
-				}
+				d.dispatch(ctx, digestAlert, "digest")
 			}
 		}
 	}
 
 	// 4. Dead-man's-switch aliveness ping
 	if d.heartbeat != nil && d.cfg.Heartbeat.Enabled {
-		d.heartbeat.Tick(now)
+		d.heartbeat.TickContext(ctx, now)
 	}
 
-	return nil
+	return metrics, nil
+}
+
+func (d *Daemon) dispatch(ctx context.Context, a *models.Alert, label string) {
+	if d.dispatcher == nil || a == nil {
+		return
+	}
+	errs := d.dispatcher.DispatchContext(ctx, a)
+	for chName, chErr := range errs {
+		d.logf("[daemon] failed to dispatch %s to channel %q: %v", label, chName, chErr)
+	}
 }
 
 // Run starts the continuous monitoring daemon loop. It runs Step on each ticker tick
 // and terminates cleanly when ctx is canceled.
 func (d *Daemon) Run(ctx context.Context) error {
-	log.Printf("[daemon] starting server-monitor daemon for %q (check interval: %v)", d.cfg.Server.Name, d.interval)
+	d.logf("[daemon] starting server-monitor daemon for %q (check interval: %v)", d.cfg.Server.Name, d.interval)
 
-	// Execute initial check on startup
-	if err := d.Step(ctx); err != nil {
-		log.Printf("[daemon] initial step error: %v", err)
+	// Execute initial check on startup and reuse its metrics for startup notification
+	initialMetrics, err := d.step(ctx)
+	if err != nil {
+		d.logf("[daemon] initial step error: %v", err)
 	}
 
 	// Dispatch startup notification if enabled
 	if d.cfg.Alerting.NotifyOnStartup && d.dispatcher != nil {
-		d.sendStartupNotification()
+		d.sendLifecycleNotification(ctx, true, initialMetrics)
 	}
 
 	ticker := time.NewTicker(d.interval)
@@ -227,77 +299,68 @@ func (d *Daemon) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("[daemon] shutdown signal received, terminating monitor loop cleanly")
+			d.logf("[daemon] shutdown signal received, terminating monitor loop cleanly")
 			if d.cfg.Alerting.NotifyOnShutdown && d.dispatcher != nil {
-				d.sendShutdownNotification()
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				var shutdownMetrics *models.SystemMetrics
+				if d.collector != nil {
+					if m, err := d.collector.Collect(); err == nil {
+						shutdownMetrics = m
+					}
+				}
+				d.sendLifecycleNotification(shutdownCtx, false, shutdownMetrics)
+				cancel()
 			}
 			return nil
 		case <-ticker.C:
-			if err := d.Step(ctx); err != nil {
-				log.Printf("[daemon] step error: %v", err)
+			if _, err := d.step(ctx); err != nil {
+				d.logf("[daemon] step error: %v", err)
 			}
 		}
 	}
 }
 
-func (d *Daemon) sendStartupNotification() {
-	msg := fmt.Sprintf("Daemon online and monitoring %s (check interval: %v).", d.cfg.Server.Name, d.interval)
-	if d.collector != nil {
-		if m, err := d.collector.Collect(); err == nil && m != nil {
-			uptimeStr := digest.FormatUptime(m.UptimeSeconds)
-			extra := ""
-			if m.HasCPUTemp {
-				extra += fmt.Sprintf(" | Temp: %.1f°C", m.CPUTempCelsius)
-			}
-			if m.HasGPUTemp {
-				extra += fmt.Sprintf(" | GPU Temp: %.1f°C", m.GPUTempCelsius)
-			}
-			msg = fmt.Sprintf("Daemon online and monitoring %s.\nCheck Interval: %v | Uptime: %s | CPU: %.1f%% | RAM: %.1f%%%s",
-				d.cfg.Server.Name, d.interval, uptimeStr, m.CPUPercent, m.MemoryPercent, extra)
+func (d *Daemon) sendLifecycleNotification(ctx context.Context, isStartup bool, m *models.SystemMetrics) {
+	var title, label, msg string
+	var level models.AlertLevel
+
+	if isStartup {
+		title = fmt.Sprintf("[%s] Server Monitor Online", d.cfg.Server.Name)
+		label = "startup notification"
+		level = models.AlertLevelResolved
+		msg = fmt.Sprintf("Daemon online and monitoring %s (check interval: %v).", d.cfg.Server.Name, d.interval)
+		if m != nil {
+			msg = fmt.Sprintf("Daemon online and monitoring %s.\nCheck Interval: %v | %s",
+				d.cfg.Server.Name, d.interval, formatMetricsSummary(m))
+		}
+	} else {
+		title = fmt.Sprintf("[%s] Server Monitor Shutting Down", d.cfg.Server.Name)
+		label = "shutdown notification"
+		level = models.AlertLevelWarning
+		msg = fmt.Sprintf("Daemon received termination signal on %s. Monitoring stopped cleanly.", d.cfg.Server.Name)
+		if m != nil {
+			msg = fmt.Sprintf("Daemon received termination signal on %s. Monitoring stopped cleanly.\n%s",
+				d.cfg.Server.Name, formatMetricsSummary(m))
 		}
 	}
 
-	startupAlert := &models.Alert{
-		Title:     fmt.Sprintf("[%s] Server Monitor Online", d.cfg.Server.Name),
+	d.dispatch(ctx, &models.Alert{
+		Title:     title,
 		Message:   msg,
-		Level:     models.AlertLevelResolved,
+		Level:     level,
 		Timestamp: time.Now(),
 		Hostname:  d.cfg.Server.Name,
-	}
-
-	errs := d.dispatcher.Dispatch(startupAlert)
-	for ch, err := range errs {
-		log.Printf("[daemon] failed to dispatch startup notification to %s: %v", ch, err)
-	}
+	}, label)
 }
 
-func (d *Daemon) sendShutdownNotification() {
-	msg := fmt.Sprintf("Daemon received termination signal on %s. Monitoring stopped cleanly.", d.cfg.Server.Name)
-	if d.collector != nil {
-		if m, err := d.collector.Collect(); err == nil && m != nil {
-			uptimeStr := digest.FormatUptime(m.UptimeSeconds)
-			extra := ""
-			if m.HasCPUTemp {
-				extra += fmt.Sprintf(" | Temp: %.1f°C", m.CPUTempCelsius)
-			}
-			if m.HasGPUTemp {
-				extra += fmt.Sprintf(" | GPU Temp: %.1f°C", m.GPUTempCelsius)
-			}
-			msg = fmt.Sprintf("Daemon received termination signal on %s. Monitoring stopped cleanly.\nUptime: %s | CPU: %.1f%% | RAM: %.1f%%%s",
-				d.cfg.Server.Name, uptimeStr, m.CPUPercent, m.MemoryPercent, extra)
-		}
+func formatMetricsSummary(m *models.SystemMetrics) string {
+	extra := ""
+	if m.HasCPUTemp {
+		extra += fmt.Sprintf(" | Temp: %.1f°C", m.CPUTempCelsius)
 	}
-
-	shutdownAlert := &models.Alert{
-		Title:     fmt.Sprintf("[%s] Server Monitor Shutting Down", d.cfg.Server.Name),
-		Message:   msg,
-		Level:     models.AlertLevelWarning,
-		Timestamp: time.Now(),
-		Hostname:  d.cfg.Server.Name,
+	if m.HasGPUTemp {
+		extra += fmt.Sprintf(" | GPU Temp: %.1f°C", m.GPUTempCelsius)
 	}
-
-	errs := d.dispatcher.Dispatch(shutdownAlert)
-	for ch, err := range errs {
-		log.Printf("[daemon] failed to dispatch shutdown notification to %s: %v", ch, err)
-	}
+	return fmt.Sprintf("Uptime: %s | CPU: %.1f%% | RAM: %.1f%%%s",
+		models.FormatUptime(m.UptimeSeconds), m.CPUPercent, m.MemoryPercent, extra)
 }

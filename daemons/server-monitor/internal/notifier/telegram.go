@@ -7,20 +7,18 @@ import (
 	"errors"
 	"fmt"
 	"html"
-	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/jaewoook/server-monitor/internal/models"
 )
 
 // TelegramChannel dispatches alerts to a Telegram chat via Bot API.
 type TelegramChannel struct {
+	httpPoster
 	botToken string
 	chatID   string
 	endpoint string
-	client   *http.Client
 }
 
 // NewTelegramChannel creates a TelegramChannel pointing to the default Telegram Bot API endpoint.
@@ -35,18 +33,11 @@ func NewTelegramChannelWithEndpoint(botToken, chatID, endpoint string) *Telegram
 		endpoint = fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
 	}
 	return &TelegramChannel{
-		botToken: botToken,
-		chatID:   chatID,
-		endpoint: endpoint,
-		client: &http.Client{
-			Timeout: 5 * time.Second,
-		},
+		httpPoster: newHTTPPoster(),
+		botToken:   botToken,
+		chatID:     chatID,
+		endpoint:   endpoint,
 	}
-}
-
-// SetTransport configures a custom HTTP transport (useful for tests or proxies).
-func (t *TelegramChannel) SetTransport(rt http.RoundTripper) {
-	t.client.Transport = rt
 }
 
 // Name returns the channel identifier.
@@ -67,6 +58,11 @@ type telegramResponse struct {
 
 // Send formats the alert into an HTML message and posts it to Telegram.
 func (t *TelegramChannel) Send(alert *models.Alert) error {
+	return t.SendContext(context.Background(), alert)
+}
+
+// SendContext formats the alert into an HTML message and posts it to Telegram, honoring ctx.
+func (t *TelegramChannel) SendContext(ctx context.Context, alert *models.Alert) error {
 	if alert == nil {
 		return errors.New("alert cannot be nil")
 	}
@@ -91,11 +87,11 @@ func (t *TelegramChannel) Send(alert *models.Alert) error {
 	}
 	if alert.MetricName != "" {
 		if alert.ThresholdValue > 0 {
-			textBuilder.WriteString(fmt.Sprintf("<b>Metric:</b> %s (Current: %.2f%%, Threshold: %.2f%%)\n",
-				html.EscapeString(alert.MetricName), alert.CurrentValue, alert.ThresholdValue))
+			textBuilder.WriteString(fmt.Sprintf("<b>Metric:</b> %s (Current: %s, Threshold: %s)\n",
+				html.EscapeString(alert.MetricName), alert.FormatValue(alert.CurrentValue), alert.FormatValue(alert.ThresholdValue)))
 		} else {
-			textBuilder.WriteString(fmt.Sprintf("<b>Metric:</b> %s (Current: %.2f%%)\n",
-				html.EscapeString(alert.MetricName), alert.CurrentValue))
+			textBuilder.WriteString(fmt.Sprintf("<b>Metric:</b> %s (Current: %s)\n",
+				html.EscapeString(alert.MetricName), alert.FormatValue(alert.CurrentValue)))
 		}
 	}
 	if !alert.Timestamp.IsZero() {
@@ -105,17 +101,18 @@ func (t *TelegramChannel) Send(alert *models.Alert) error {
 		textBuilder.WriteString(fmt.Sprintf("<b>Message:</b> %s\n", html.EscapeString(alert.Message)))
 	}
 
+	const maxTelegramLength = 4096
+
 	if len(alert.TopProcesses) > 0 {
-		table := formatProcessesTable(alert.TopProcesses)
+		table := models.FormatProcessesTable(alert.TopProcesses)
 		if table != "" {
 			escapedTable := html.EscapeString(table)
 			const (
 				prePrefix = "\n<b>Top Processes:</b>\n<pre>"
 				preSuffix = "</pre>\n"
-				maxLen    = 4096
 			)
 			baseRunes := len([]rune(textBuilder.String()))
-			budget := maxLen - baseRunes - len([]rune(prePrefix)) - len([]rune(preSuffix))
+			budget := maxTelegramLength - baseRunes - len([]rune(prePrefix)) - len([]rune(preSuffix))
 			if budget > 0 {
 				tableRunes := []rune(escapedTable)
 				if len(tableRunes) > budget {
@@ -133,7 +130,6 @@ func (t *TelegramChannel) Send(alert *models.Alert) error {
 	}
 
 	msgText := textBuilder.String()
-	const maxTelegramLength = 4096
 	if len([]rune(msgText)) > maxTelegramLength {
 		runes := []rune(msgText)
 		const suffix = "..."
@@ -156,30 +152,12 @@ func (t *TelegramChannel) Send(alert *models.Alert) error {
 		ParseMode: "HTML",
 	}
 
-	bodyBytes, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal telegram payload: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.endpoint, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create telegram request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := t.client.Do(req)
+	status, respBody, err := t.postJSON(ctx, t.endpoint, payload, nil)
 	if err != nil {
 		return fmt.Errorf("telegram request failed: %w", err)
 	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("telegram api error (status %d): %s", resp.StatusCode, string(respBody))
+	if status != http.StatusOK {
+		return fmt.Errorf("telegram api error (status %d): %s", status, string(respBody))
 	}
 
 	var tgResp telegramResponse

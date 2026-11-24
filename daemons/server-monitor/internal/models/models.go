@@ -46,6 +46,7 @@ type RawConditionEvent struct {
 	Level          AlertLevel    `json:"level" yaml:"level"`
 	CurrentValue   float64       `json:"current_value" yaml:"current_value"`
 	ThresholdValue float64       `json:"threshold_value" yaml:"threshold_value"`
+	Unit           string        `json:"unit,omitempty" yaml:"unit,omitempty"`
 	Message        string        `json:"message" yaml:"message"`
 	TopProcesses   []ProcessInfo `json:"top_processes,omitempty" yaml:"top_processes,omitempty"`
 }
@@ -58,7 +59,21 @@ type Alert struct {
 	MetricName     string        `json:"metric_name" yaml:"metric_name"`
 	CurrentValue   float64       `json:"current_value" yaml:"current_value"`
 	ThresholdValue float64       `json:"threshold_value" yaml:"threshold_value"`
+	Unit           string        `json:"unit,omitempty" yaml:"unit,omitempty"`
 	Timestamp      time.Time     `json:"timestamp" yaml:"timestamp"`
 	Hostname       string        `json:"hostname" yaml:"hostname"`
 	TopProcesses   []ProcessInfo `json:"top_processes,omitempty" yaml:"top_processes,omitempty"`
+}
+
+// EffectiveUnit returns the alert's unit, falling back to rule metadata or "%".
+func (a *Alert) EffectiveUnit() string {
+	if a != nil && a.Unit != "" {
+		return a.Unit
+	}
+	if a != nil {
+		if meta, ok := LookupRuleMeta(a.MetricName); ok && meta.Unit != "" {
+			return meta.Unit
+		}
+	}
+	return "%"
 }

@@ -2,8 +2,10 @@ package notifier
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/smtp"
 	"strings"
 	"time"
@@ -25,9 +27,8 @@ type EmailChannel struct {
 // NewEmailChannel creates a new EmailChannel from configuration.
 func NewEmailChannel(cfg config.EmailConfig) *EmailChannel {
 	return &EmailChannel{
-		cfg:          cfg,
-		sendMailFunc: smtp.SendMail,
-		timeout:      5 * time.Second,
+		cfg:     cfg,
+		timeout: defaultHTTPTimeout,
 	}
 }
 
@@ -38,6 +39,11 @@ func (e *EmailChannel) Name() string {
 
 // Send formats the alert into an RFC 822 email message and sends it via SMTP.
 func (e *EmailChannel) Send(alert *models.Alert) error {
+	return e.SendContext(context.Background(), alert)
+}
+
+// SendContext formats the alert into an RFC 822 email message and sends it via SMTP, honoring ctx.
+func (e *EmailChannel) SendContext(ctx context.Context, alert *models.Alert) error {
 	if alert == nil {
 		return errors.New("alert cannot be nil")
 	}
@@ -48,7 +54,10 @@ func (e *EmailChannel) Send(alert *models.Alert) error {
 		return errors.New("destination email address is not configured")
 	}
 
-	from := e.cfg.Username
+	from := e.cfg.FromEmail
+	if from == "" {
+		from = e.cfg.Username
+	}
 	if from == "" {
 		from = "server-monitor@localhost"
 	}
@@ -68,15 +77,15 @@ func (e *EmailChannel) Send(alert *models.Alert) error {
 	body.WriteString(fmt.Sprintf("Level:           %s\n", alert.Level))
 	body.WriteString(fmt.Sprintf("Hostname:        %s\n", alert.Hostname))
 	body.WriteString(fmt.Sprintf("Metric:          %s\n", alert.MetricName))
-	body.WriteString(fmt.Sprintf("Current Value:   %.2f%%\n", alert.CurrentValue))
+	body.WriteString(fmt.Sprintf("Current Value:   %s\n", alert.FormatValue(alert.CurrentValue)))
 	if alert.ThresholdValue > 0 {
-		body.WriteString(fmt.Sprintf("Threshold Value: %.2f%%\n", alert.ThresholdValue))
+		body.WriteString(fmt.Sprintf("Threshold Value: %s\n", alert.FormatValue(alert.ThresholdValue)))
 	}
 	body.WriteString(fmt.Sprintf("Timestamp:       %s\n", alert.Timestamp.UTC().Format(time.RFC1123Z)))
 	body.WriteString(fmt.Sprintf("Message:         %s\n", alert.Message))
 
 	if len(alert.TopProcesses) > 0 {
-		table := formatProcessesTable(alert.TopProcesses)
+		table := models.FormatProcessesTable(alert.TopProcesses)
 		if table != "" {
 			body.WriteString("\nTop Processes:\n")
 			body.WriteString(table + "\n")
@@ -93,24 +102,85 @@ func (e *EmailChannel) Send(alert *models.Alert) error {
 
 	timeout := e.timeout
 	if timeout <= 0 {
-		timeout = 5 * time.Second
+		timeout = defaultHTTPTimeout
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	done := make(chan error, 1)
-	go func() {
-		done <- e.sendMailFunc(addr, auth, from, []string{e.cfg.ToEmail}, msg)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return fmt.Errorf("smtp send timed out after %v: %w", timeout, ctx.Err())
-	case err := <-done:
-		if err != nil {
-			return fmt.Errorf("smtp send failed: %w", err)
+	// Support test override via sendMailFunc while honoring timeout/ctx.
+	if e.sendMailFunc != nil {
+		done := make(chan error, 1)
+		go func() {
+			done <- e.sendMailFunc(addr, auth, from, []string{e.cfg.ToEmail}, msg)
+		}()
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("smtp send timed out after %v: %w", timeout, ctx.Err())
+		case err := <-done:
+			if err != nil {
+				return fmt.Errorf("smtp send failed: %w", err)
+			}
+			return nil
 		}
 	}
 
+	if err := e.sendWithDialContext(ctx, addr, auth, from, []string{e.cfg.ToEmail}, msg); err != nil {
+		return fmt.Errorf("smtp send failed: %w", err)
+	}
 	return nil
+}
+
+func (e *EmailChannel) sendWithDialContext(ctx context.Context, addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+
+	client, err := smtp.NewClient(conn, e.cfg.SMTPHost)
+	if err != nil {
+		_ = conn.Close()
+		return err
+	}
+	defer client.Close()
+
+	if e.cfg.UseTLS {
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			if err := client.StartTLS(&tls.Config{ServerName: e.cfg.SMTPHost}); err != nil {
+				return err
+			}
+		}
+	}
+
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			return err
+		}
+	}
+	if err := client.Mail(from); err != nil {
+		return err
+	}
+	for _, recipient := range to {
+		if err := client.Rcpt(recipient); err != nil {
+			return err
+		}
+	}
+	w, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(msg); err != nil {
+		_ = w.Close()
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	return client.Quit()
 }

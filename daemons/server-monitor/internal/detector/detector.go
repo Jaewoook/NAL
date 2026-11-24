@@ -9,15 +9,15 @@ import (
 	"github.com/jaewoook/server-monitor/internal/models"
 )
 
-// Rule name constants emitted in RawConditionEvent.
+// Rule name constants aliased from models for backward compatibility.
 const (
-	RuleCPUSpike  = "cpu_spike"
-	RuleCPUPlunge = "cpu_plunge"
-	RuleCPUFloor  = "cpu_floor"
-	RuleMemory    = "memory"
-	RuleDisk      = "disk"
-	RuleCPUTemp   = "cpu_temperature"
-	RuleGPUTemp   = "gpu_temperature"
+	RuleCPUSpike  = models.RuleCPUSpike
+	RuleCPUPlunge = models.RuleCPUPlunge
+	RuleCPUFloor  = models.RuleCPUFloor
+	RuleMemory    = models.RuleMemory
+	RuleDisk      = models.RuleDisk
+	RuleCPUTemp   = models.RuleCPUTemp
+	RuleGPUTemp   = models.RuleGPUTemp
 )
 
 type cpuSample struct {
@@ -25,41 +25,124 @@ type cpuSample struct {
 	cpu       float64
 }
 
+type sustainedState int
+
+const (
+	stateNoEvent sustainedState = iota
+	stateInitialBreach
+	stateOngoingBreach
+	stateRecovered
+)
+
+// sustainedTracker implements the shared breach/recovery counter state machine
+// used by sustained threshold rules (CPU spike, CPU floor, memory, temperatures).
+type sustainedTracker struct {
+	active        bool
+	breachCount   int
+	recoveryCount int
+}
+
+func (s *sustainedTracker) evaluate(breached bool, interval, sustainedSec int) (state sustainedState, elapsedSec int) {
+	if sustainedSec <= 0 {
+		sustainedSec = interval
+	}
+
+	if breached {
+		s.recoveryCount = 0
+		s.breachCount++
+		if !s.active {
+			if s.breachCount*interval >= sustainedSec {
+				s.active = true
+				return stateInitialBreach, s.breachCount * interval
+			}
+			return stateNoEvent, 0
+		}
+		return stateOngoingBreach, s.breachCount * interval
+	}
+
+	s.breachCount = 0
+	if s.active {
+		s.recoveryCount++
+		if s.recoveryCount*interval >= sustainedSec {
+			s.active = false
+			s.recoveryCount = 0
+			return stateRecovered, 0
+		}
+	} else {
+		s.recoveryCount = 0
+	}
+	return stateNoEvent, 0
+}
+
+type sustainedRuleParams struct {
+	ruleName     string
+	unit         string
+	level        models.AlertLevel
+	value        float64
+	threshold    float64
+	breached     bool
+	sustainedSec int
+	interval     int
+	topProcesses []models.ProcessInfo
+	initialMsg   func(val, threshold float64, elapsedSec int) string
+	ongoingMsg   func(val, threshold float64) string
+	recoveredMsg func(val, threshold float64) string
+}
+
+func evaluateSustainedRule(tracker *sustainedTracker, p sustainedRuleParams) *models.RawConditionEvent {
+	state, elapsed := tracker.evaluate(p.breached, p.interval, p.sustainedSec)
+	switch state {
+	case stateInitialBreach:
+		return &models.RawConditionEvent{
+			RuleName:       p.ruleName,
+			IsActive:       true,
+			Level:          p.level,
+			CurrentValue:   p.value,
+			ThresholdValue: p.threshold,
+			Unit:           p.unit,
+			Message:        p.initialMsg(p.value, p.threshold, elapsed),
+			TopProcesses:   p.topProcesses,
+		}
+	case stateOngoingBreach:
+		return &models.RawConditionEvent{
+			RuleName:       p.ruleName,
+			IsActive:       true,
+			Level:          p.level,
+			CurrentValue:   p.value,
+			ThresholdValue: p.threshold,
+			Unit:           p.unit,
+			Message:        p.ongoingMsg(p.value, p.threshold),
+			TopProcesses:   p.topProcesses,
+		}
+	case stateRecovered:
+		return &models.RawConditionEvent{
+			RuleName:       p.ruleName,
+			IsActive:       false,
+			Level:          models.AlertLevelResolved,
+			CurrentValue:   p.value,
+			ThresholdValue: p.threshold,
+			Unit:           p.unit,
+			Message:        p.recoveredMsg(p.value, p.threshold),
+			TopProcesses:   p.topProcesses,
+		}
+	default:
+		return nil
+	}
+}
+
 // Detector evaluates system metrics and emits raw condition events.
 type Detector struct {
 	mu  sync.Mutex
 	cfg *config.Config
 
-	// CPU Spike state
-	cpuSpikeActive        bool
-	cpuSpikeBreachCount   int
-	cpuSpikeRecoveryCount int
+	cpuSpike sustainedTracker
+	cpuFloor sustainedTracker
+	memory   sustainedTracker
+	cpuTemp  sustainedTracker
+	gpuTemp  sustainedTracker
 
-	// CPU Plunge Drop rolling window
-	cpuBuffer []cpuSample
-
-	// CPU Floor Drop state
-	cpuFloorActive        bool
-	cpuFloorBreachCount   int
-	cpuFloorRecoveryCount int
-
-	// Memory state
-	memActive        bool
-	memBreachCount   int
-	memRecoveryCount int
-
-	// Disk state
+	cpuBuffer  []cpuSample
 	diskActive bool
-
-	// CPU Temperature state
-	cpuTempActive        bool
-	cpuTempBreachCount   int
-	cpuTempRecoveryCount int
-
-	// GPU Temperature state
-	gpuTempActive        bool
-	gpuTempBreachCount   int
-	gpuTempRecoveryCount int
 }
 
 // New creates a new Detector with the given configuration.
@@ -70,6 +153,19 @@ func New(cfg *config.Config) *Detector {
 	return &Detector{
 		cfg: cfg,
 	}
+}
+
+// ElevatedCPUThreshold returns a conservative CPU percentage above which the
+// collector should eagerly scan top processes so alert diagnostics are ready.
+func (d *Detector) ElevatedCPUThreshold() float64 {
+	if d.cfg == nil || d.cfg.CPU.Spike.ThresholdPercent <= 0 {
+		return 0
+	}
+	threshold := d.cfg.CPU.Spike.ThresholdPercent * 0.7
+	if d.cfg.CPU.PlungeDrop.FromMinPercent > 0 && d.cfg.CPU.PlungeDrop.FromMinPercent < threshold {
+		threshold = d.cfg.CPU.PlungeDrop.FromMinPercent
+	}
+	return threshold
 }
 
 // Evaluate analyzes point-in-time metrics against configured rules and returns any triggered events.
@@ -87,28 +183,19 @@ func (d *Detector) Evaluate(m *models.SystemMetrics) []models.RawConditionEvent 
 	}
 
 	var events []models.RawConditionEvent
+	appendIf := func(ev *models.RawConditionEvent) {
+		if ev != nil {
+			events = append(events, *ev)
+		}
+	}
 
-	if ev := d.checkCPUSpike(m, interval); ev != nil {
-		events = append(events, *ev)
-	}
-	if ev := d.checkCPUPlunge(m); ev != nil {
-		events = append(events, *ev)
-	}
-	if ev := d.checkCPUFloor(m, interval); ev != nil {
-		events = append(events, *ev)
-	}
-	if ev := d.checkMemory(m, interval); ev != nil {
-		events = append(events, *ev)
-	}
-	if ev := d.checkDisk(m); ev != nil {
-		events = append(events, *ev)
-	}
-	if ev := d.checkCPUTemp(m, interval); ev != nil {
-		events = append(events, *ev)
-	}
-	if ev := d.checkGPUTemp(m, interval); ev != nil {
-		events = append(events, *ev)
-	}
+	appendIf(d.checkCPUSpike(m, interval))
+	appendIf(d.checkCPUPlunge(m))
+	appendIf(d.checkCPUFloor(m, interval))
+	appendIf(d.checkMemory(m, interval))
+	appendIf(d.checkDisk(m))
+	appendIf(d.checkCPUTemp(m, interval))
+	appendIf(d.checkGPUTemp(m, interval))
 
 	return events
 }
@@ -117,63 +204,27 @@ func (d *Detector) checkCPUSpike(m *models.SystemMetrics, interval int) *models.
 	if !d.cfg.CPU.Spike.Enabled {
 		return nil
 	}
-
 	threshold := d.cfg.CPU.Spike.ThresholdPercent
-	sustainedSec := d.cfg.CPU.Spike.SustainedSeconds
-	if sustainedSec <= 0 {
-		sustainedSec = interval
-	}
-
-	if m.CPUPercent >= threshold {
-		d.cpuSpikeRecoveryCount = 0
-		d.cpuSpikeBreachCount++
-		if !d.cpuSpikeActive {
-			if d.cpuSpikeBreachCount*interval >= sustainedSec {
-				d.cpuSpikeActive = true
-				return &models.RawConditionEvent{
-					RuleName:       RuleCPUSpike,
-					IsActive:       true,
-					Level:          models.AlertLevelCritical,
-					CurrentValue:   m.CPUPercent,
-					ThresholdValue: threshold,
-					Message:        fmt.Sprintf("CPU usage sustained high: %.1f%% >= %.1f%% for %ds", m.CPUPercent, threshold, d.cpuSpikeBreachCount*interval),
-					TopProcesses:   m.TopProcesses,
-				}
-			}
-		} else {
-			return &models.RawConditionEvent{
-				RuleName:       RuleCPUSpike,
-				IsActive:       true,
-				Level:          models.AlertLevelCritical,
-				CurrentValue:   m.CPUPercent,
-				ThresholdValue: threshold,
-				Message:        fmt.Sprintf("CPU usage sustained high: %.1f%% >= %.1f%%", m.CPUPercent, threshold),
-				TopProcesses:   m.TopProcesses,
-			}
-		}
-	} else {
-		d.cpuSpikeBreachCount = 0
-		if d.cpuSpikeActive {
-			d.cpuSpikeRecoveryCount++
-			if d.cpuSpikeRecoveryCount*interval >= sustainedSec {
-				d.cpuSpikeActive = false
-				d.cpuSpikeRecoveryCount = 0
-				return &models.RawConditionEvent{
-					RuleName:       RuleCPUSpike,
-					IsActive:       false,
-					Level:          models.AlertLevelResolved,
-					CurrentValue:   m.CPUPercent,
-					ThresholdValue: threshold,
-					Message:        fmt.Sprintf("CPU usage recovered: %.1f%% < %.1f%%", m.CPUPercent, threshold),
-					TopProcesses:   m.TopProcesses,
-				}
-			}
-		} else {
-			d.cpuSpikeRecoveryCount = 0
-		}
-	}
-
-	return nil
+	return evaluateSustainedRule(&d.cpuSpike, sustainedRuleParams{
+		ruleName:     RuleCPUSpike,
+		unit:         "%",
+		level:        models.AlertLevelCritical,
+		value:        m.CPUPercent,
+		threshold:    threshold,
+		breached:     m.CPUPercent >= threshold,
+		sustainedSec: d.cfg.CPU.Spike.SustainedSeconds,
+		interval:     interval,
+		topProcesses: m.TopProcesses,
+		initialMsg: func(v, t float64, sec int) string {
+			return fmt.Sprintf("CPU usage sustained high: %.1f%% >= %.1f%% for %ds", v, t, sec)
+		},
+		ongoingMsg: func(v, t float64) string {
+			return fmt.Sprintf("CPU usage sustained high: %.1f%% >= %.1f%%", v, t)
+		},
+		recoveredMsg: func(v, t float64) string {
+			return fmt.Sprintf("CPU usage recovered: %.1f%% < %.1f%%", v, t)
+		},
+	})
 }
 
 func (d *Detector) checkCPUPlunge(m *models.SystemMetrics) *models.RawConditionEvent {
@@ -190,11 +241,9 @@ func (d *Detector) checkCPUPlunge(m *models.SystemMetrics) *models.RawConditionE
 	if windowSec <= 0 {
 		windowSec = 15
 	}
-	windowDuration := time.Duration(windowSec) * time.Second
+	cutoff := ts.Add(-time.Duration(windowSec) * time.Second)
 
-	// Prune samples older than the sliding window duration
-	cutoff := ts.Add(-windowDuration)
-	var validSamples []cpuSample
+	validSamples := d.cpuBuffer[:0]
 	for _, s := range d.cpuBuffer {
 		if !s.timestamp.Before(cutoff) {
 			validSamples = append(validSamples, s)
@@ -202,10 +251,8 @@ func (d *Detector) checkCPUPlunge(m *models.SystemMetrics) *models.RawConditionE
 	}
 	d.cpuBuffer = validSamples
 
-	// Check if any prior sample in window met the baseline threshold and dropped by >= DeltaPercent
 	var maxBaseline float64
 	hasEligibleBaseline := false
-
 	for _, s := range d.cpuBuffer {
 		if s.cpu >= d.cfg.CPU.PlungeDrop.FromMinPercent {
 			if !hasEligibleBaseline || s.cpu > maxBaseline {
@@ -215,150 +262,78 @@ func (d *Detector) checkCPUPlunge(m *models.SystemMetrics) *models.RawConditionE
 		}
 	}
 
-	var event *models.RawConditionEvent
 	if hasEligibleBaseline && (maxBaseline-m.CPUPercent) >= d.cfg.CPU.PlungeDrop.DeltaPercent {
-		event = &models.RawConditionEvent{
+		event := &models.RawConditionEvent{
 			RuleName:       RuleCPUPlunge,
 			IsActive:       true,
 			Level:          models.AlertLevelWarning,
 			CurrentValue:   m.CPUPercent,
 			ThresholdValue: d.cfg.CPU.PlungeDrop.DeltaPercent,
+			Unit:           "%",
 			Message:        fmt.Sprintf("CPU plunge drop detected: dropped by %.1f%% (from %.1f%% to %.1f%%) within %ds", maxBaseline-m.CPUPercent, maxBaseline, m.CPUPercent, windowSec),
 			TopProcesses:   m.TopProcesses,
 		}
 		// Reset buffer to only current sample so the same drop event is not repeatedly emitted
 		d.cpuBuffer = []cpuSample{{timestamp: ts, cpu: m.CPUPercent}}
-	} else {
-		d.cpuBuffer = append(d.cpuBuffer, cpuSample{timestamp: ts, cpu: m.CPUPercent})
+		return event
 	}
 
-	return event
+	d.cpuBuffer = append(d.cpuBuffer, cpuSample{timestamp: ts, cpu: m.CPUPercent})
+	return nil
 }
 
 func (d *Detector) checkCPUFloor(m *models.SystemMetrics, interval int) *models.RawConditionEvent {
 	if !d.cfg.CPU.FloorDrop.Enabled {
 		return nil
 	}
-
 	threshold := d.cfg.CPU.FloorDrop.ThresholdPercent
-	sustainedSec := d.cfg.CPU.FloorDrop.SustainedSeconds
-	if sustainedSec <= 0 {
-		sustainedSec = interval
-	}
-
-	if m.CPUPercent <= threshold {
-		d.cpuFloorRecoveryCount = 0
-		d.cpuFloorBreachCount++
-		if !d.cpuFloorActive {
-			if d.cpuFloorBreachCount*interval >= sustainedSec {
-				d.cpuFloorActive = true
-				return &models.RawConditionEvent{
-					RuleName:       RuleCPUFloor,
-					IsActive:       true,
-					Level:          models.AlertLevelWarning,
-					CurrentValue:   m.CPUPercent,
-					ThresholdValue: threshold,
-					Message:        fmt.Sprintf("CPU floor drop detected: usage at %.1f%% <= %.1f%% for sustained period", m.CPUPercent, threshold),
-					TopProcesses:   m.TopProcesses,
-				}
-			}
-		} else {
-			return &models.RawConditionEvent{
-				RuleName:       RuleCPUFloor,
-				IsActive:       true,
-				Level:          models.AlertLevelWarning,
-				CurrentValue:   m.CPUPercent,
-				ThresholdValue: threshold,
-				Message:        fmt.Sprintf("CPU floor drop active: usage at %.1f%% <= %.1f%%", m.CPUPercent, threshold),
-				TopProcesses:   m.TopProcesses,
-			}
-		}
-	} else {
-		d.cpuFloorBreachCount = 0
-		if d.cpuFloorActive {
-			d.cpuFloorRecoveryCount++
-			if d.cpuFloorRecoveryCount*interval >= sustainedSec {
-				d.cpuFloorActive = false
-				d.cpuFloorRecoveryCount = 0
-				return &models.RawConditionEvent{
-					RuleName:       RuleCPUFloor,
-					IsActive:       false,
-					Level:          models.AlertLevelResolved,
-					CurrentValue:   m.CPUPercent,
-					ThresholdValue: threshold,
-					Message:        fmt.Sprintf("CPU floor drop recovered: usage at %.1f%% > %.1f%%", m.CPUPercent, threshold),
-					TopProcesses:   m.TopProcesses,
-				}
-			}
-		} else {
-			d.cpuFloorRecoveryCount = 0
-		}
-	}
-
-	return nil
+	return evaluateSustainedRule(&d.cpuFloor, sustainedRuleParams{
+		ruleName:     RuleCPUFloor,
+		unit:         "%",
+		level:        models.AlertLevelWarning,
+		value:        m.CPUPercent,
+		threshold:    threshold,
+		breached:     m.CPUPercent <= threshold,
+		sustainedSec: d.cfg.CPU.FloorDrop.SustainedSeconds,
+		interval:     interval,
+		topProcesses: m.TopProcesses,
+		initialMsg: func(v, t float64, _ int) string {
+			return fmt.Sprintf("CPU floor drop detected: usage at %.1f%% <= %.1f%% for sustained period", v, t)
+		},
+		ongoingMsg: func(v, t float64) string {
+			return fmt.Sprintf("CPU floor drop active: usage at %.1f%% <= %.1f%%", v, t)
+		},
+		recoveredMsg: func(v, t float64) string {
+			return fmt.Sprintf("CPU floor drop recovered: usage at %.1f%% > %.1f%%", v, t)
+		},
+	})
 }
 
 func (d *Detector) checkMemory(m *models.SystemMetrics, interval int) *models.RawConditionEvent {
 	if !d.cfg.Health.Memory.Enabled {
 		return nil
 	}
-
 	threshold := d.cfg.Health.Memory.ThresholdPercent
-	sustainedSec := d.cfg.Health.Memory.SustainedSeconds
-	if sustainedSec <= 0 {
-		sustainedSec = interval
-	}
-
-	if m.MemoryPercent >= threshold {
-		d.memRecoveryCount = 0
-		d.memBreachCount++
-		if !d.memActive {
-			if d.memBreachCount*interval >= sustainedSec {
-				d.memActive = true
-				return &models.RawConditionEvent{
-					RuleName:       RuleMemory,
-					IsActive:       true,
-					Level:          models.AlertLevelCritical,
-					CurrentValue:   m.MemoryPercent,
-					ThresholdValue: threshold,
-					Message:        fmt.Sprintf("Memory usage high: %.1f%% >= %.1f%% for %ds", m.MemoryPercent, threshold, d.memBreachCount*interval),
-					TopProcesses:   m.TopProcesses,
-				}
-			}
-		} else {
-			return &models.RawConditionEvent{
-				RuleName:       RuleMemory,
-				IsActive:       true,
-				Level:          models.AlertLevelCritical,
-				CurrentValue:   m.MemoryPercent,
-				ThresholdValue: threshold,
-				Message:        fmt.Sprintf("Memory usage high: %.1f%% >= %.1f%%", m.MemoryPercent, threshold),
-				TopProcesses:   m.TopProcesses,
-			}
-		}
-	} else {
-		d.memBreachCount = 0
-		if d.memActive {
-			d.memRecoveryCount++
-			if d.memRecoveryCount*interval >= sustainedSec {
-				d.memActive = false
-				d.memRecoveryCount = 0
-				return &models.RawConditionEvent{
-					RuleName:       RuleMemory,
-					IsActive:       false,
-					Level:          models.AlertLevelResolved,
-					CurrentValue:   m.MemoryPercent,
-					ThresholdValue: threshold,
-					Message:        fmt.Sprintf("Memory usage recovered: %.1f%% < %.1f%%", m.MemoryPercent, threshold),
-					TopProcesses:   m.TopProcesses,
-				}
-			}
-		} else {
-			d.memRecoveryCount = 0
-		}
-	}
-
-	return nil
+	return evaluateSustainedRule(&d.memory, sustainedRuleParams{
+		ruleName:     RuleMemory,
+		unit:         "%",
+		level:        models.AlertLevelCritical,
+		value:        m.MemoryPercent,
+		threshold:    threshold,
+		breached:     m.MemoryPercent >= threshold,
+		sustainedSec: d.cfg.Health.Memory.SustainedSeconds,
+		interval:     interval,
+		topProcesses: m.TopProcesses,
+		initialMsg: func(v, t float64, sec int) string {
+			return fmt.Sprintf("Memory usage high: %.1f%% >= %.1f%% for %ds", v, t, sec)
+		},
+		ongoingMsg: func(v, t float64) string {
+			return fmt.Sprintf("Memory usage high: %.1f%% >= %.1f%%", v, t)
+		},
+		recoveredMsg: func(v, t float64) string {
+			return fmt.Sprintf("Memory usage recovered: %.1f%% < %.1f%%", v, t)
+		},
+	})
 }
 
 func (d *Detector) checkDisk(m *models.SystemMetrics) *models.RawConditionEvent {
@@ -373,21 +348,19 @@ func (d *Detector) checkDisk(m *models.SystemMetrics) *models.RawConditionEvent 
 	}
 
 	if m.DiskPercent >= threshold {
-		if !d.diskActive {
-			d.diskActive = true
-		}
+		d.diskActive = true
 		return &models.RawConditionEvent{
 			RuleName:       RuleDisk,
 			IsActive:       true,
 			Level:          models.AlertLevelCritical,
 			CurrentValue:   m.DiskPercent,
 			ThresholdValue: threshold,
+			Unit:           "%",
 			Message:        fmt.Sprintf("Disk usage high on %s: %.1f%% >= %.1f%%", mount, m.DiskPercent, threshold),
 			TopProcesses:   m.TopProcesses,
 		}
 	}
 
-	// m.DiskPercent < threshold
 	if d.diskActive {
 		d.diskActive = false
 		return &models.RawConditionEvent{
@@ -396,6 +369,7 @@ func (d *Detector) checkDisk(m *models.SystemMetrics) *models.RawConditionEvent 
 			Level:          models.AlertLevelResolved,
 			CurrentValue:   m.DiskPercent,
 			ThresholdValue: threshold,
+			Unit:           "%",
 			Message:        fmt.Sprintf("Disk usage recovered on %s: %.1f%% < %.1f%%", mount, m.DiskPercent, threshold),
 			TopProcesses:   m.TopProcesses,
 		}
@@ -408,124 +382,52 @@ func (d *Detector) checkCPUTemp(m *models.SystemMetrics, interval int) *models.R
 	if !d.cfg.Health.Temperature.Enabled || !m.HasCPUTemp {
 		return nil
 	}
-
 	threshold := d.cfg.Health.Temperature.CPUThresholdCelsius
-	sustainedSec := d.cfg.Health.Temperature.SustainedSeconds
-	if sustainedSec <= 0 {
-		sustainedSec = interval
-	}
-
-	if m.CPUTempCelsius >= threshold {
-		d.cpuTempRecoveryCount = 0
-		d.cpuTempBreachCount++
-		if !d.cpuTempActive {
-			if d.cpuTempBreachCount*interval >= sustainedSec {
-				d.cpuTempActive = true
-				return &models.RawConditionEvent{
-					RuleName:       RuleCPUTemp,
-					IsActive:       true,
-					Level:          models.AlertLevelCritical,
-					CurrentValue:   m.CPUTempCelsius,
-					ThresholdValue: threshold,
-					Message:        fmt.Sprintf("CPU temperature sustained high: %.1f°C >= %.1f°C for %ds", m.CPUTempCelsius, threshold, d.cpuTempBreachCount*interval),
-					TopProcesses:   m.TopProcesses,
-				}
-			}
-		} else {
-			return &models.RawConditionEvent{
-				RuleName:       RuleCPUTemp,
-				IsActive:       true,
-				Level:          models.AlertLevelCritical,
-				CurrentValue:   m.CPUTempCelsius,
-				ThresholdValue: threshold,
-				Message:        fmt.Sprintf("CPU temperature high: %.1f°C >= %.1f°C", m.CPUTempCelsius, threshold),
-				TopProcesses:   m.TopProcesses,
-			}
-		}
-	} else {
-		d.cpuTempBreachCount = 0
-		if d.cpuTempActive {
-			d.cpuTempRecoveryCount++
-			if d.cpuTempRecoveryCount*interval >= sustainedSec {
-				d.cpuTempActive = false
-				d.cpuTempRecoveryCount = 0
-				return &models.RawConditionEvent{
-					RuleName:       RuleCPUTemp,
-					IsActive:       false,
-					Level:          models.AlertLevelResolved,
-					CurrentValue:   m.CPUTempCelsius,
-					ThresholdValue: threshold,
-					Message:        fmt.Sprintf("CPU temperature recovered: %.1f°C < %.1f°C", m.CPUTempCelsius, threshold),
-					TopProcesses:   m.TopProcesses,
-				}
-			}
-		} else {
-			d.cpuTempRecoveryCount = 0
-		}
-	}
-
-	return nil
+	return evaluateSustainedRule(&d.cpuTemp, sustainedRuleParams{
+		ruleName:     RuleCPUTemp,
+		unit:         "°C",
+		level:        models.AlertLevelCritical,
+		value:        m.CPUTempCelsius,
+		threshold:    threshold,
+		breached:     m.CPUTempCelsius >= threshold,
+		sustainedSec: d.cfg.Health.Temperature.SustainedSeconds,
+		interval:     interval,
+		topProcesses: m.TopProcesses,
+		initialMsg: func(v, t float64, sec int) string {
+			return fmt.Sprintf("CPU temperature sustained high: %.1f°C >= %.1f°C for %ds", v, t, sec)
+		},
+		ongoingMsg: func(v, t float64) string {
+			return fmt.Sprintf("CPU temperature high: %.1f°C >= %.1f°C", v, t)
+		},
+		recoveredMsg: func(v, t float64) string {
+			return fmt.Sprintf("CPU temperature recovered: %.1f°C < %.1f°C", v, t)
+		},
+	})
 }
 
 func (d *Detector) checkGPUTemp(m *models.SystemMetrics, interval int) *models.RawConditionEvent {
 	if !d.cfg.Health.Temperature.Enabled || !m.HasGPUTemp {
 		return nil
 	}
-
 	threshold := d.cfg.Health.Temperature.GPUThresholdCelsius
-	sustainedSec := d.cfg.Health.Temperature.SustainedSeconds
-	if sustainedSec <= 0 {
-		sustainedSec = interval
-	}
-
-	if m.GPUTempCelsius >= threshold {
-		d.gpuTempRecoveryCount = 0
-		d.gpuTempBreachCount++
-		if !d.gpuTempActive {
-			if d.gpuTempBreachCount*interval >= sustainedSec {
-				d.gpuTempActive = true
-				return &models.RawConditionEvent{
-					RuleName:       RuleGPUTemp,
-					IsActive:       true,
-					Level:          models.AlertLevelCritical,
-					CurrentValue:   m.GPUTempCelsius,
-					ThresholdValue: threshold,
-					Message:        fmt.Sprintf("GPU temperature sustained high: %.1f°C >= %.1f°C for %ds", m.GPUTempCelsius, threshold, d.gpuTempBreachCount*interval),
-					TopProcesses:   m.TopProcesses,
-				}
-			}
-		} else {
-			return &models.RawConditionEvent{
-				RuleName:       RuleGPUTemp,
-				IsActive:       true,
-				Level:          models.AlertLevelCritical,
-				CurrentValue:   m.GPUTempCelsius,
-				ThresholdValue: threshold,
-				Message:        fmt.Sprintf("GPU temperature high: %.1f°C >= %.1f°C", m.GPUTempCelsius, threshold),
-				TopProcesses:   m.TopProcesses,
-			}
-		}
-	} else {
-		d.gpuTempBreachCount = 0
-		if d.gpuTempActive {
-			d.gpuTempRecoveryCount++
-			if d.gpuTempRecoveryCount*interval >= sustainedSec {
-				d.gpuTempActive = false
-				d.gpuTempRecoveryCount = 0
-				return &models.RawConditionEvent{
-					RuleName:       RuleGPUTemp,
-					IsActive:       false,
-					Level:          models.AlertLevelResolved,
-					CurrentValue:   m.GPUTempCelsius,
-					ThresholdValue: threshold,
-					Message:        fmt.Sprintf("GPU temperature recovered: %.1f°C < %.1f°C", m.GPUTempCelsius, threshold),
-					TopProcesses:   m.TopProcesses,
-				}
-			}
-		} else {
-			d.gpuTempRecoveryCount = 0
-		}
-	}
-
-	return nil
+	return evaluateSustainedRule(&d.gpuTemp, sustainedRuleParams{
+		ruleName:     RuleGPUTemp,
+		unit:         "°C",
+		level:        models.AlertLevelCritical,
+		value:        m.GPUTempCelsius,
+		threshold:    threshold,
+		breached:     m.GPUTempCelsius >= threshold,
+		sustainedSec: d.cfg.Health.Temperature.SustainedSeconds,
+		interval:     interval,
+		topProcesses: m.TopProcesses,
+		initialMsg: func(v, t float64, sec int) string {
+			return fmt.Sprintf("GPU temperature sustained high: %.1f°C >= %.1f°C for %ds", v, t, sec)
+		},
+		ongoingMsg: func(v, t float64) string {
+			return fmt.Sprintf("GPU temperature high: %.1f°C >= %.1f°C", v, t)
+		},
+		recoveredMsg: func(v, t float64) string {
+			return fmt.Sprintf("GPU temperature recovered: %.1f°C < %.1f°C", v, t)
+		},
+	})
 }

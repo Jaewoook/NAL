@@ -20,6 +20,7 @@ type Sender struct {
 	lastErr  error
 	method   string
 	client   *http.Client
+	logger   *log.Logger
 }
 
 // New creates a new Sender with the specified heartbeat ping URL and interval.
@@ -45,6 +46,24 @@ func NewWithClient(url string, interval time.Duration, client *http.Client) *Sen
 		client:   client,
 		method:   http.MethodGet,
 	}
+}
+
+// SetLogger configures a custom logger for heartbeat warnings.
+func (s *Sender) SetLogger(l *log.Logger) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.logger = l
+}
+
+func (s *Sender) logf(format string, args ...any) {
+	s.mu.Lock()
+	l := s.logger
+	s.mu.Unlock()
+	if l != nil {
+		l.Printf(format, args...)
+		return
+	}
+	log.Printf(format, args...)
 }
 
 // URL returns the heartbeat ping URL.
@@ -157,15 +176,23 @@ func (s *Sender) Ping(ctx context.Context) error {
 }
 
 // Tick checks whether the interval has elapsed and sends a ping if due.
-// It catches all network errors gracefully, records the error, and returns
-// true if a ping was triggered, or false if skipped before interval.
 func (s *Sender) Tick(now time.Time) bool {
+	return s.TickContext(context.Background(), now)
+}
+
+// TickContext checks whether the interval has elapsed and sends a ping if due,
+// honoring ctx for cancellation and deadlines.
+func (s *Sender) TickContext(ctx context.Context, now time.Time) bool {
 	if now.IsZero() {
 		now = time.Now()
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	s.mu.Lock()
-	if s.url == "" {
+	url := s.url
+	if url == "" {
 		s.mu.Unlock()
 		return false
 	}
@@ -176,17 +203,17 @@ func (s *Sender) Tick(now time.Time) bool {
 	s.lastTick = now
 	s.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	err := s.Ping(ctx)
+	err := s.Ping(pingCtx)
 
 	s.mu.Lock()
 	s.lastErr = err
 	s.mu.Unlock()
 
 	if err != nil {
-		log.Printf("[heartbeat] ping to %s failed: %v", s.url, err)
+		s.logf("[heartbeat] ping to %s failed: %v", url, err)
 	}
 
 	return true

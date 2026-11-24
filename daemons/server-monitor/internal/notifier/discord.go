@@ -1,13 +1,9 @@
 package notifier
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
 	"github.com/jaewoook/server-monitor/internal/models"
@@ -15,23 +11,16 @@ import (
 
 // DiscordChannel dispatches alerts to Discord channels via webhooks.
 type DiscordChannel struct {
+	httpPoster
 	webhookURL string
-	client     *http.Client
 }
 
 // NewDiscordChannel creates a new DiscordChannel.
 func NewDiscordChannel(webhookURL string) *DiscordChannel {
 	return &DiscordChannel{
+		httpPoster: newHTTPPoster(),
 		webhookURL: webhookURL,
-		client: &http.Client{
-			Timeout: 5 * time.Second,
-		},
 	}
-}
-
-// SetTransport configures a custom HTTP transport (useful for tests or proxies).
-func (d *DiscordChannel) SetTransport(rt http.RoundTripper) {
-	d.client.Transport = rt
 }
 
 // Name returns the channel identifier.
@@ -59,6 +48,11 @@ type discordPayload struct {
 
 // Send dispatches an alert to Discord as a rich embed with color coding.
 func (d *DiscordChannel) Send(alert *models.Alert) error {
+	return d.SendContext(context.Background(), alert)
+}
+
+// SendContext dispatches an alert to Discord as a rich embed, honoring ctx.
+func (d *DiscordChannel) SendContext(ctx context.Context, alert *models.Alert) error {
 	if alert == nil {
 		return errors.New("alert cannot be nil")
 	}
@@ -83,13 +77,13 @@ func (d *DiscordChannel) Send(alert *models.Alert) error {
 	if alert.MetricName != "" {
 		fields = append(fields, discordField{Name: "Metric", Value: alert.MetricName, Inline: true})
 	}
-	fields = append(fields, discordField{Name: "Current Value", Value: fmt.Sprintf("%.2f%%", alert.CurrentValue), Inline: true})
+	fields = append(fields, discordField{Name: "Current Value", Value: alert.FormatValue(alert.CurrentValue), Inline: true})
 	if alert.ThresholdValue > 0 {
-		fields = append(fields, discordField{Name: "Threshold", Value: fmt.Sprintf("%.2f%%", alert.ThresholdValue), Inline: true})
+		fields = append(fields, discordField{Name: "Threshold", Value: alert.FormatValue(alert.ThresholdValue), Inline: true})
 	}
 
 	if len(alert.TopProcesses) > 0 {
-		table := formatProcessesTable(alert.TopProcesses)
+		table := models.FormatProcessesTable(alert.TopProcesses)
 		if table != "" {
 			runes := []rune(table)
 			if len(runes) > 1000 {
@@ -108,41 +102,22 @@ func (d *DiscordChannel) Send(alert *models.Alert) error {
 		ts = alert.Timestamp.UTC().Format(time.RFC3339)
 	}
 
-	embed := discordEmbed{
-		Title:       fmt.Sprintf("[%s] %s", alert.Level, alert.Title),
-		Description: alert.Message,
-		Color:       color,
-		Fields:      fields,
-		Timestamp:   ts,
-	}
-
 	payload := discordPayload{
-		Embeds: []discordEmbed{embed},
+		Embeds: []discordEmbed{{
+			Title:       fmt.Sprintf("[%s] %s", alert.Level, alert.Title),
+			Description: alert.Message,
+			Color:       color,
+			Fields:      fields,
+			Timestamp:   ts,
+		}},
 	}
 
-	bodyBytes, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal discord payload: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.webhookURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create discord request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := d.client.Do(req)
+	status, respBody, err := d.postJSON(ctx, d.webhookURL, payload, nil)
 	if err != nil {
 		return fmt.Errorf("discord request failed: %w", err)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-		return fmt.Errorf("discord api error (status %d): %s", resp.StatusCode, string(respBody))
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("discord api error (status %d): %s", status, string(respBody))
 	}
 
 	return nil

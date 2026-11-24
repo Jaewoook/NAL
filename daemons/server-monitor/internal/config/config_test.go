@@ -261,7 +261,7 @@ func TestLoggingConfigValidation(t *testing.T) {
 			Enabled:    true,
 			FilePath:   "",
 			MaxSizeMB:  -1,
-			MaxBackups: 0,
+			MaxBackups: -1,
 		},
 	}
 	ValidateAndApplyDefaults(cfg)
@@ -274,6 +274,59 @@ func TestLoggingConfigValidation(t *testing.T) {
 	}
 	if cfg.Logging.MaxBackups != 3 {
 		t.Errorf("expected fallback MaxBackups 3, got %d", cfg.Logging.MaxBackups)
+	}
+
+	// Explicit 0 backups must be preserved (disables rotated archives)
+	cfgZero := DefaultConfig()
+	cfgZero.Logging.MaxBackups = 0
+	ValidateAndApplyDefaults(cfgZero)
+	if cfgZero.Logging.MaxBackups != 0 {
+		t.Errorf("expected explicit MaxBackups 0 to be preserved, got %d", cfgZero.Logging.MaxBackups)
+	}
+}
+
+func TestDocumentedEnvOverridesAndCaseInsensitiveBools(t *testing.T) {
+	t.Setenv("CHECK_INTERVAL_SECONDS", "12")
+	t.Setenv("HEARTBEAT_INTERVAL_SECONDS", "90")
+	t.Setenv("CPU_SPIKE_THRESHOLD", "92.5")
+	t.Setenv("CPU_SPIKE_SUSTAINED_SECONDS", "25")
+	t.Setenv("MEMORY_THRESHOLD", "88.5")
+	t.Setenv("DISK_THRESHOLD", "80.0")
+	t.Setenv("EMAIL_FROM", "alerts@example.com")
+	t.Setenv("LOG_MAX_BACKUPS", "0")
+	t.Setenv("NOTIFY_ON_STARTUP", "TRUE")
+	t.Setenv("NOTIFY_ON_SHUTDOWN", "Yes")
+
+	cfg := DefaultConfigWithEnv()
+	if cfg.Server.CheckIntervalSeconds != 12 {
+		t.Errorf("expected CheckIntervalSeconds 12, got %d", cfg.Server.CheckIntervalSeconds)
+	}
+	if cfg.Heartbeat.IntervalSeconds != 90 {
+		t.Errorf("expected Heartbeat.IntervalSeconds 90, got %d", cfg.Heartbeat.IntervalSeconds)
+	}
+	if cfg.CPU.Spike.ThresholdPercent != 92.5 {
+		t.Errorf("expected CPU.Spike.ThresholdPercent 92.5, got %f", cfg.CPU.Spike.ThresholdPercent)
+	}
+	if cfg.CPU.Spike.SustainedSeconds != 25 {
+		t.Errorf("expected CPU.Spike.SustainedSeconds 25, got %d", cfg.CPU.Spike.SustainedSeconds)
+	}
+	if cfg.Health.Memory.ThresholdPercent != 88.5 {
+		t.Errorf("expected Health.Memory.ThresholdPercent 88.5, got %f", cfg.Health.Memory.ThresholdPercent)
+	}
+	if cfg.Health.Disk.ThresholdPercent != 80.0 {
+		t.Errorf("expected Health.Disk.ThresholdPercent 80.0, got %f", cfg.Health.Disk.ThresholdPercent)
+	}
+	if cfg.Notifications.Email.FromEmail != "alerts@example.com" {
+		t.Errorf("expected Email.FromEmail alerts@example.com, got %s", cfg.Notifications.Email.FromEmail)
+	}
+	if cfg.Logging.MaxBackups != 0 {
+		t.Errorf("expected Logging.MaxBackups 0 via env, got %d", cfg.Logging.MaxBackups)
+	}
+	if !cfg.Alerting.NotifyOnStartup {
+		t.Errorf("expected NotifyOnStartup true for 'TRUE'")
+	}
+	if !cfg.Alerting.NotifyOnShutdown {
+		t.Errorf("expected NotifyOnShutdown true for 'Yes'")
 	}
 }
 

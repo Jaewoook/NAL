@@ -1,6 +1,7 @@
 package notifier
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"sync"
@@ -192,5 +193,27 @@ func TestDispatcherNilAlertAndNilConfig(t *testing.T) {
 	dNil := NewDispatcherFromConfig(nil)
 	if len(dNil.Channels()) != 0 {
 		t.Errorf("expected 0 channels from nil config, got %d", len(dNil.Channels()))
+	}
+}
+
+type ctxAwareChannel struct {
+	name string
+}
+
+func (c *ctxAwareChannel) Name() string               { return c.name }
+func (c *ctxAwareChannel) Send(_ *models.Alert) error { return nil }
+func (c *ctxAwareChannel) SendContext(ctx context.Context, _ *models.Alert) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestDispatcherDispatchContextCancellation(t *testing.T) {
+	d := NewDispatcher(&ctxAwareChannel{name: "ctx-ch"})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	errs := d.DispatchContext(ctx, &models.Alert{Title: "Canceled"})
+	if err, ok := errs["ctx-ch"]; !ok || !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled for ctx-ch, got: %v", errs)
 	}
 }

@@ -2,7 +2,6 @@ package alert
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -31,20 +30,16 @@ type Manager struct {
 // NewManager creates a new alert manager with the specified server hostname,
 // per-rule cooldown durations, and recovery notification preference.
 func NewManager(hostname string, cooldowns map[string]time.Duration, notifyOnRecovery bool) *Manager {
-	cooldownsCopy := make(map[string]time.Duration)
+	cooldownsCopy := make(map[string]time.Duration, len(cooldowns))
 	for k, v := range cooldowns {
 		cooldownsCopy[k] = v
-	}
-
-	eventRules := map[string]bool{
-		"cpu_plunge": true,
 	}
 
 	return &Manager{
 		hostname:         hostname,
 		cooldowns:        cooldownsCopy,
 		notifyOnRecovery: notifyOnRecovery,
-		eventRules:       eventRules,
+		eventRules:       make(map[string]bool),
 		tracks:           make(map[string]*alertTrack),
 	}
 }
@@ -55,6 +50,16 @@ func (m *Manager) RegisterEventRule(ruleName string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.eventRules[ruleName] = true
+}
+
+func (m *Manager) isEventRule(ruleName string) bool {
+	if m.eventRules[ruleName] {
+		return true
+	}
+	if meta, ok := models.LookupRuleMeta(ruleName); ok {
+		return meta.IsEvent
+	}
+	return false
 }
 
 // IsActive returns whether a given rule track is currently in an active alerting state.
@@ -121,18 +126,13 @@ func (m *Manager) ProcessEvents(events []models.RawConditionEvent, metrics *mode
 			m.tracks[ruleName] = track
 		}
 
-		isEvent := m.eventRules[ruleName]
-
-		if isEvent {
+		if m.isEventRule(ruleName) {
 			// Event-based rules (e.g. cpu_plunge)
 			if !ev.IsActive || ev.Level == models.AlertLevelResolved {
-				// Event-based alerts do not emit recovery alerts
 				continue
 			}
 
-			// Active event: check cooldown against repeated occurrences
 			if track.cooldown > 0 && !track.lastAlertTime.IsZero() && now.Sub(track.lastAlertTime) < track.cooldown {
-				// Throttled during cooldown
 				continue
 			}
 
@@ -145,42 +145,37 @@ func (m *Manager) ProcessEvents(events []models.RawConditionEvent, metrics *mode
 			}
 
 			alerts = append(alerts, m.createAlert(ev, now, level, metrics))
-		} else {
-			// Stateful rules (e.g. cpu_spike, memory, disk, cpu_floor)
-			if !ev.IsActive || ev.Level == models.AlertLevelResolved {
-				// Condition resolved or inactive
-				if track.active {
-					track.active = false
-					if m.notifyOnRecovery {
-						alerts = append(alerts, m.createAlert(ev, now, models.AlertLevelResolved, metrics))
-					}
-				}
-			} else {
-				// Condition active
-				if !track.active {
-					// Initial breach -> alert
-					track.active = true
-					track.lastAlertTime = now
+			continue
+		}
 
-					level := ev.Level
-					if level == "" {
-						level = models.AlertLevelCritical
-					}
-					alerts = append(alerts, m.createAlert(ev, now, level, metrics))
-				} else {
-					// Ongoing active breach: check if cooldown has elapsed to re-alert
-					if track.cooldown > 0 && !now.Before(track.lastAlertTime.Add(track.cooldown)) {
-						track.lastAlertTime = now
-
-						level := ev.Level
-						if level == "" {
-							level = models.AlertLevelCritical
-						}
-						alerts = append(alerts, m.createAlert(ev, now, level, metrics))
-					}
-					// Otherwise throttled during cooldown
+		// Stateful rules (e.g. cpu_spike, memory, disk, cpu_floor, temperatures)
+		if !ev.IsActive || ev.Level == models.AlertLevelResolved {
+			if track.active {
+				track.active = false
+				if m.notifyOnRecovery {
+					alerts = append(alerts, m.createAlert(ev, now, models.AlertLevelResolved, metrics))
 				}
 			}
+			continue
+		}
+
+		if !track.active {
+			track.active = true
+			track.lastAlertTime = now
+
+			level := ev.Level
+			if level == "" {
+				level = models.AlertLevelCritical
+			}
+			alerts = append(alerts, m.createAlert(ev, now, level, metrics))
+		} else if track.cooldown > 0 && !now.Before(track.lastAlertTime.Add(track.cooldown)) {
+			track.lastAlertTime = now
+
+			level := ev.Level
+			if level == "" {
+				level = models.AlertLevelCritical
+			}
+			alerts = append(alerts, m.createAlert(ev, now, level, metrics))
 		}
 	}
 
@@ -193,24 +188,23 @@ func (m *Manager) getCooldown(ruleName string) time.Duration {
 			return cd
 		}
 	}
-
-	// Default fallback cooldowns if not explicitly mapped
-	switch ruleName {
-	case "cpu_plunge":
-		return 15 * time.Minute
-	case "cpu_spike", "cpu_floor", "memory", "cpu_temperature", "gpu_temperature":
-		return 30 * time.Minute
-	case "disk":
-		return 60 * time.Minute
-	default:
-		return 15 * time.Minute
+	if meta, ok := models.LookupRuleMeta(ruleName); ok && meta.DefaultCooldown > 0 {
+		return meta.DefaultCooldown
 	}
+	return 15 * time.Minute
 }
 
 func (m *Manager) createAlert(ev models.RawConditionEvent, now time.Time, level models.AlertLevel, metrics *models.SystemMetrics) models.Alert {
 	metricName := ev.RuleName
 	if metricName == "" {
 		metricName = "system"
+	}
+
+	unit := ev.Unit
+	if unit == "" {
+		if meta, ok := models.LookupRuleMeta(ev.RuleName); ok {
+			unit = meta.Unit
+		}
 	}
 
 	topProcs := ev.TopProcesses
@@ -221,9 +215,9 @@ func (m *Manager) createAlert(ev models.RawConditionEvent, now time.Time, level 
 	msg := ev.Message
 	if msg == "" {
 		if level == models.AlertLevelResolved {
-			msg = fmt.Sprintf("%s recovered to normal (current: %.1f)", formatRuleName(ev.RuleName), ev.CurrentValue)
+			msg = fmt.Sprintf("%s recovered to normal (current: %.1f%s)", models.FormatRuleName(ev.RuleName), ev.CurrentValue, unit)
 		} else {
-			msg = fmt.Sprintf("%s threshold breached (current: %.1f, threshold: %.1f)", formatRuleName(ev.RuleName), ev.CurrentValue, ev.ThresholdValue)
+			msg = fmt.Sprintf("%s threshold breached (current: %.1f%s, threshold: %.1f%s)", models.FormatRuleName(ev.RuleName), ev.CurrentValue, unit, ev.ThresholdValue, unit)
 		}
 	}
 
@@ -234,6 +228,7 @@ func (m *Manager) createAlert(ev models.RawConditionEvent, now time.Time, level 
 		MetricName:     metricName,
 		CurrentValue:   ev.CurrentValue,
 		ThresholdValue: ev.ThresholdValue,
+		Unit:           unit,
 		Timestamp:      now,
 		Hostname:       m.hostname,
 		TopProcesses:   topProcs,
@@ -241,7 +236,7 @@ func (m *Manager) createAlert(ev models.RawConditionEvent, now time.Time, level 
 }
 
 func (m *Manager) formatTitle(ruleName string, level models.AlertLevel) string {
-	name := formatRuleName(ruleName)
+	name := models.FormatRuleName(ruleName)
 	var title string
 	if level == models.AlertLevelResolved {
 		title = fmt.Sprintf("%s Resolved", name)
@@ -253,31 +248,4 @@ func (m *Manager) formatTitle(ruleName string, level models.AlertLevel) string {
 		return fmt.Sprintf("[%s] %s", m.hostname, title)
 	}
 	return title
-}
-
-func formatRuleName(rule string) string {
-	switch rule {
-	case "cpu_spike":
-		return "CPU Spike"
-	case "cpu_plunge":
-		return "CPU Plunge"
-	case "cpu_floor":
-		return "CPU Floor"
-	case "memory":
-		return "Memory"
-	case "disk":
-		return "Disk"
-	case "cpu_temperature":
-		return "CPU Temperature"
-	case "gpu_temperature":
-		return "GPU Temperature"
-	default:
-		words := strings.Split(rule, "_")
-		for i, w := range words {
-			if len(w) > 0 {
-				words[i] = strings.ToUpper(w[:1]) + w[1:]
-			}
-		}
-		return strings.Join(words, " ")
-	}
 }

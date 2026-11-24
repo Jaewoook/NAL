@@ -523,3 +523,71 @@ func TestFormatProcessesTableRuneSafe(t *testing.T) {
 		t.Errorf("expected rune-safe truncation with ellipsis, got table: %s", table)
 	}
 }
+
+func TestChannelsFormatTemperatureUnitCelsius(t *testing.T) {
+	tempAlert := &models.Alert{
+		Title:          "CPU Temperature Alert",
+		Message:        "CPU temperature high",
+		Level:          models.AlertLevelCritical,
+		MetricName:     models.RuleCPUTemp,
+		CurrentValue:   82.5,
+		ThresholdValue: 75.0,
+		Unit:           "°C",
+		Timestamp:      time.Now(),
+		Hostname:       "mac-mini",
+	}
+
+	// Discord
+	var discordBody string
+	dCh := NewDiscordChannel("http://localhost/discord")
+	dCh.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		b, _ := io.ReadAll(r.Body)
+		discordBody = string(b)
+		return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+	}))
+	if err := dCh.Send(tempAlert); err != nil {
+		t.Fatalf("discord send failed: %v", err)
+	}
+	if !strings.Contains(discordBody, "82.50°C") || !strings.Contains(discordBody, "75.00°C") {
+		t.Errorf("expected Celsius units in discord payload, got: %s", discordBody)
+	}
+
+	// Slack
+	var slackBody string
+	sCh := NewSlackChannel("http://localhost/slack")
+	sCh.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		b, _ := io.ReadAll(r.Body)
+		slackBody = string(b)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
+	}))
+	if err := sCh.Send(tempAlert); err != nil {
+		t.Fatalf("slack send failed: %v", err)
+	}
+	if !strings.Contains(slackBody, "82.50°C") || !strings.Contains(slackBody, "75.00°C") {
+		t.Errorf("expected Celsius units in slack payload, got: %s", slackBody)
+	}
+
+	// Email + FromEmail
+	var emailFrom, emailBody string
+	eCh := NewEmailChannel(config.EmailConfig{
+		SMTPHost:  "smtp.example.com",
+		SMTPPort:  587,
+		Username:  "smtp-user@example.com",
+		FromEmail: "noreply-monitor@example.com",
+		ToEmail:   "ops@example.com",
+	})
+	eCh.sendMailFunc = func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		emailFrom = from
+		emailBody = string(msg)
+		return nil
+	}
+	if err := eCh.Send(tempAlert); err != nil {
+		t.Fatalf("email send failed: %v", err)
+	}
+	if emailFrom != "noreply-monitor@example.com" {
+		t.Errorf("expected FromEmail 'noreply-monitor@example.com', got %q", emailFrom)
+	}
+	if !strings.Contains(emailBody, "82.50°C") || !strings.Contains(emailBody, "75.00°C") {
+		t.Errorf("expected Celsius units in email body, got: %s", emailBody)
+	}
+}

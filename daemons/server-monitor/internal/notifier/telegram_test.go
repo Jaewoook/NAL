@@ -310,3 +310,32 @@ func TestTelegramChannelTagClosureWhenMessageLong(t *testing.T) {
 		t.Errorf("unbalanced <pre> tags: open=%d, close=%d", preOpenCount, preCloseCount)
 	}
 }
+
+func TestTelegramChannelTemperatureUnit(t *testing.T) {
+	var capturedPayload telegramPayload
+	ch := NewTelegramChannelWithEndpoint("test-token", "12345", "http://localhost/test")
+	ch.SetTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(req.Body)
+		_ = json.Unmarshal(body, &capturedPayload)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"ok": true}`)),
+			Header:     make(http.Header),
+		}, nil
+	}))
+
+	err := ch.Send(&models.Alert{
+		Title:          "CPU Temperature Alert",
+		Level:          models.AlertLevelCritical,
+		MetricName:     models.RuleCPUTemp,
+		CurrentValue:   79.5,
+		ThresholdValue: 75.0,
+		Unit:           "°C",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(capturedPayload.Text, "79.50°C") || !strings.Contains(capturedPayload.Text, "75.00°C") {
+		t.Errorf("expected Celsius units in telegram text, got: %s", capturedPayload.Text)
+	}
+}

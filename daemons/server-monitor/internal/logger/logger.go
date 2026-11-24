@@ -11,6 +11,15 @@ import (
 	"github.com/jaewoook/server-monitor/internal/config"
 )
 
+// Options configures a dedicated logger instance without coupling callers to config.
+type Options struct {
+	Enabled    bool
+	FilePath   string
+	MaxSizeMB  int
+	MaxBackups int
+	Console    bool
+}
+
 // RotatingFile is an io.WriteCloser that automatically rotates the log file
 // when its size exceeds maxBytes, keeping up to maxBackups old log files.
 type RotatingFile struct {
@@ -23,11 +32,12 @@ type RotatingFile struct {
 }
 
 // NewRotatingFile creates or opens a rotating log file.
+// maxBackups == 0 disables retaining rotated backup archives; negative values default to 3.
 func NewRotatingFile(filePath string, maxBytes int64, maxBackups int) (*RotatingFile, error) {
 	if maxBytes <= 0 {
 		maxBytes = 10 * 1024 * 1024
 	}
-	if maxBackups <= 0 {
+	if maxBackups < 0 {
 		maxBackups = 3
 	}
 
@@ -137,32 +147,54 @@ func (n *noopCloser) Close() error {
 	return nil
 }
 
+// NewLogger creates an isolated *log.Logger backed by a RotatingFile and optional console writer,
+// without mutating the global standard library logger.
+func NewLogger(opts Options, consoleWriter ...io.Writer) (*log.Logger, io.Closer, error) {
+	var console io.Writer = os.Stdout
+	if len(consoleWriter) > 0 && consoleWriter[0] != nil {
+		console = consoleWriter[0]
+	}
+
+	if !opts.Enabled {
+		return log.New(console, "", log.Ldate|log.Ltime), &noopCloser{}, nil
+	}
+
+	maxBytes := int64(opts.MaxSizeMB) * 1024 * 1024
+	rf, err := NewRotatingFile(opts.FilePath, maxBytes, opts.MaxBackups)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var out io.Writer = rf
+	if opts.Console {
+		out = io.MultiWriter(console, rf)
+	}
+
+	return log.New(out, "", log.Ldate|log.Ltime), rf, nil
+}
+
 // Setup configures standard library log to route to the rotating file and optionally console.
 func Setup(cfg *config.LoggingConfig, consoleWriter ...io.Writer) (io.Closer, error) {
 	if cfg == nil || !cfg.Enabled {
 		return &noopCloser{}, nil
 	}
 
-	var console io.Writer = os.Stdout
-	if len(consoleWriter) > 0 && consoleWriter[0] != nil {
-		console = consoleWriter[0]
+	opts := Options{
+		Enabled:    cfg.Enabled,
+		FilePath:   cfg.FilePath,
+		MaxSizeMB:  cfg.MaxSizeMB,
+		MaxBackups: cfg.MaxBackups,
+		Console:    cfg.Console,
 	}
 
-	maxBytes := int64(cfg.MaxSizeMB) * 1024 * 1024
-	rf, err := NewRotatingFile(cfg.FilePath, maxBytes, cfg.MaxBackups)
+	l, closer, err := NewLogger(opts, consoleWriter...)
 	if err != nil {
 		return nil, err
 	}
 
-	var out io.Writer = rf
-	if cfg.Console {
-		out = io.MultiWriter(console, rf)
-	}
-
-	log.SetOutput(out)
+	log.SetOutput(l.Writer())
 	log.SetFlags(log.Ldate | log.Ltime)
-
-	return rf, nil
+	return closer, nil
 }
 
 // Reset restores standard library log output to os.Stderr and standard flags.
