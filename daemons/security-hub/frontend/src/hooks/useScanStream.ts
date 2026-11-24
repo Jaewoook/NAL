@@ -12,6 +12,7 @@ import type { DashboardResponse, NodeInfo } from '../types';
 
 interface UseScanStreamOptions {
   authenticated: boolean;
+  authEpoch: number;
   dashboardData: DashboardResponse | null;
   approvedNodes: NodeInfo[];
   authEpochRef: MutableRefObject<number>;
@@ -25,6 +26,7 @@ interface UseScanStreamOptions {
  */
 export function useScanStream({
   authenticated,
+  authEpoch,
   dashboardData,
   approvedNodes,
   authEpochRef,
@@ -62,6 +64,12 @@ export function useScanStream({
   }, [closeScanStream, onPollFallbackChange]);
 
   useEffect(() => closeScanStream, [closeScanStream]);
+
+  useEffect(() => {
+    if (authEpoch > 0) {
+      resetScanState();
+    }
+  }, [authEpoch, resetScanState]);
 
   const attachScanStream = useCallback(
     (taskId: string) => {

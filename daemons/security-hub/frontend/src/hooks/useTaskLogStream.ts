@@ -2,7 +2,20 @@ import { type MutableRefObject, useCallback, useEffect, useRef, useState } from 
 import { subscribeTaskSSE } from '../lib/sse';
 import type { RenderedLogEntry } from '../types';
 
+export const MAX_TASK_LOG_LINES = 2000;
+
+function appendBoundedLogEntry(
+  prev: RenderedLogEntry[],
+  entry: RenderedLogEntry
+): RenderedLogEntry[] {
+  if (prev.length >= MAX_TASK_LOG_LINES) {
+    return [...prev.slice(prev.length - MAX_TASK_LOG_LINES + 1), entry];
+  }
+  return [...prev, entry];
+}
+
 interface UseTaskLogStreamOptions {
+  authEpoch: number;
   authEpochRef: MutableRefObject<number>;
   refreshDashboard: () => Promise<void>;
 }
@@ -10,7 +23,11 @@ interface UseTaskLogStreamOptions {
 /**
  * Manages live SSE stdout/stderr streaming for a selected task in the Audit Console.
  */
-export function useTaskLogStream({ authEpochRef, refreshDashboard }: UseTaskLogStreamOptions) {
+export function useTaskLogStream({
+  authEpoch,
+  authEpochRef,
+  refreshDashboard,
+}: UseTaskLogStreamOptions) {
   const [activeTaskId, setActiveTaskId] = useState('');
   const [taskLogLines, setTaskLogLines] = useState<RenderedLogEntry[]>([]);
   const activeTaskSubRef = useRef<{ close: () => void } | null>(null);
@@ -31,6 +48,12 @@ export function useTaskLogStream({ authEpochRef, refreshDashboard }: UseTaskLogS
 
   useEffect(() => closeTaskStream, [closeTaskStream]);
 
+  useEffect(() => {
+    if (authEpoch > 0) {
+      resetTaskLogs();
+    }
+  }, [authEpoch, resetTaskLogs]);
+
   const streamTaskLogs = useCallback(
     (taskId: string) => {
       closeTaskStream();
@@ -45,20 +68,18 @@ export function useTaskLogStream({ authEpochRef, refreshDashboard }: UseTaskLogS
           logSeqRef.current += 1;
           const entryKey = `${taskId}-${logSeqRef.current}`;
           if (event.kind === 'structured') {
-            setTaskLogLines((prev) => [
-              ...prev,
-              {
+            setTaskLogLines((prev) =>
+              appendBoundedLogEntry(prev, {
                 key: entryKey,
                 loggedAt: event.payload.logged_at,
                 stream: event.payload.stream,
                 line: event.payload.line,
-              },
-            ]);
+              })
+            );
           } else {
-            setTaskLogLines((prev) => [
-              ...prev,
-              { key: entryKey, line: event.text, rawText: true },
-            ]);
+            setTaskLogLines((prev) =>
+              appendBoundedLogEntry(prev, { key: entryKey, line: event.text, rawText: true })
+            );
           }
         },
         onDone: () => {

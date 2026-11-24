@@ -4,26 +4,19 @@ import {
   startRegistration,
 } from '@simplewebauthn/browser';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { getAxiosErrorMessage, hubApi, isAxiosUnauthorized, setCsrfToken } from '../lib/http';
 import type { SessionResponse } from '../types';
 
-interface UseAuthOptions {
-  onSessionReset: () => void;
-}
-
 /**
  * Manages session query state, CSRF synchronization, logout, and WebAuthn passkey flows.
  */
-export function useAuth({ onSessionReset }: UseAuthOptions) {
+export function useAuth() {
   const queryClient = useQueryClient();
+  const [authEpoch, setAuthEpoch] = useState(0);
   const authEpochRef = useRef(0);
-  const onSessionResetRef = useRef(onSessionReset);
-
-  useEffect(() => {
-    onSessionResetRef.current = onSessionReset;
-  }, [onSessionReset]);
+  const wasAuthenticatedRef = useRef(false);
 
   const clearCachedSession = useCallback(() => {
     queryClient.setQueryData<SessionResponse>(['session'], (prev) => ({
@@ -34,10 +27,11 @@ export function useAuth({ onSessionReset }: UseAuthOptions) {
   }, [queryClient]);
 
   const resetSession = useCallback(() => {
+    wasAuthenticatedRef.current = false;
     authEpochRef.current += 1;
+    setAuthEpoch(authEpochRef.current);
     setCsrfToken('');
     queryClient.removeQueries({ queryKey: ['dashboard'] });
-    onSessionResetRef.current();
   }, [queryClient]);
 
   useEffect(() => {
@@ -65,20 +59,21 @@ export function useAuth({ onSessionReset }: UseAuthOptions) {
   useEffect(() => {
     if (!sessionQuery.isFetched) return;
     if (!sessionQuery.data?.authenticated) {
-      resetSession();
+      if (wasAuthenticatedRef.current) {
+        resetSession();
+      }
       return;
     }
+    wasAuthenticatedRef.current = true;
     if (sessionQuery.data.csrf_token) {
       setCsrfToken(sessionQuery.data.csrf_token);
     }
   }, [sessionQuery.data, sessionQuery.isFetched, resetSession]);
 
   const logout = useCallback(async () => {
-    authEpochRef.current += 1;
-    onSessionResetRef.current();
+    resetSession();
     await hubApi.logout().catch(() => undefined);
     clearCachedSession();
-    resetSession();
     await queryClient.invalidateQueries({ queryKey: ['session'] });
   }, [clearCachedSession, queryClient, resetSession]);
 
@@ -164,6 +159,7 @@ export function useAuth({ onSessionReset }: UseAuthOptions) {
     authenticated,
     username,
     authMethod: sessionQuery.data?.method || 'sso',
+    authEpoch,
     authEpochRef,
     handleUnauthorized,
     logout,

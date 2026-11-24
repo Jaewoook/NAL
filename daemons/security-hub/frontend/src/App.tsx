@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BrokenLinkageModal } from './components/BrokenLinkageModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { DashboardTabs } from './components/DashboardTabs';
@@ -36,20 +36,17 @@ export const App: React.FC = () => {
   );
 
   const confirm = useConfirmDialog();
-  const streamResettersRef = useRef<{ scan?: () => void; task?: () => void }>({});
+  const auth = useAuth();
 
-  const resetUIState = useCallback(() => {
-    streamResettersRef.current.scan?.();
-    streamResettersRef.current.task?.();
+  useEffect(() => {
+    if (auth.authEpoch === 0) return;
     confirm.cancelConfirm();
     setSelectedVersions({});
     setPendingUpdateReq(null);
     setNodesModalOpen(false);
     setScanNodeModalOpen(false);
     setLinkageModal(null);
-  }, [confirm.cancelConfirm]);
-
-  const auth = useAuth({ onSessionReset: resetUIState });
+  }, [auth.authEpoch, confirm.cancelConfirm]);
 
   const dashboard = useDashboardData({
     authenticated: auth.authenticated,
@@ -60,6 +57,7 @@ export const App: React.FC = () => {
 
   const scanStream = useScanStream({
     authenticated: auth.authenticated,
+    authEpoch: auth.authEpoch,
     dashboardData: dashboard.dashboardData,
     approvedNodes: dashboard.approvedNodes,
     authEpochRef: auth.authEpochRef,
@@ -69,12 +67,10 @@ export const App: React.FC = () => {
   });
 
   const taskLogStream = useTaskLogStream({
+    authEpoch: auth.authEpoch,
     authEpochRef: auth.authEpochRef,
     refreshDashboard: dashboard.refreshDashboard,
   });
-
-  streamResettersRef.current.scan = scanStream.resetScanState;
-  streamResettersRef.current.task = taskLogStream.resetTaskLogs;
 
   const handleOpenTaskLog = useCallback(
     (taskId: string) => {
