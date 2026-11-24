@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getItemSortRank } from '../lib/domain';
+import { getItemSortRank, matchesDashboardTab } from '../lib/domain';
 import { hubApi, isAxiosUnauthorized } from '../lib/http';
 import type { DashboardResponse, NodeInfo, TabType } from '../types';
 
@@ -76,28 +76,23 @@ export function useDashboardData({
   const nodeFilteredItems = useMemo(() => {
     const allItems = dashboardData?.scan?.items || [];
     if (currentNodeFilter === 'all') return allItems;
-    return allItems.filter((item) => (item.node || hubNode) === currentNodeFilter);
+    const targetLower = currentNodeFilter.toLowerCase();
+    return allItems.filter((item) => (item.node || hubNode).toLowerCase() === targetLower);
   }, [dashboardData, currentNodeFilter, hubNode]);
 
   const tabCounts = useMemo(
     () => ({
-      docker: nodeFilteredItems.filter((i) => i.target_type === 'docker').length,
-      brew: nodeFilteredItems.filter((i) => i.target_type === 'brew' || i.target_type === 'apt')
-        .length,
-      daemons: nodeFilteredItems.filter(
-        (i) => i.target_type === 'daemon' || i.target_type === 'macos'
-      ).length,
+      docker: nodeFilteredItems.filter((i) => matchesDashboardTab(i, 'docker')).length,
+      brew: nodeFilteredItems.filter((i) => matchesDashboardTab(i, 'brew')).length,
+      daemons: nodeFilteredItems.filter((i) => matchesDashboardTab(i, 'daemons')).length,
       logs: (dashboardData?.recent_tasks || []).length,
     }),
     [nodeFilteredItems, dashboardData]
   );
 
   const sortedTabItems = useMemo(() => {
-    const filtered = nodeFilteredItems.filter((item) => {
-      if (currentTab === 'docker') return item.target_type === 'docker';
-      if (currentTab === 'brew') return item.target_type === 'brew' || item.target_type === 'apt';
-      return item.target_type === 'daemon' || item.target_type === 'macos';
-    });
+    if (currentTab === 'logs') return [];
+    const filtered = nodeFilteredItems.filter((item) => matchesDashboardTab(item, currentTab));
     return [...filtered].sort((a, b) => {
       const rankDiff = getItemSortRank(a) - getItemSortRank(b);
       return rankDiff !== 0

@@ -1,4 +1,4 @@
-import type { ManagedItem } from '../types';
+import type { ManagedItem, TabType } from '../types';
 
 /**
  * Validates that an external link uses an HTTP/HTTPS URL scheme.
@@ -93,4 +93,13 @@ export function resolveTargetVersion(
   const defaultVer = tags.includes(item.latest_version) ? item.latest_version : tags[0] || '';
   const selectedVer = chosenVersion && tags.includes(chosenVersion) ? chosenVersion : defaultVer;
   return { tags, selectedVer };
+}
+
+/**
+ * Checks whether a managed item belongs to a given dashboard inventory tab.
+ */
+export function matchesDashboardTab(item: ManagedItem, tab: Exclude<TabType, 'logs'>): boolean {
+  if (tab === 'docker') return item.target_type === 'docker';
+  if (tab === 'brew') return item.target_type === 'brew' || item.target_type === 'apt';
+  return item.target_type === 'daemon' || item.target_type === 'macos';
 }

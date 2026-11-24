@@ -5,6 +5,7 @@ import {
   isNodeScanningName,
   isSafeHttpUrl,
   isStreamableScanTaskId,
+  matchesDashboardTab,
   parseCompletedScanNode,
   removeScanningNodeName,
   resolveTargetVersion,
@@ -84,5 +85,10 @@ describe('domain helpers', () => {
       tags: ['1.1', '1.2'],
       selectedVer: '1.2',
     });
+
+    expect(matchesDashboardTab(base, 'docker')).toBe(true);
+    expect(matchesDashboardTab(base, 'brew')).toBe(false);
+    expect(matchesDashboardTab({ ...base, target_type: 'apt' }, 'brew')).toBe(true);
+    expect(matchesDashboardTab({ ...base, target_type: 'macos' }, 'daemons')).toBe(true);
   });
 });

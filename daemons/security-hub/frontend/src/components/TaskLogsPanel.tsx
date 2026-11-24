@@ -23,11 +23,13 @@ export const TaskLogsPanel: React.FC<TaskLogsPanelProps> = ({
 }) => {
   const terminalRef = useRef<HTMLDivElement | null>(null);
 
+  const lastLogKey = logs[logs.length - 1]?.key;
+
   useEffect(() => {
-    if (logs.length > 0 && terminalRef.current) {
+    if (lastLogKey && terminalRef.current) {
       terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
-  }, [logs.length]);
+  }, [lastLogKey]);
 
   const getStreamClass = (stream?: string): string => {
     if (stream === 'cmd') return 'text-sky-400 font-semibold';
