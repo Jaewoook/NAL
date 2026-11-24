@@ -361,6 +361,14 @@ func (s *SpoolStore) syncFromDiskLocked() error {
 	return nil
 }
 
+func (s *SpoolStore) withStateLock(fn func() error) error {
+	if err := s.lockState(); err != nil {
+		return err
+	}
+	defer s.unlockState()
+	return fn()
+}
+
 func (s *SpoolStore) saveStateLocked() error {
 	raw, err := json.MarshalIndent(s.state, "", "  ")
 	if err != nil {

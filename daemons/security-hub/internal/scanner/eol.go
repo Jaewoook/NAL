@@ -67,6 +67,22 @@ func mapItemToEoLProductAndCycle(item models.ManagedItem) (product, cycle string
 	}
 }
 
+func evaluateEoLWindow(eolDate, now time.Time, warningDays int) (models.EoLStatus, int) {
+	todayUTC := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	daysRem := int(eolDate.Sub(todayUTC).Hours() / 24)
+	if daysRem < 0 {
+		return models.EoLExpired, daysRem
+	}
+	if daysRem <= warningDays {
+		return models.EoLExpiringSoon, daysRem
+	}
+	return models.EoLSupported, daysRem
+}
+
+func isHeldAptItem(item models.ManagedItem) bool {
+	return item.TargetType == models.TargetApt && strings.Contains(item.EoL.Message, "Held via apt-mark")
+}
+
 func checkCloudflaredSupportWindow(version string, now time.Time, warningDays int) (models.EoLInfo, bool) {
 	parts := strings.Split(strings.TrimPrefix(version, "v"), ".")
 	if len(parts) < 2 {
@@ -79,14 +95,7 @@ func checkCloudflaredSupportWindow(version string, now time.Time, warningDays in
 	}
 	relDate := time.Date(year, time.Month(month), 15, 0, 0, 0, 0, time.UTC)
 	eolDate := relDate.AddDate(1, 0, 0)
-	todayUTC := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
-	daysRem := int(eolDate.Sub(todayUTC).Hours() / 24)
-	status := models.EoLSupported
-	if daysRem < 0 {
-		status = models.EoLExpired
-	} else if daysRem <= warningDays {
-		status = models.EoLExpiringSoon
-	}
+	status, daysRem := evaluateEoLWindow(eolDate, now, warningDays)
 	return models.EoLInfo{
 		Product:       "cloudflared",
 		Cycle:         fmt.Sprintf("%d.%d", year, month),
@@ -121,7 +130,7 @@ func (e *EoLChecker) CheckEoL(ctx context.Context, items []models.ManagedItem, n
 		if items[i].EoL.Status == models.EoLExpired && items[i].EoL.Message != "" {
 			continue
 		}
-		isHeldApt := items[i].TargetType == models.TargetApt && strings.Contains(items[i].EoL.Message, "Held via apt-mark")
+		isHeldApt := isHeldAptItem(items[i])
 
 		if strings.Contains(items[i].ImageRef, "cloudflared") || items[i].Name == "cloudflare-tunnel" {
 			if info, ok := checkCloudflaredSupportWindow(items[i].CurrentVersion, now, warningDays); ok {
@@ -188,14 +197,7 @@ func (e *EoLChecker) CheckEoL(ctx context.Context, items []models.ManagedItem, n
 			}
 			continue
 		}
-		todayUTC := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
-		daysRem := int(eolTime.Sub(todayUTC).Hours() / 24)
-		status := models.EoLSupported
-		if daysRem < 0 {
-			status = models.EoLExpired
-		} else if daysRem <= warningDays {
-			status = models.EoLExpiringSoon
-		}
+		status, daysRem := evaluateEoLWindow(eolTime, now, warningDays)
 		items[i].EoL = models.EoLInfo{
 			Product:       prod,
 			Cycle:         cycle,

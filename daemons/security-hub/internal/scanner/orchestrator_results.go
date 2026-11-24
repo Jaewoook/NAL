@@ -46,8 +46,7 @@ func ApplySkippedAndSummarize(items []models.ManagedItem, skipped map[string]str
 			items[i].Skipped = false
 			items[i].SkippedVersion = ""
 			items[i].SecurityOverride = false
-			isHeldApt := items[i].TargetType == models.TargetApt && strings.Contains(items[i].EoL.Message, "Held via apt-mark")
-			if !isHeldApt {
+			if !isHeldAptItem(items[i]) {
 				if items[i].LatestVersion != "" && items[i].CurrentVersion != "" && items[i].LatestVersion != items[i].CurrentVersion {
 					items[i].Outdated = true
 				} else if items[i].TargetType == models.TargetDocker && IsFloatingTag(items[i].CurrentVersion) && items[i].CurrentDigest != "" && items[i].RemoteDigest != "" && items[i].CurrentDigest != items[i].RemoteDigest {
