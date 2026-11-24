@@ -1,61 +1,82 @@
 /* ==========================================================================
-   NAL (Network Attached Laboratory) — Unified Custom Theme
-   Dual-Theme System:
+   NAL (Network Attached Laboratory) — Unified Custom Theme for Authentik
+   ==========================================================================
+   Dual-Theme Token Architecture:
      - Light Mode: Clean Warm White / Slate with Radiant Amber Accents
      - Dark Mode:  Deep Obsidian & Amber Glow
-     - Sign-In / Flow Pages: Branded Obsidian Card & Wallpaper Backdrop
-   Target: Authentik User-Facing Flows, Sign-In, and Admin/User Dashboards
+     - Sign-In / Flow Pages: Always Obsidian Card & Wallpaper Backdrop
+
+   Table of Contents:
+     1. Brand Palette & PatternFly / Authentik Variable Overrides
+     2. Semantic Theme Tokens (Light Defaults & Dark Overrides)
+     3. Universal Components (Primary Buttons, Toolbars, Card Grids, Sidebar Version)
+     4. Dashboard Layout & Navigation (Page, Navbar, Sidebar, Titles, Breadcrumbs)
+     5. Dashboard Surfaces & Data (Cards, Enterprise Cards, Tables, Modals, Tabs, Chips)
+     6. Dashboard Forms & Secondary Controls (Inputs, Selects, Buttons, Dropdowns)
+     7. Sign-In & Flow Interface (Wallpaper, Obsidian Card, Flow Inputs, Turnstile, Mobile)
+     8. Status Badges, Labels & Scrollbars
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   1. Shared Brand CSS Variables (Cascades across all Components & Shadow Roots)
+   1. Brand Palette & PatternFly / Authentik Variable Overrides
    -------------------------------------------------------------------------- */
 :root {
+    /* Brand Amber Palette */
+    --nal-amber-100: #fef3c7;
+    --nal-amber-200: #fde68a;
+    --nal-amber-300: #fcd34d;
+    --nal-amber-400: #fbbf24;
+    --nal-amber-500: #f59e0b;
+    --nal-amber-600: #d97706;
+    --nal-amber-700: #b45309;
+    --nal-amber-800: #92400e;
+    --nal-on-amber: #0a0d14;
+    --nal-on-amber-hover: #05070a;
+
     /* Authentik Brand Accent */
-    --ak-accent: #f59e0b !important;
+    --ak-accent: var(--nal-amber-500) !important;
 
-    /* PatternFly Global Primary Brand Colors */
-    --pf-global--primary-color--100: #f59e0b !important;
-    --pf-global--primary-color--200: #d97706 !important;
-    --pf-global--primary-color--300: #b45309 !important;
-    --pf-global--primary-color--dark-100: #f59e0b !important;
-    --pf-global--primary-color--light-100: #fbbf24 !important;
+    /* PatternFly Global Primary & Active Colors */
+    --pf-global--primary-color--100: var(--nal-amber-500) !important;
+    --pf-global--primary-color--200: var(--nal-amber-600) !important;
+    --pf-global--primary-color--300: var(--nal-amber-700) !important;
+    --pf-global--primary-color--dark-100: var(--nal-amber-500) !important;
+    --pf-global--primary-color--light-100: var(--nal-amber-400) !important;
 
-    /* PatternFly Global Active Colors */
-    --pf-global--active-color--100: #f59e0b !important;
-    --pf-global--active-color--200: #d97706 !important;
-    --pf-global--active-color--300: #b45309 !important;
+    --pf-global--active-color--100: var(--nal-amber-500) !important;
+    --pf-global--active-color--200: var(--nal-amber-600) !important;
+    --pf-global--active-color--300: var(--nal-amber-700) !important;
 
-    /* Primary Button CSS Variables (High-contrast dark text on radiant amber) */
-    --pf-c-button--m-primary--BackgroundColor: #f59e0b !important;
-    --pf-c-button--m-primary--hover--BackgroundColor: #fbbf24 !important;
-    --pf-c-button--m-primary--active--BackgroundColor: #d97706 !important;
-    --pf-c-button--m-primary--focus--BackgroundColor: #fbbf24 !important;
-    --pf-c-button--m-primary--Color: #0a0d14 !important;
-    --pf-c-button--m-primary--hover--Color: #05070a !important;
-    --pf-c-button--m-primary--active--Color: #0a0d14 !important;
-    --pf-c-button--m-primary--focus--Color: #05070a !important;
+    /* Primary Button Variables */
+    --pf-c-button--m-primary--BackgroundColor: var(--nal-amber-500) !important;
+    --pf-c-button--m-primary--hover--BackgroundColor: var(--nal-amber-400) !important;
+    --pf-c-button--m-primary--active--BackgroundColor: var(--nal-amber-600) !important;
+    --pf-c-button--m-primary--focus--BackgroundColor: var(--nal-amber-400) !important;
+    --pf-c-button--m-primary--Color: var(--nal-on-amber) !important;
+    --pf-c-button--m-primary--hover--Color: var(--nal-on-amber-hover) !important;
+    --pf-c-button--m-primary--active--Color: var(--nal-on-amber) !important;
+    --pf-c-button--m-primary--focus--Color: var(--nal-on-amber-hover) !important;
 
-    /* Primary Dropdown Toggle & Split Button Variables */
-    --pf-c-dropdown__toggle--m-primary--BackgroundColor: #f59e0b !important;
-    --pf-c-dropdown__toggle--m-primary--hover--BackgroundColor: #fbbf24 !important;
-    --pf-c-dropdown__toggle--m-primary--active--BackgroundColor: #d97706 !important;
-    --pf-c-dropdown--m-expanded__toggle--m-primary--BackgroundColor: #d97706 !important;
-    --pf-c-dropdown__toggle--m-primary--Color: #0a0d14 !important;
-    --pf-c-dropdown__toggle-button--Color: #0a0d14 !important;
-    --pf-c-dropdown__toggle--m-split-button--m-primary--child--BackgroundColor: #f59e0b !important;
-    --pf-c-dropdown__toggle--m-split-button--m-primary--child--hover--BackgroundColor: #fbbf24 !important;
-    --pf-c-dropdown__toggle--m-split-button--m-primary--child--focus--BackgroundColor: #fbbf24 !important;
-    --pf-c-dropdown__toggle--m-split-button--m-primary--child--active--BackgroundColor: #d97706 !important;
-    --pf-c-dropdown__toggle--m-split-button--m-primary--child--m-expanded--BackgroundColor: #d97706 !important;
+    /* Primary Dropdown & Split Button Variables */
+    --pf-c-dropdown__toggle--m-primary--BackgroundColor: var(--nal-amber-500) !important;
+    --pf-c-dropdown__toggle--m-primary--hover--BackgroundColor: var(--nal-amber-400) !important;
+    --pf-c-dropdown__toggle--m-primary--active--BackgroundColor: var(--nal-amber-600) !important;
+    --pf-c-dropdown--m-expanded__toggle--m-primary--BackgroundColor: var(--nal-amber-600) !important;
+    --pf-c-dropdown__toggle--m-primary--Color: var(--nal-on-amber) !important;
+    --pf-c-dropdown__toggle-button--Color: var(--nal-on-amber) !important;
+    --pf-c-dropdown__toggle--m-split-button--m-primary--child--BackgroundColor: var(--nal-amber-500) !important;
+    --pf-c-dropdown__toggle--m-split-button--m-primary--child--hover--BackgroundColor: var(--nal-amber-400) !important;
+    --pf-c-dropdown__toggle--m-split-button--m-primary--child--focus--BackgroundColor: var(--nal-amber-400) !important;
+    --pf-c-dropdown__toggle--m-split-button--m-primary--child--active--BackgroundColor: var(--nal-amber-600) !important;
+    --pf-c-dropdown__toggle--m-split-button--m-primary--child--m-expanded--BackgroundColor: var(--nal-amber-600) !important;
 
-    /* Shared Switch & Tab Accent */
-    --pf-c-switch__input--checked__toggle--BackgroundColor: #f59e0b !important;
-    --pf-c-nav__link--active--after--BorderColor: #f59e0b !important;
-    --pf-c-nav__subnav__link--hover--after--BorderColor: #f59e0b !important;
-    --pf-c-tabs__link--active--after--BorderColor: #f59e0b !important;
+    /* Switch, Nav & Tab Accents */
+    --pf-c-switch__input--checked__toggle--BackgroundColor: var(--nal-amber-500) !important;
+    --pf-c-nav__link--active--after--BorderColor: var(--nal-amber-500) !important;
+    --pf-c-nav__subnav__link--hover--after--BorderColor: var(--nal-amber-500) !important;
+    --pf-c-tabs__link--active--after--BorderColor: var(--nal-amber-500) !important;
 
-    /* Flow Sign-in Card Reset */
+    /* Flow Sign-In Card Defaults */
     --pf-c-background-image--Filter: none !important;
     --pf-c-background-image--BackgroundColor: transparent !important;
     --ak-c-login__main--BackgroundColor: #0d1017 !important;
@@ -63,18 +84,90 @@
 }
 
 /* --------------------------------------------------------------------------
-   2. Light Theme CSS Variables
+   2. Semantic Theme Tokens (Light Defaults & Dark Overrides)
    -------------------------------------------------------------------------- */
 :root,
 html,
-html[data-theme="light"] {
-    --pf-global--link--Color: #d97706 !important;
-    --pf-global--link--Color--hover: #b45309 !important;
-    --pf-global--link--Color--light: #d97706 !important;
-    --pf-global--link--Color--light--hover: #b45309 !important;
-    --pf-global--link--Color--dark: #b45309 !important;
-    --pf-global--link--Color--dark--hover: #92400e !important;
-    --pf-v4-global--palette--blue-300: #d97706 !important;
+html[data-theme="light"],
+:host([theme="light"]) {
+    /* Surfaces */
+    --nal-bg-page: #f8fafc;
+    --nal-bg-chrome: #ffffff;
+    --nal-bg-card: #ffffff;
+    --nal-bg-control: #ffffff;
+    --nal-bg-control-hover: #f8fafc;
+    --nal-bg-control-focus: #ffffff;
+    --nal-bg-subtle: #f1f5f9;
+    --nal-bg-table: #ffffff;
+    --nal-bg-table-head: #f8fafc;
+    --nal-bg-table-row: #ffffff;
+    --nal-bg-modal-footer: #f8fafc;
+    --nal-bg-backdrop: rgba(15, 23, 42, 0.45);
+
+    /* Borders */
+    --nal-border-chrome: #e2e8f0;
+    --nal-border-card: #e2e8f0;
+    --nal-border-card-top: rgba(245, 158, 11, 0.45);
+    --nal-border-card-hover: rgba(245, 158, 11, 0.55);
+    --nal-border-control: #cbd5e1;
+    --nal-border-table-head: #e2e8f0;
+    --nal-border-table-row: #f1f5f9;
+
+    /* Text */
+    --nal-text-heading: #0f172a;
+    --nal-text-body: #1e293b;
+    --nal-text-secondary: #334155;
+    --nal-text-muted: #475569;
+    --nal-text-subtle: #64748b;
+    --nal-text-placeholder: #94a3b8;
+
+    /* Interactive Accents */
+    --nal-accent: var(--nal-amber-600);
+    --nal-accent-hover: var(--nal-amber-700);
+    --nal-accent-soft-hover: rgba(245, 158, 11, 0.08);
+    --nal-accent-soft-active: rgba(245, 158, 11, 0.12);
+    --nal-accent-border-soft: rgba(245, 158, 11, 0.25);
+    --nal-table-row-hover: rgba(245, 158, 11, 0.05);
+    --nal-table-row-selected: rgba(245, 158, 11, 0.1);
+    --nal-menu-item-hover: rgba(245, 158, 11, 0.1);
+    --nal-focus-ring: 0 0 0 3px rgba(245, 158, 11, 0.2);
+
+    /* Shadows */
+    --nal-shadow-card: 0 2px 10px -2px rgba(0, 0, 0, 0.06);
+    --nal-shadow-card-hover: 0 4px 16px -2px rgba(245, 158, 11, 0.14);
+    --nal-shadow-card-raised: 0 4px 14px -2px rgba(0, 0, 0, 0.08);
+    --nal-shadow-menu: 0 10px 25px -5px rgba(0, 0, 0, 0.12);
+    --nal-shadow-modal: 0 20px 40px -10px rgba(0, 0, 0, 0.15);
+
+    /* Enterprise Card */
+    --nal-enterprise-bg: linear-gradient(180deg, #fffdfa 0%, #ffffff 100%);
+    --nal-enterprise-border: #fde68a;
+    --nal-enterprise-border-hover: var(--nal-amber-500);
+    --nal-enterprise-border-top-hover: var(--nal-amber-500);
+    --nal-enterprise-glow: radial-gradient(ellipse 80% 100% at 50% 0%, rgba(245, 158, 11, 0.08) 0%, transparent 100%);
+    --nal-enterprise-shadow: 0 4px 16px -2px rgba(245, 158, 11, 0.14), 0 1px 3px rgba(0, 0, 0, 0.05);
+    --nal-enterprise-shadow-hover: 0 8px 24px -2px rgba(245, 158, 11, 0.22), 0 2px 6px rgba(0, 0, 0, 0.06);
+    --nal-enterprise-body: #475569;
+    --nal-enterprise-footer-border: #f1f5f9;
+    --nal-enterprise-badge-bg: var(--nal-amber-100);
+    --nal-enterprise-badge-text: var(--nal-amber-700);
+    --nal-enterprise-badge-border: var(--nal-amber-300);
+
+    /* Status Labels & Scrollbars */
+    --nal-label-amber: var(--nal-amber-600);
+    --nal-label-green: #059669;
+    --nal-label-red: #dc2626;
+    --nal-scrollbar-track: #f1f5f9;
+    --nal-scrollbar-thumb: #cbd5e1;
+
+    /* PatternFly Light Variables */
+    --pf-global--link--Color: var(--nal-amber-600) !important;
+    --pf-global--link--Color--hover: var(--nal-amber-700) !important;
+    --pf-global--link--Color--light: var(--nal-amber-600) !important;
+    --pf-global--link--Color--light--hover: var(--nal-amber-700) !important;
+    --pf-global--link--Color--dark: var(--nal-amber-700) !important;
+    --pf-global--link--Color--dark--hover: var(--nal-amber-800) !important;
+    --pf-v4-global--palette--blue-300: var(--nal-amber-600) !important;
 
     --pf-global--Color--100: #0f172a !important;
     --pf-global--Color--200: #475569 !important;
@@ -82,9 +175,9 @@ html[data-theme="light"] {
     --pf-global--Color--light-100: #ffffff !important;
     --pf-c-title--Color: #0f172a !important;
 
-    --pf-c-nav__link--m-current--Color: #d97706 !important;
-    --pf-c-nav__subnav__link--m-current--Color: #d97706 !important;
-    --pf-c-tabs__link--m-current--Color: #d97706 !important;
+    --pf-c-nav__link--m-current--Color: var(--nal-amber-600) !important;
+    --pf-c-nav__subnav__link--m-current--Color: var(--nal-amber-600) !important;
+    --pf-c-tabs__link--m-current--Color: var(--nal-amber-600) !important;
 
     --pf-c-card--BackgroundColor: #ffffff !important;
     --pf-c-card--BorderColor: #e2e8f0 !important;
@@ -95,19 +188,88 @@ html[data-theme="light"] {
     --pf-c-card--m-non-selectable-raised--BoxShadow: 0 4px 16px -2px rgba(0, 0, 0, 0.08) !important;
 }
 
-/* --------------------------------------------------------------------------
-   3. Dark Theme CSS Variables
-   -------------------------------------------------------------------------- */
 html.pf-theme-dark,
 html[data-theme="dark"],
-.pf-theme-dark {
-    --pf-global--link--Color: #fbbf24 !important;
-    --pf-global--link--Color--hover: #fde68a !important;
-    --pf-global--link--Color--light: #fbbf24 !important;
-    --pf-global--link--Color--light--hover: #fde68a !important;
-    --pf-global--link--Color--dark: #fbbf24 !important;
-    --pf-global--link--Color--dark--hover: #fde68a !important;
-    --pf-v4-global--palette--blue-300: #fbbf24 !important;
+.pf-theme-dark,
+:host([theme="dark"]) {
+    /* Surfaces */
+    --nal-bg-page: #0b0e14;
+    --nal-bg-chrome: #080a0f;
+    --nal-bg-card: #0e121a;
+    --nal-bg-control: #141822;
+    --nal-bg-control-hover: #1c2230;
+    --nal-bg-control-focus: #181d2a;
+    --nal-bg-subtle: #141822;
+    --nal-bg-table: transparent;
+    --nal-bg-table-head: #0a0d14;
+    --nal-bg-table-row: transparent;
+    --nal-bg-modal-footer: #0a0d14;
+    --nal-bg-backdrop: rgba(0, 0, 0, 0.75);
+
+    /* Borders */
+    --nal-border-chrome: #1a202c;
+    --nal-border-card: #1c2333;
+    --nal-border-card-top: rgba(245, 158, 11, 0.35);
+    --nal-border-card-hover: rgba(245, 158, 11, 0.45);
+    --nal-border-control: #232b3c;
+    --nal-border-table-head: #232b3c;
+    --nal-border-table-row: #1a202c;
+
+    /* Text */
+    --nal-text-heading: #f8fafc;
+    --nal-text-body: #e2e8f0;
+    --nal-text-secondary: #cbd5e1;
+    --nal-text-muted: #94a3b8;
+    --nal-text-subtle: #64748b;
+    --nal-text-placeholder: #475569;
+
+    /* Interactive Accents */
+    --nal-accent: var(--nal-amber-400);
+    --nal-accent-hover: var(--nal-amber-200);
+    --nal-accent-soft-hover: rgba(245, 158, 11, 0.08);
+    --nal-accent-soft-active: rgba(245, 158, 11, 0.12);
+    --nal-accent-border-soft: rgba(245, 158, 11, 0.2);
+    --nal-table-row-hover: rgba(245, 158, 11, 0.04);
+    --nal-table-row-selected: rgba(245, 158, 11, 0.08);
+    --nal-menu-item-hover: rgba(245, 158, 11, 0.15);
+    --nal-focus-ring: 0 0 0 3px rgba(245, 158, 11, 0.22);
+
+    /* Shadows */
+    --nal-shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+    --nal-shadow-card-hover: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+    --nal-shadow-card-raised: 0 6px 24px -4px rgba(0, 0, 0, 0.7), 0 0 1px 1px rgba(255, 255, 255, 0.04);
+    --nal-shadow-menu: 0 16px 36px -4px rgba(0, 0, 0, 0.85);
+    --nal-shadow-modal: 0 25px 50px -12px rgba(0, 0, 0, 0.85);
+
+    /* Enterprise Card */
+    --nal-enterprise-bg: linear-gradient(180deg, #121622 0%, #0e121a 100%);
+    --nal-enterprise-border: #232b3c;
+    --nal-enterprise-border-hover: rgba(245, 158, 11, 0.5);
+    --nal-enterprise-border-top-hover: var(--nal-amber-400);
+    --nal-enterprise-glow: radial-gradient(ellipse 80% 100% at 50% 0%, rgba(245, 158, 11, 0.12) 0%, transparent 100%);
+    --nal-enterprise-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.75), 0 0 20px -4px rgba(245, 158, 11, 0.15);
+    --nal-enterprise-shadow-hover: 0 8px 32px -4px rgba(0, 0, 0, 0.85), 0 0 25px -2px rgba(245, 158, 11, 0.25);
+    --nal-enterprise-body: #94a3b8;
+    --nal-enterprise-footer-border: #1a202c;
+    --nal-enterprise-badge-bg: rgba(245, 158, 11, 0.15);
+    --nal-enterprise-badge-text: var(--nal-amber-400);
+    --nal-enterprise-badge-border: rgba(245, 158, 11, 0.35);
+
+    /* Status Labels & Scrollbars */
+    --nal-label-amber: var(--nal-amber-400);
+    --nal-label-green: #34d399;
+    --nal-label-red: #f87171;
+    --nal-scrollbar-track: #080a0f;
+    --nal-scrollbar-thumb: #1c2333;
+
+    /* PatternFly Dark Variables */
+    --pf-global--link--Color: var(--nal-amber-400) !important;
+    --pf-global--link--Color--hover: var(--nal-amber-200) !important;
+    --pf-global--link--Color--light: var(--nal-amber-400) !important;
+    --pf-global--link--Color--light--hover: var(--nal-amber-200) !important;
+    --pf-global--link--Color--dark: var(--nal-amber-400) !important;
+    --pf-global--link--Color--dark--hover: var(--nal-amber-200) !important;
+    --pf-v4-global--palette--blue-300: var(--nal-amber-400) !important;
 
     --pf-global--Color--100: #e2e8f0 !important;
     --pf-global--Color--200: #94a3b8 !important;
@@ -115,9 +277,9 @@ html[data-theme="dark"],
     --pf-global--Color--light-100: #f8fafc !important;
     --pf-c-title--Color: #f8fafc !important;
 
-    --pf-c-nav__link--m-current--Color: #fbbf24 !important;
-    --pf-c-nav__subnav__link--m-current--Color: #fbbf24 !important;
-    --pf-c-tabs__link--m-current--Color: #fbbf24 !important;
+    --pf-c-nav__link--m-current--Color: var(--nal-amber-400) !important;
+    --pf-c-nav__subnav__link--m-current--Color: var(--nal-amber-400) !important;
+    --pf-c-tabs__link--m-current--Color: var(--nal-amber-400) !important;
 
     --pf-c-card--BackgroundColor: #0e121a !important;
     --pf-c-card--BorderColor: #1c2333 !important;
@@ -129,17 +291,17 @@ html[data-theme="dark"],
 }
 
 /* --------------------------------------------------------------------------
-   4. Primary Action Buttons & Primary Split Buttons (Universal in Both Modes)
+   3. Universal Components (Buttons, Toolbars, Card Grids, Sidebar Version)
    -------------------------------------------------------------------------- */
+
 /* Primary Buttons (Radiant Warm Amber) */
 .pf-c-button.pf-m-primary {
-    background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%) !important;
-    background-color: #f59e0b !important;
-    color: #0a0d14 !important;
+    background: linear-gradient(180deg, var(--nal-amber-400) 0%, var(--nal-amber-500) 100%) !important;
+    color: var(--nal-on-amber) !important;
     font-weight: 600 !important;
     font-size: 0.925rem !important;
     letter-spacing: 0.01em !important;
-    border: 1px solid #d97706 !important;
+    border: 1px solid var(--nal-amber-600) !important;
     border-radius: 8px !important;
     padding: 0.55rem 1.15rem !important;
     box-shadow: 0 2px 10px rgba(245, 158, 11, 0.25) !important;
@@ -148,83 +310,74 @@ html[data-theme="dark"],
 }
 
 .pf-c-button.pf-m-primary:hover {
-    background: linear-gradient(180deg, #fcd34d 0%, #fbbf24 100%) !important;
-    color: #05070a !important;
-    border-color: #f59e0b !important;
+    background: linear-gradient(180deg, var(--nal-amber-300) 0%, var(--nal-amber-400) 100%) !important;
+    color: var(--nal-on-amber-hover) !important;
+    border-color: var(--nal-amber-500) !important;
     box-shadow: 0 4px 18px rgba(245, 158, 11, 0.45) !important;
     transform: translateY(-1px) !important;
 }
 
 .pf-c-button.pf-m-primary:active {
-    background: #d97706 !important;
+    background: var(--nal-amber-600) !important;
     transform: translateY(0) !important;
     box-shadow: 0 1px 6px rgba(245, 158, 11, 0.3) !important;
 }
 
-/* Primary Button is full-width ONLY inside Sign-In flow card */
+/* Primary Button is full-width only inside the Sign-In flow card */
 .pf-c-login__main .pf-c-button.pf-m-primary {
     width: 100% !important;
     margin-top: 0.5rem !important;
     padding: 0.7rem 1.25rem !important;
 }
 
-/* Primary Split Buttons and Action Dropdowns */
-.pf-c-dropdown__toggle.pf-m-primary,
-.pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary,
-.pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary > *,
-.pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary > .pf-c-dropdown__toggle-button,
-.pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-button,
-.pf-c-dropdown__toggle-button.pf-m-primary {
-    background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%) !important;
-    background-color: #f59e0b !important;
-    color: #0a0d14 !important;
-    border-color: #d97706 !important;
+/* Primary Split Buttons & Action Dropdowns */
+:is(
+    .pf-c-dropdown__toggle.pf-m-primary,
+    .pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary > *,
+    .pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-button,
+    .pf-c-dropdown__toggle-button.pf-m-primary
+) {
+    background: linear-gradient(180deg, var(--nal-amber-400) 0%, var(--nal-amber-500) 100%) !important;
+    color: var(--nal-on-amber) !important;
+    border-color: var(--nal-amber-600) !important;
     font-weight: 600 !important;
     box-shadow: 0 2px 8px rgba(245, 158, 11, 0.22) !important;
 }
 
-.pf-c-dropdown__toggle.pf-m-primary:hover,
-.pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary:hover,
-.pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary > *:hover,
-.pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary > .pf-c-dropdown__toggle-button:hover,
-.pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-button:hover,
-.pf-c-dropdown__toggle-button.pf-m-primary:hover {
-    background: linear-gradient(180deg, #fcd34d 0%, #fbbf24 100%) !important;
-    background-color: #fbbf24 !important;
-    color: #05070a !important;
-    border-color: #f59e0b !important;
+:is(
+    .pf-c-dropdown__toggle.pf-m-primary,
+    .pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary > *,
+    .pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-button,
+    .pf-c-dropdown__toggle-button.pf-m-primary
+):hover {
+    background: linear-gradient(180deg, var(--nal-amber-300) 0%, var(--nal-amber-400) 100%) !important;
+    color: var(--nal-on-amber-hover) !important;
+    border-color: var(--nal-amber-500) !important;
     box-shadow: 0 4px 14px rgba(245, 158, 11, 0.35) !important;
 }
 
-.pf-c-dropdown__toggle.pf-m-primary:active,
-.pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary:active,
-.pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary > *:active,
-.pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary > .pf-c-dropdown__toggle-button:active,
-.pf-m-expanded > .pf-c-dropdown__toggle.pf-m-primary,
-.pf-m-expanded > .pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary > * {
-    background: #d97706 !important;
-    background-color: #d97706 !important;
-    color: #0a0d14 !important;
-    border-color: #b45309 !important;
+:is(
+    .pf-c-dropdown__toggle.pf-m-primary:active,
+    .pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary > *:active,
+    .pf-m-expanded > .pf-c-dropdown__toggle.pf-m-primary,
+    .pf-m-expanded > .pf-c-dropdown__toggle.pf-m-split-button.pf-m-primary > *
+) {
+    background: var(--nal-amber-600) !important;
+    color: var(--nal-on-amber) !important;
+    border-color: var(--nal-amber-700) !important;
 }
 
-/* Dark Icons & Carets inside Primary Dropdowns for High Contrast */
-.pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-button i,
-.pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-button svg,
-.pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-button .fas,
-.pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-button .fa,
-.pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-icon,
-.pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-icon i,
-.pf-c-dropdown__toggle.pf-m-primary .pf-c-dropdown__toggle-icon svg {
-    color: #0a0d14 !important;
-    fill: #0a0d14 !important;
+/* High-contrast dark icons & carets inside primary dropdowns */
+.pf-c-dropdown__toggle.pf-m-primary :is(i, svg, .fas, .fa, .pf-c-dropdown__toggle-icon) {
+    color: var(--nal-on-amber) !important;
+    fill: var(--nal-on-amber) !important;
 }
 
 .pf-c-dropdown__toggle.pf-m-primary.pf-m-split-button.pf-m-action > *:not(:first-child) {
     border-left: 1px solid rgba(10, 13, 20, 0.25) !important;
 }
 
-/* Plain Dropdown Toggles (Navbar profile, table kebab) */
+/* Plain Dropdown Toggles & Header Normalization */
 .pf-c-dropdown__toggle.pf-m-plain {
     background: transparent !important;
     border: none !important;
@@ -238,68 +391,60 @@ html[data-theme="dark"],
     height: auto !important;
 }
 
-/* Toolbar Form Group Margin Reset */
+/* Toolbar Controls */
 .pf-c-toolbar .pf-c-form__group {
     margin-bottom: 0 !important;
 }
 
-.pf-c-toolbar .pf-c-form-control,
-.pf-c-toolbar .pf-c-select__toggle,
-.pf-c-toolbar .pf-c-dropdown__toggle {
+.pf-c-toolbar :is(.pf-c-form-control, .pf-c-select__toggle, .pf-c-dropdown__toggle) {
     min-height: 2.25rem !important;
     padding-top: 0.35rem !important;
     padding-bottom: 0.35rem !important;
 }
 
-/* Card Grid Layouts (Equal Height & Pinned Footers) */
-.pf-l-grid > .pf-l-grid__item.pf-c-card,
-.pf-l-grid__item.pf-c-card,
-.pf-l-grid__item.pf-m-3-col.pf-c-card {
+/* Equal-Height Card Grids with Pinned Footers */
+.pf-l-grid__item.pf-c-card {
     height: 100% !important;
     display: flex !important;
     flex-direction: column !important;
     box-sizing: border-box !important;
 }
 
-.pf-l-grid > .pf-l-grid__item.pf-c-card .pf-c-card__body,
 .pf-l-grid__item.pf-c-card .pf-c-card__body {
     flex: 1 1 auto !important;
 }
 
-.pf-l-grid > .pf-l-grid__item.pf-c-card .pf-c-card__footer,
 .pf-l-grid__item.pf-c-card .pf-c-card__footer {
     flex: 0 0 auto !important;
     margin-top: auto !important;
     padding-top: 0.85rem !important;
 }
 
-/* Sidebar Version ("authentik information") Structural Setup */
-ak-sidebar-version,
-footer[aria-label="authentik information"],
-[aria-label="authentik information"],
-[aria-label*="authentik"] footer,
-.pf-c-page__sidebar footer {
+/* Sidebar Version ("authentik information") */
+:is(
+    ak-sidebar-version,
+    footer[aria-label="authentik information"],
+    [aria-label="authentik information"],
+    [aria-label*="authentik"] footer,
+    .pf-c-page__sidebar footer
+) {
     display: block !important;
     visibility: visible !important;
     height: auto !important;
     margin: 0 !important;
     padding: 0.65rem 0.85rem !important;
     box-sizing: border-box !important;
+    border-top: 1px solid var(--nal-border-chrome) !important;
+    background-color: var(--nal-bg-chrome) !important;
 }
 
-ak-sidebar-version footer,
-footer[aria-label="authentik information"] {
-    display: block !important;
+:is(ak-sidebar-version footer, footer[aria-label="authentik information"]) {
     width: 100% !important;
-    margin: 0 !important;
     padding: 0 !important;
 }
 
-ak-sidebar-version button,
-ak-sidebar-version .pf-c-button,
-footer[aria-label="authentik information"] button,
-footer[aria-label="authentik information"] .pf-c-button,
-[aria-label="authentik information"] button {
+:is(ak-sidebar-version, footer[aria-label="authentik information"], [aria-label="authentik information"])
+    :is(button, .pf-c-button) {
     display: flex !important;
     flex-direction: column !important;
     align-items: flex-start !important;
@@ -316,12 +461,13 @@ footer[aria-label="authentik information"] .pf-c-button,
     transition: background-color 0.15s ease, border-color 0.15s ease !important;
 }
 
-ak-sidebar-version .pf-c-title,
-ak-sidebar-version p,
-footer[aria-label="authentik information"] .pf-c-title,
-footer[aria-label="authentik information"] p,
-[aria-label="authentik information"] .pf-c-title,
-[aria-label="authentik information"] p {
+:is(ak-sidebar-version, footer[aria-label="authentik information"]) button:hover {
+    background-color: var(--nal-accent-soft-hover) !important;
+    border-color: var(--nal-accent-border-soft) !important;
+}
+
+:is(ak-sidebar-version, footer[aria-label="authentik information"], [aria-label="authentik information"])
+    :is(.pf-c-title, p) {
     margin: 0 !important;
     padding: 0 !important;
     line-height: 1.35 !important;
@@ -329,78 +475,70 @@ footer[aria-label="authentik information"] p,
     letter-spacing: normal !important;
 }
 
-ak-sidebar-version [part~="product-name"],
-ak-sidebar-version #sidebar-version-product:first-of-type,
-footer[aria-label="authentik information"] [part~="product-name"],
-footer[aria-label="authentik information"] p:first-child,
-[aria-label="authentik information"] p:first-child {
+:is(ak-sidebar-version, footer[aria-label="authentik information"], [aria-label="authentik information"])
+    :is([part~="product-name"], #sidebar-version-product:first-of-type, p:first-child) {
     font-size: 0.8rem !important;
     font-weight: 600 !important;
     letter-spacing: 0.025em !important;
     text-transform: capitalize !important;
+    color: var(--nal-text-secondary) !important;
 }
 
-ak-sidebar-version [part~="product-version"],
-ak-sidebar-version #sidebar-version-product:last-of-type,
-footer[aria-label="authentik information"] [part~="product-version"],
-footer[aria-label="authentik information"] p:last-child,
-[aria-label="authentik information"] p:last-child {
+:is(ak-sidebar-version, footer[aria-label="authentik information"], [aria-label="authentik information"])
+    :is([part~="product-version"], #sidebar-version-product:last-of-type, p:last-child) {
     font-size: 0.7rem !important;
     font-weight: 500 !important;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+    color: var(--nal-text-subtle) !important;
+}
+
+:is(ak-sidebar-version, footer[aria-label="authentik information"]) button:hover
+    :is([part~="product-name"], p:first-child) {
+    color: var(--nal-accent) !important;
+}
+
+:is(ak-sidebar-version, footer[aria-label="authentik information"]) button:hover
+    :is([part~="product-version"], p:last-child) {
+    color: var(--nal-accent-hover) !important;
 }
 
 /* --------------------------------------------------------------------------
-   5. LIGHT MODE DASHBOARD STYLING
-   Applies when document does NOT have .pf-theme-dark (or has data-theme="light")
+   4. Dashboard Layout & Navigation
    -------------------------------------------------------------------------- */
-/* Page Main Background */
-html:not(.pf-theme-dark) .pf-c-page,
-html[data-theme="light"] .pf-c-page,
-html:not(.pf-theme-dark) .pf-c-page__main,
-html[data-theme="light"] .pf-c-page__main,
-html:not(.pf-theme-dark) .pf-c-page__main-section,
-html[data-theme="light"] .pf-c-page__main-section {
-    background-color: #f8fafc !important;
-    color: #0f172a !important;
+
+/* Page Background */
+:is(.pf-c-page, .pf-c-page__main, .pf-c-page__main-section) {
+    background-color: var(--nal-bg-page) !important;
+    color: var(--nal-text-body) !important;
 }
 
 /* Header Navbar */
-html:not(.pf-theme-dark) .pf-c-page__header,
-html[data-theme="light"] .pf-c-page__header,
-html:not(.pf-theme-dark) ak-page-navbar,
-html[data-theme="light"] ak-page-navbar {
-    background-color: #ffffff !important;
-    border-bottom: 1px solid #e2e8f0 !important;
+:is(.pf-c-page__header, ak-page-navbar) {
+    background-color: var(--nal-bg-chrome) !important;
+    border-bottom: 1px solid var(--nal-border-chrome) !important;
 }
 
-html:not(.pf-theme-dark) .command-palette-trigger,
-html[data-theme="light"] .command-palette-trigger {
-    background-color: #f1f5f9 !important;
-    border: 1px solid #cbd5e1 !important;
-    color: #475569 !important;
+.command-palette-trigger {
+    background-color: var(--nal-bg-subtle) !important;
+    border: 1px solid var(--nal-border-control) !important;
+    color: var(--nal-text-muted) !important;
     border-radius: 6px !important;
     padding: 0.35rem 0.75rem !important;
 }
 
-html:not(.pf-theme-dark) .command-palette-trigger:hover,
-html[data-theme="light"] .command-palette-trigger:hover {
-    border-color: #f59e0b !important;
-    color: #d97706 !important;
+.command-palette-trigger:hover {
+    border-color: var(--nal-amber-500) !important;
+    color: var(--nal-accent) !important;
 }
 
 /* Sidebar Navigation */
-html:not(.pf-theme-dark) .pf-c-page__sidebar,
-html[data-theme="light"] .pf-c-page__sidebar,
-html:not(.pf-theme-dark) ak-sidebar,
-html[data-theme="light"] ak-sidebar {
-    background-color: #ffffff !important;
-    border-right: 1px solid #e2e8f0 !important;
+:is(.pf-c-page__sidebar, ak-sidebar) {
+    background-color: var(--nal-bg-chrome) !important;
+    border-right: 1px solid var(--nal-border-chrome) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-nav__section-title,
-html[data-theme="light"] .pf-c-nav__section-title {
-    color: #64748b !important;
+.pf-c-nav__section-title {
+    color: var(--nal-text-subtle) !important;
     font-size: 0.75rem !important;
     font-weight: 600 !important;
     text-transform: uppercase !important;
@@ -408,231 +546,141 @@ html[data-theme="light"] .pf-c-nav__section-title {
     padding: 0.75rem 1rem 0.35rem 1rem !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-nav__link,
-html[data-theme="light"] .pf-c-nav__link {
-    color: #475569 !important;
+.pf-c-nav__link {
+    color: var(--nal-text-muted) !important;
     transition: all 0.15s ease !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-nav__link:hover,
-html[data-theme="light"] .pf-c-nav__link:hover {
-    color: #d97706 !important;
-    background-color: rgba(245, 158, 11, 0.08) !important;
+.pf-c-nav__link:hover {
+    color: var(--nal-accent) !important;
+    background-color: var(--nal-accent-soft-hover) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-nav__link.pf-m-current,
-html[data-theme="light"] .pf-c-nav__link.pf-m-current,
-html:not(.pf-theme-dark) .pf-c-nav__item.pf-m-current > .pf-c-nav__link,
-html[data-theme="light"] .pf-c-nav__item.pf-m-current > .pf-c-nav__link {
-    color: #d97706 !important;
-    background-color: rgba(245, 158, 11, 0.12) !important;
+:is(.pf-c-nav__link.pf-m-current, .pf-c-nav__item.pf-m-current > .pf-c-nav__link) {
+    color: var(--nal-accent) !important;
+    background-color: var(--nal-accent-soft-active) !important;
     font-weight: 600 !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-nav__link.pf-m-current::after,
-html[data-theme="light"] .pf-c-nav__link.pf-m-current::after,
-html:not(.pf-theme-dark) .pf-c-nav__item.pf-m-current > .pf-c-nav__link::after,
-html[data-theme="light"] .pf-c-nav__item.pf-m-current > .pf-c-nav__link::after {
-    border-left: 3px solid #f59e0b !important;
+:is(.pf-c-nav__link.pf-m-current, .pf-c-nav__item.pf-m-current > .pf-c-nav__link)::after {
+    border-left: 3px solid var(--nal-amber-500) !important;
 }
 
-/* Sidebar Version ("authentik information") in Light Mode */
-html:not(.pf-theme-dark) ak-sidebar-version,
-html[data-theme="light"] ak-sidebar-version,
-html:not(.pf-theme-dark) footer[aria-label="authentik information"],
-html[data-theme="light"] footer[aria-label="authentik information"],
-html:not(.pf-theme-dark) .pf-c-page__sidebar footer,
-html[data-theme="light"] .pf-c-page__sidebar footer {
-    border-top: 1px solid #e2e8f0 !important;
-    background-color: #ffffff !important;
-}
-
-html:not(.pf-theme-dark) ak-sidebar-version button:hover,
-html[data-theme="light"] ak-sidebar-version button:hover,
-html:not(.pf-theme-dark) footer[aria-label="authentik information"] button:hover,
-html[data-theme="light"] footer[aria-label="authentik information"] button:hover {
-    background-color: rgba(245, 158, 11, 0.08) !important;
-    border-color: rgba(245, 158, 11, 0.25) !important;
-}
-
-html:not(.pf-theme-dark) ak-sidebar-version [part~="product-name"],
-html[data-theme="light"] ak-sidebar-version [part~="product-name"],
-html:not(.pf-theme-dark) footer[aria-label="authentik information"] p:first-child,
-html[data-theme="light"] footer[aria-label="authentik information"] p:first-child {
-    color: #334155 !important;
-}
-
-html:not(.pf-theme-dark) ak-sidebar-version [part~="product-version"],
-html[data-theme="light"] ak-sidebar-version [part~="product-version"],
-html:not(.pf-theme-dark) footer[aria-label="authentik information"] p:last-child,
-html[data-theme="light"] footer[aria-label="authentik information"] p:last-child {
-    color: #64748b !important;
-}
-
-html:not(.pf-theme-dark) ak-sidebar-version button:hover [part~="product-name"],
-html[data-theme="light"] ak-sidebar-version button:hover [part~="product-name"],
-html:not(.pf-theme-dark) footer[aria-label="authentik information"] button:hover p:first-child,
-html[data-theme="light"] footer[aria-label="authentik information"] button:hover p:first-child {
-    color: #d97706 !important;
-}
-
-html:not(.pf-theme-dark) ak-sidebar-version button:hover [part~="product-version"],
-html[data-theme="light"] ak-sidebar-version button:hover [part~="product-version"],
-html:not(.pf-theme-dark) footer[aria-label="authentik information"] button:hover p:last-child,
-html[data-theme="light"] footer[aria-label="authentik information"] button:hover p:last-child {
-    color: #b45309 !important;
-}
-
-/* Page Titles & Breadcrumbs in Light Mode */
-html:not(.pf-theme-dark) .pf-c-page__main .pf-c-title,
-html[data-theme="light"] .pf-c-page__main .pf-c-title,
-html:not(.pf-theme-dark) .pf-c-page__main-section .pf-c-title,
-html[data-theme="light"] .pf-c-page__main-section .pf-c-title,
-html:not(.pf-theme-dark) .pf-c-modal-box .pf-c-title,
-html[data-theme="light"] .pf-c-modal-box .pf-c-title {
-    color: #0f172a !important;
+/* Page Titles & Breadcrumbs */
+:is(.pf-c-page__main, .pf-c-page__main-section, .pf-c-modal-box) .pf-c-title {
+    color: var(--nal-text-heading) !important;
     text-align: left !important;
     letter-spacing: -0.015em !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-breadcrumb__item,
-html[data-theme="light"] .pf-c-breadcrumb__item {
-    color: #64748b !important;
+.pf-c-breadcrumb__item {
+    color: var(--nal-text-subtle) !important;
     font-size: 0.85rem !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-breadcrumb__link,
-html[data-theme="light"] .pf-c-breadcrumb__link {
-    color: #475569 !important;
+.pf-c-breadcrumb__link {
+    color: var(--nal-text-muted) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-breadcrumb__link:hover,
-html[data-theme="light"] .pf-c-breadcrumb__link:hover {
-    color: #d97706 !important;
+.pf-c-breadcrumb__link:hover {
+    color: var(--nal-accent) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-breadcrumb__item.pf-m-current,
-html[data-theme="light"] .pf-c-breadcrumb__item.pf-m-current {
-    color: #0f172a !important;
+.pf-c-breadcrumb__item.pf-m-current {
+    color: var(--nal-text-secondary) !important;
 }
 
-/* Standard Cards in Light Mode */
-html:not(.pf-theme-dark) .pf-c-card:not(.pf-c-login__main),
-html[data-theme="light"] .pf-c-card:not(.pf-c-login__main) {
-    background-color: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-top: 1px solid rgba(245, 158, 11, 0.45) !important;
+/* --------------------------------------------------------------------------
+   5. Dashboard Surfaces & Data (Cards, Enterprise, Tables, Modals, Tabs, Chips)
+   -------------------------------------------------------------------------- */
+
+/* Standard Cards */
+.pf-c-card:not(.pf-c-login__main) {
+    background-color: var(--nal-bg-card) !important;
+    border: 1px solid var(--nal-border-card) !important;
+    border-top: 1px solid var(--nal-border-card-top) !important;
     border-radius: 12px !important;
-    box-shadow: 0 2px 10px -2px rgba(0, 0, 0, 0.06) !important;
-    color: #1e293b !important;
+    box-shadow: var(--nal-shadow-card) !important;
+    color: var(--nal-text-body) !important;
     box-sizing: border-box !important;
     transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-card:not(.pf-c-login__main):hover,
-html[data-theme="light"] .pf-c-card:not(.pf-c-login__main):hover {
-    border-color: rgba(245, 158, 11, 0.55) !important;
-    box-shadow: 0 4px 16px -2px rgba(245, 158, 11, 0.14) !important;
+.pf-c-card:not(.pf-c-login__main):hover {
+    border-color: var(--nal-border-card-hover) !important;
+    box-shadow: var(--nal-shadow-card-hover) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-card:not(.pf-c-login__main) .pf-c-card__title,
-html[data-theme="light"] .pf-c-card:not(.pf-c-login__main) .pf-c-card__title,
-html:not(.pf-theme-dark) .pf-c-card:not(.pf-c-login__main) .pf-c-card__header,
-html[data-theme="light"] .pf-c-card:not(.pf-c-login__main) .pf-c-card__header {
-    color: #0f172a !important;
+.pf-c-card:not(.pf-c-login__main) :is(.pf-c-card__title, .pf-c-card__header) {
+    color: var(--nal-text-heading) !important;
     font-weight: 600 !important;
     text-align: left !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-card:not(.pf-c-login__main) .pf-c-card__body,
-html[data-theme="light"] .pf-c-card:not(.pf-c-login__main) .pf-c-card__body {
-    color: #475569 !important;
+.pf-c-card:not(.pf-c-login__main) .pf-c-card__body {
+    color: var(--nal-text-muted) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-card.pf-m-non-selectable-raised,
-html[data-theme="light"] .pf-c-card.pf-m-non-selectable-raised {
-    background-color: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-top: 1px solid rgba(245, 158, 11, 0.45) !important;
-    box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.08) !important;
+.pf-c-card.pf-m-non-selectable-raised {
+    background-color: var(--nal-bg-card) !important;
+    border: 1px solid var(--nal-border-card) !important;
+    border-top: 1px solid var(--nal-border-card-top) !important;
+    box-shadow: var(--nal-shadow-card-raised) !important;
     cursor: default !important;
 }
 
-/* Enterprise-Only Cards in Light Mode */
-html:not(.pf-theme-dark) .pf-c-card.ak-m-enterprise-only,
-html[data-theme="light"] .pf-c-card.ak-m-enterprise-only,
-html:not(.pf-theme-dark) .pf-l-grid__item.pf-c-card.ak-m-enterprise-only,
-html[data-theme="light"] .pf-l-grid__item.pf-c-card.ak-m-enterprise-only,
-html:not(.pf-theme-dark) .ak-m-enterprise-only,
-html[data-theme="light"] .ak-m-enterprise-only {
-    background: linear-gradient(180deg, #fffdfa 0%, #ffffff 100%) !important;
-    background-color: #ffffff !important;
-    border: 1px solid #fde68a !important;
-    border-top: 2px solid #f59e0b !important;
+/* Enterprise-Only Cards */
+.ak-m-enterprise-only {
+    background: var(--nal-enterprise-bg) !important;
+    border: 1px solid var(--nal-enterprise-border) !important;
+    border-top: 2px solid var(--nal-amber-500) !important;
     border-radius: 12px !important;
-    box-shadow: 0 4px 16px -2px rgba(245, 158, 11, 0.14), 0 1px 3px rgba(0, 0, 0, 0.05) !important;
-    color: #1e293b !important;
+    box-shadow: var(--nal-enterprise-shadow) !important;
+    color: var(--nal-text-body) !important;
     position: relative !important;
     overflow: hidden !important;
     cursor: default !important;
     transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-card.ak-m-enterprise-only::before,
-html[data-theme="light"] .pf-c-card.ak-m-enterprise-only::before,
-html:not(.pf-theme-dark) .ak-m-enterprise-only::before,
-html[data-theme="light"] .ak-m-enterprise-only::before {
+.ak-m-enterprise-only::before {
     content: "" !important;
     position: absolute !important;
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
     height: 48px !important;
-    background: radial-gradient(ellipse 80% 100% at 50% 0%, rgba(245, 158, 11, 0.08) 0%, transparent 100%) !important;
+    background: var(--nal-enterprise-glow) !important;
     pointer-events: none !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-card.ak-m-enterprise-only:hover,
-html[data-theme="light"] .pf-c-card.ak-m-enterprise-only:hover,
-html:not(.pf-theme-dark) .ak-m-enterprise-only:hover,
-html[data-theme="light"] .ak-m-enterprise-only:hover {
-    border-color: #f59e0b !important;
-    box-shadow: 0 8px 24px -2px rgba(245, 158, 11, 0.22), 0 2px 6px rgba(0, 0, 0, 0.06) !important;
+.ak-m-enterprise-only:hover {
+    border-color: var(--nal-enterprise-border-hover) !important;
+    border-top-color: var(--nal-enterprise-border-top-hover) !important;
+    box-shadow: var(--nal-enterprise-shadow-hover) !important;
 }
 
-html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-card__title,
-html[data-theme="light"] .ak-m-enterprise-only .pf-c-card__title,
-html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-card__header,
-html[data-theme="light"] .ak-m-enterprise-only .pf-c-card__header {
-    color: #0f172a !important;
+.ak-m-enterprise-only :is(.pf-c-card__title, .pf-c-card__header) {
+    color: var(--nal-text-heading) !important;
     font-weight: 600 !important;
 }
 
-html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-card__body,
-html[data-theme="light"] .ak-m-enterprise-only .pf-c-card__body {
-    color: #475569 !important;
+.ak-m-enterprise-only .pf-c-card__body {
+    color: var(--nal-enterprise-body) !important;
     font-size: 0.875rem !important;
     line-height: 1.55 !important;
 }
 
-html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-card__footer,
-html[data-theme="light"] .ak-m-enterprise-only .pf-c-card__footer {
-    border-top: 1px solid #f1f5f9 !important;
+.ak-m-enterprise-only .pf-c-card__footer {
+    border-top: 1px solid var(--nal-enterprise-footer-border) !important;
     padding-top: 0.85rem !important;
     margin-top: auto !important;
 }
 
-html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-label,
-html[data-theme="light"] .ak-m-enterprise-only .pf-c-label,
-html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-badge,
-html[data-theme="light"] .ak-m-enterprise-only .pf-c-badge,
-html:not(.pf-theme-dark) .ak-m-enterprise-only [class*="enterprise-badge"],
-html[data-theme="light"] .ak-m-enterprise-only [class*="enterprise-badge"],
-html:not(.pf-theme-dark) .ak-m-enterprise-only [class*="badge"],
-html[data-theme="light"] .ak-m-enterprise-only [class*="badge"] {
-    background-color: #fef3c7 !important;
-    color: #b45309 !important;
-    border: 1px solid #fcd34d !important;
+.ak-m-enterprise-only :is(.pf-c-label, .pf-c-badge, [class*="enterprise-badge"], [class*="badge"]) {
+    background-color: var(--nal-enterprise-badge-bg) !important;
+    color: var(--nal-enterprise-badge-text) !important;
+    border: 1px solid var(--nal-enterprise-badge-border) !important;
     font-weight: 600 !important;
     font-size: 0.725rem !important;
     letter-spacing: 0.03em !important;
@@ -641,113 +689,135 @@ html[data-theme="light"] .ak-m-enterprise-only [class*="badge"] {
     padding: 0.2rem 0.55rem !important;
 }
 
-html:not(.pf-theme-dark) .ak-m-enterprise-only i,
-html[data-theme="light"] .ak-m-enterprise-only i,
-html:not(.pf-theme-dark) .ak-m-enterprise-only svg,
-html[data-theme="light"] .ak-m-enterprise-only svg,
-html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-card__header-icon,
-html[data-theme="light"] .ak-m-enterprise-only .pf-c-card__header-icon {
-    color: #d97706 !important;
-    fill: #d97706 !important;
+.ak-m-enterprise-only :is(i, svg, .pf-c-card__header-icon) {
+    color: var(--nal-accent) !important;
+    fill: var(--nal-accent) !important;
 }
 
-html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-button.pf-m-link,
-html[data-theme="light"] .ak-m-enterprise-only .pf-c-button.pf-m-link,
-html:not(.pf-theme-dark) .ak-m-enterprise-only a.pf-c-button.pf-m-link,
-html[data-theme="light"] .ak-m-enterprise-only a.pf-c-button.pf-m-link,
-html:not(.pf-theme-dark) .ak-m-enterprise-only a:not(.pf-c-button),
-html[data-theme="light"] .ak-m-enterprise-only a:not(.pf-c-button) {
-    color: #d97706 !important;
+.ak-m-enterprise-only :is(.pf-c-button.pf-m-link, a:not(.pf-c-button)) {
+    color: var(--nal-accent) !important;
     font-weight: 600 !important;
     font-size: 0.875rem !important;
     text-decoration: none !important;
 }
 
-html:not(.pf-theme-dark) .ak-m-enterprise-only .pf-c-button.pf-m-link:hover,
-html[data-theme="light"] .ak-m-enterprise-only .pf-c-button.pf-m-link:hover,
-html:not(.pf-theme-dark) .ak-m-enterprise-only a.pf-c-button.pf-m-link:hover,
-html[data-theme="light"] .ak-m-enterprise-only a.pf-c-button.pf-m-link:hover,
-html:not(.pf-theme-dark) .ak-m-enterprise-only a:not(.pf-c-button):hover,
-html[data-theme="light"] .ak-m-enterprise-only a:not(.pf-c-button):hover {
-    color: #b45309 !important;
+.ak-m-enterprise-only :is(.pf-c-button.pf-m-link, a:not(.pf-c-button)):hover {
+    color: var(--nal-accent-hover) !important;
     text-decoration: underline !important;
 }
 
-/* Data Tables in Light Mode */
-html:not(.pf-theme-dark) .pf-c-table,
-html[data-theme="light"] .pf-c-table {
-    background-color: #ffffff !important;
-    color: #1e293b !important;
+/* Data Tables */
+.pf-c-table {
+    background-color: var(--nal-bg-table) !important;
+    color: var(--nal-text-body) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-table thead th,
-html[data-theme="light"] .pf-c-table thead th {
-    background-color: #f8fafc !important;
-    color: #475569 !important;
-    border-bottom: 2px solid #e2e8f0 !important;
+.pf-c-table thead th {
+    background-color: var(--nal-bg-table-head) !important;
+    color: var(--nal-text-muted) !important;
+    border-bottom: 2px solid var(--nal-border-table-head) !important;
     font-weight: 600 !important;
     font-size: 0.825rem !important;
     letter-spacing: 0.02em !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-table thead th button,
-html[data-theme="light"] .pf-c-table thead th button,
-html:not(.pf-theme-dark) .pf-c-table__button,
-html[data-theme="light"] .pf-c-table__button {
-    color: #475569 !important;
+:is(.pf-c-table thead th button, .pf-c-table__button) {
+    color: var(--nal-text-muted) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-table thead th button:hover,
-html[data-theme="light"] .pf-c-table thead th button:hover,
-html:not(.pf-theme-dark) .pf-c-table__button:hover,
-html[data-theme="light"] .pf-c-table__button:hover {
-    color: #d97706 !important;
+:is(.pf-c-table thead th button, .pf-c-table__button):hover,
+.pf-c-table thead th.pf-m-selected :is(button, .pf-c-table__button) {
+    color: var(--nal-accent) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-table thead th.pf-m-selected button,
-html[data-theme="light"] .pf-c-table thead th.pf-m-selected button,
-html:not(.pf-theme-dark) .pf-c-table thead th.pf-m-selected .pf-c-table__button,
-html[data-theme="light"] .pf-c-table thead th.pf-m-selected .pf-c-table__button {
-    color: #d97706 !important;
+.pf-c-table tbody tr {
+    background-color: var(--nal-bg-table-row) !important;
+    border-bottom: 1px solid var(--nal-border-table-row) !important;
+    color: var(--nal-text-secondary) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-table tbody tr,
-html[data-theme="light"] .pf-c-table tbody tr {
-    background-color: #ffffff !important;
-    border-bottom: 1px solid #f1f5f9 !important;
-    color: #1e293b !important;
+.pf-c-table tbody tr:hover {
+    background-color: var(--nal-table-row-hover) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-table tbody tr:hover,
-html[data-theme="light"] .pf-c-table tbody tr:hover {
-    background-color: rgba(245, 158, 11, 0.05) !important;
+.pf-c-table tbody tr.pf-m-selected {
+    background-color: var(--nal-table-row-selected) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-table tbody tr.pf-m-selected,
-html[data-theme="light"] .pf-c-table tbody tr.pf-m-selected {
-    background-color: rgba(245, 158, 11, 0.1) !important;
-}
-
-html:not(.pf-theme-dark) .pf-c-table tbody td a:not(.pf-c-button),
-html[data-theme="light"] .pf-c-table tbody td a:not(.pf-c-button) {
-    color: #d97706 !important;
+.pf-c-table tbody td a:not(.pf-c-button) {
+    color: var(--nal-accent) !important;
     text-decoration: none !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-table tbody td a:not(.pf-c-button):hover,
-html[data-theme="light"] .pf-c-table tbody td a:not(.pf-c-button):hover {
-    color: #b45309 !important;
+.pf-c-table tbody td a:not(.pf-c-button):hover {
+    color: var(--nal-accent-hover) !important;
     text-decoration: underline !important;
 }
 
-/* Form Controls in Light Mode (Dashboard & Modals) */
-html:not(.pf-theme-dark) .pf-c-page .pf-c-form-control,
-html[data-theme="light"] .pf-c-page .pf-c-form-control,
-html:not(.pf-theme-dark) .pf-c-modal-box .pf-c-form-control,
-html[data-theme="light"] .pf-c-modal-box .pf-c-form-control {
-    background-color: #ffffff !important;
-    color: #0f172a !important;
-    border: 1px solid #cbd5e1 !important;
+/* Modals & Dialogs */
+.pf-c-backdrop {
+    background-color: var(--nal-bg-backdrop) !important;
+    backdrop-filter: blur(4px) !important;
+}
+
+.pf-c-modal-box {
+    background-color: var(--nal-bg-card) !important;
+    border: 1px solid var(--nal-border-card) !important;
+    border-top: 2px solid var(--nal-amber-500) !important;
+    border-radius: 16px !important;
+    box-shadow: var(--nal-shadow-modal) !important;
+    color: var(--nal-text-body) !important;
+}
+
+.pf-c-modal-box__title-text {
+    color: var(--nal-text-heading) !important;
+    font-weight: 600 !important;
+}
+
+.pf-c-modal-box__footer {
+    background-color: var(--nal-bg-modal-footer) !important;
+    border-top: 1px solid var(--nal-border-chrome) !important;
+}
+
+/* Tabs */
+.pf-c-tabs__link {
+    color: var(--nal-text-muted) !important;
+}
+
+.pf-c-tabs__link:hover {
+    color: var(--nal-accent-hover) !important;
+}
+
+.pf-c-tabs__item.pf-m-current .pf-c-tabs__link {
+    color: var(--nal-accent) !important;
+    font-weight: 600 !important;
+}
+
+.pf-c-tabs__item.pf-m-current .pf-c-tabs__link::after {
+    border-bottom-color: var(--nal-amber-500) !important;
+}
+
+/* Chips */
+.pf-c-chip {
+    background-color: var(--nal-bg-subtle) !important;
+    color: var(--nal-text-secondary) !important;
+    border: 1px solid var(--nal-border-control) !important;
+    border-radius: 4px !important;
+}
+
+.pf-c-chip__text {
+    color: var(--nal-text-secondary) !important;
+}
+
+/* --------------------------------------------------------------------------
+   6. Dashboard Forms & Secondary Controls
+   -------------------------------------------------------------------------- */
+
+/* Form Controls (Scoped to Dashboard & Modals so Flow Inputs remain Obsidian) */
+:is(.pf-c-page, .pf-c-modal-box) .pf-c-form-control {
+    background-color: var(--nal-bg-control) !important;
+    color: var(--nal-text-heading) !important;
+    border: 1px solid var(--nal-border-control) !important;
     border-radius: 8px !important;
     height: auto !important;
     min-height: 2.75rem !important;
@@ -758,812 +828,102 @@ html[data-theme="light"] .pf-c-modal-box .pf-c-form-control {
     transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-page .pf-c-form-control:placeholder,
-html[data-theme="light"] .pf-c-page .pf-c-form-control:placeholder,
-html:not(.pf-theme-dark) .pf-c-modal-box .pf-c-form-control:placeholder,
-html[data-theme="light"] .pf-c-modal-box .pf-c-form-control:placeholder {
-    color: #94a3b8 !important;
+:is(.pf-c-page, .pf-c-modal-box) .pf-c-form-control::placeholder {
+    color: var(--nal-text-placeholder) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-page .pf-c-form-control:focus,
-html[data-theme="light"] .pf-c-page .pf-c-form-control:focus,
-html:not(.pf-theme-dark) .pf-c-modal-box .pf-c-form-control:focus,
-html[data-theme="light"] .pf-c-modal-box .pf-c-form-control:focus {
-    background-color: #ffffff !important;
-    border-color: #f59e0b !important;
+:is(.pf-c-page, .pf-c-modal-box) .pf-c-form-control:focus {
+    background-color: var(--nal-bg-control-focus) !important;
+    border-color: var(--nal-amber-500) !important;
     outline: none !important;
-    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2) !important;
+    box-shadow: var(--nal-focus-ring) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-page select,
-html[data-theme="light"] .pf-c-page select,
-html:not(.pf-theme-dark) .pf-c-modal-box select,
-html[data-theme="light"] .pf-c-modal-box select {
+:is(.pf-c-page, .pf-c-modal-box) select {
     height: auto !important;
     min-height: 2.75rem !important;
     line-height: normal !important;
-    padding-top: 0.55rem !important;
-    padding-bottom: 0.55rem !important;
-    padding-left: 0.85rem !important;
-    padding-right: 2.25rem !important;
+    padding: 0.55rem 2.25rem 0.55rem 0.85rem !important;
     box-sizing: border-box !important;
     vertical-align: middle !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-page select option,
-html[data-theme="light"] .pf-c-page select option,
-html:not(.pf-theme-dark) .pf-c-modal-box select option,
-html[data-theme="light"] .pf-c-modal-box select option {
-    background-color: #ffffff !important;
-    color: #0f172a !important;
+:is(.pf-c-page, .pf-c-modal-box) select option {
+    background-color: var(--nal-bg-control) !important;
+    color: var(--nal-text-heading) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-page .pf-c-form__label-text,
-html[data-theme="light"] .pf-c-page .pf-c-form__label-text,
-html:not(.pf-theme-dark) .pf-c-page label.pf-c-form__label,
-html[data-theme="light"] .pf-c-page label.pf-c-form__label,
-html:not(.pf-theme-dark) .pf-c-modal-box .pf-c-form__label-text,
-html[data-theme="light"] .pf-c-modal-box .pf-c-form__label-text {
-    color: #334155 !important;
+:is(.pf-c-page, .pf-c-modal-box) :is(.pf-c-form__label-text, label.pf-c-form__label) {
+    color: var(--nal-text-secondary) !important;
     font-size: 0.825rem !important;
     font-weight: 500 !important;
 }
 
-/* Secondary Buttons & Toggles in Light Mode */
-html:not(.pf-theme-dark) .pf-c-button.pf-m-secondary,
-html[data-theme="light"] .pf-c-button.pf-m-secondary {
-    background-color: #ffffff !important;
-    color: #334155 !important;
-    border: 1px solid #cbd5e1 !important;
+/* Secondary & Plain Buttons / Toggles */
+:is(
+    .pf-c-button.pf-m-secondary,
+    .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
+    .pf-c-dropdown__toggle.pf-m-secondary
+) {
+    background-color: var(--nal-bg-control) !important;
+    color: var(--nal-text-secondary) !important;
+    border: 1px solid var(--nal-border-control) !important;
     border-radius: 8px !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-button.pf-m-secondary:hover,
-html[data-theme="light"] .pf-c-button.pf-m-secondary:hover {
-    background-color: #f8fafc !important;
-    border-color: #f59e0b !important;
-    color: #0f172a !important;
+:is(
+    .pf-c-button.pf-m-secondary,
+    .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
+    .pf-c-dropdown__toggle.pf-m-secondary
+):hover {
+    background-color: var(--nal-bg-control-hover) !important;
+    border-color: var(--nal-amber-500) !important;
+    color: var(--nal-text-heading) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-button.pf-m-plain,
-html[data-theme="light"] .pf-c-button.pf-m-plain,
-html:not(.pf-theme-dark) .pf-c-dropdown__toggle.pf-m-plain,
-html[data-theme="light"] .pf-c-dropdown__toggle.pf-m-plain {
-    color: #475569 !important;
+:is(.pf-c-button.pf-m-plain, .pf-c-dropdown__toggle.pf-m-plain) {
+    color: var(--nal-text-muted) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-button.pf-m-plain:hover,
-html[data-theme="light"] .pf-c-button.pf-m-plain:hover,
-html:not(.pf-theme-dark) .pf-c-dropdown__toggle.pf-m-plain:hover,
-html[data-theme="light"] .pf-c-dropdown__toggle.pf-m-plain:hover {
-    color: #d97706 !important;
-    background-color: rgba(245, 158, 11, 0.08) !important;
+:is(.pf-c-button.pf-m-plain, .pf-c-dropdown__toggle.pf-m-plain):hover {
+    color: var(--nal-accent) !important;
+    background-color: var(--nal-accent-soft-hover) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
-html[data-theme="light"] .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
-html:not(.pf-theme-dark) .pf-c-dropdown__toggle.pf-m-secondary,
-html[data-theme="light"] .pf-c-dropdown__toggle.pf-m-secondary {
-    background-color: #ffffff !important;
-    color: #334155 !important;
-    border: 1px solid #cbd5e1 !important;
+/* Dropdown Menus */
+:is(.pf-c-dropdown__menu, .pf-c-options-menu__menu) {
+    background-color: var(--nal-bg-control) !important;
+    border: 1px solid var(--nal-border-control) !important;
     border-radius: 8px !important;
+    box-shadow: var(--nal-shadow-menu) !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain):hover,
-html[data-theme="light"] .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain):hover,
-html:not(.pf-theme-dark) .pf-c-dropdown__toggle.pf-m-secondary:hover,
-html[data-theme="light"] .pf-c-dropdown__toggle.pf-m-secondary:hover {
-    background-color: #f8fafc !important;
-    border-color: #f59e0b !important;
-    color: #0f172a !important;
-}
-
-/* Dropdown Menus in Light Mode */
-html:not(.pf-theme-dark) .pf-c-dropdown__menu,
-html[data-theme="light"] .pf-c-dropdown__menu,
-html:not(.pf-theme-dark) .pf-c-options-menu__menu,
-html[data-theme="light"] .pf-c-options-menu__menu {
-    background-color: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 8px !important;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12) !important;
-}
-
-html:not(.pf-theme-dark) .pf-c-dropdown__menu-item,
-html[data-theme="light"] .pf-c-dropdown__menu-item,
-html:not(.pf-theme-dark) .pf-c-options-menu__menu-item,
-html[data-theme="light"] .pf-c-options-menu__menu-item {
-    color: #334155 !important;
+:is(.pf-c-dropdown__menu-item, .pf-c-options-menu__menu-item) {
+    color: var(--nal-text-secondary) !important;
     font-size: 0.9rem !important;
 }
 
-html:not(.pf-theme-dark) .pf-c-dropdown__menu-item:hover,
-html[data-theme="light"] .pf-c-dropdown__menu-item:hover,
-html:not(.pf-theme-dark) .pf-c-options-menu__menu-item:hover,
-html[data-theme="light"] .pf-c-options-menu__menu-item:hover {
-    background-color: rgba(245, 158, 11, 0.1) !important;
-    color: #d97706 !important;
-}
-
-/* Modals & Dialogs in Light Mode */
-html:not(.pf-theme-dark) .pf-c-backdrop,
-html[data-theme="light"] .pf-c-backdrop {
-    background-color: rgba(15, 23, 42, 0.45) !important;
-    backdrop-filter: blur(4px) !important;
-}
-
-html:not(.pf-theme-dark) .pf-c-modal-box,
-html[data-theme="light"] .pf-c-modal-box {
-    background-color: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    border-top: 2px solid #f59e0b !important;
-    border-radius: 16px !important;
-    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15) !important;
-    color: #1e293b !important;
-}
-
-html:not(.pf-theme-dark) .pf-c-modal-box__title-text,
-html[data-theme="light"] .pf-c-modal-box__title-text {
-    color: #0f172a !important;
-    font-weight: 600 !important;
-}
-
-html:not(.pf-theme-dark) .pf-c-modal-box__footer,
-html[data-theme="light"] .pf-c-modal-box__footer {
-    background-color: #f8fafc !important;
-    border-top: 1px solid #e2e8f0 !important;
-}
-
-/* Tabs in Light Mode */
-html:not(.pf-theme-dark) .pf-c-tabs__link,
-html[data-theme="light"] .pf-c-tabs__link {
-    color: #64748b !important;
-}
-
-html:not(.pf-theme-dark) .pf-c-tabs__link:hover,
-html[data-theme="light"] .pf-c-tabs__link:hover {
-    color: #d97706 !important;
-}
-
-html:not(.pf-theme-dark) .pf-c-tabs__item.pf-m-current .pf-c-tabs__link,
-html[data-theme="light"] .pf-c-tabs__item.pf-m-current .pf-c-tabs__link {
-    color: #d97706 !important;
-    font-weight: 600 !important;
-}
-
-html:not(.pf-theme-dark) .pf-c-tabs__item.pf-m-current .pf-c-tabs__link::after,
-html[data-theme="light"] .pf-c-tabs__item.pf-m-current .pf-c-tabs__link::after {
-    border-bottom-color: #f59e0b !important;
-}
-
-/* Chips in Light Mode */
-html:not(.pf-theme-dark) .pf-c-chip,
-html[data-theme="light"] .pf-c-chip {
-    background-color: #f1f5f9 !important;
-    color: #334155 !important;
-    border: 1px solid #cbd5e1 !important;
-    border-radius: 4px !important;
-}
-
-html:not(.pf-theme-dark) .pf-c-chip__text,
-html[data-theme="light"] .pf-c-chip__text {
-    color: #334155 !important;
+:is(.pf-c-dropdown__menu-item, .pf-c-options-menu__menu-item):hover {
+    background-color: var(--nal-menu-item-hover) !important;
+    color: var(--nal-accent) !important;
 }
 
 /* --------------------------------------------------------------------------
-   6. DARK MODE DASHBOARD STYLING
-   Applies when document HAS .pf-theme-dark (or has data-theme="dark")
+   7. Sign-In & Flow Interface (Always Obsidian & Amber Glow)
    -------------------------------------------------------------------------- */
-/* Page Main Background */
-html.pf-theme-dark .pf-c-page,
-html[data-theme="dark"] .pf-c-page,
-html.pf-theme-dark .pf-c-page__main,
-html[data-theme="dark"] .pf-c-page__main,
-html.pf-theme-dark .pf-c-page__main-section,
-html[data-theme="dark"] .pf-c-page__main-section {
-    background-color: #0b0e14 !important;
-    color: #e2e8f0 !important;
-}
 
-/* Header Navbar */
-html.pf-theme-dark .pf-c-page__header,
-html[data-theme="dark"] .pf-c-page__header,
-html.pf-theme-dark ak-page-navbar,
-html[data-theme="dark"] ak-page-navbar {
-    background-color: #080a0f !important;
-    border-bottom: 1px solid #1a202c !important;
-}
-
-html.pf-theme-dark .command-palette-trigger,
-html[data-theme="dark"] .command-palette-trigger {
-    background-color: #141822 !important;
-    border: 1px solid #232b3c !important;
-    color: #94a3b8 !important;
-    border-radius: 6px !important;
-    padding: 0.35rem 0.75rem !important;
-}
-
-html.pf-theme-dark .command-palette-trigger:hover,
-html[data-theme="dark"] .command-palette-trigger:hover {
-    border-color: #f59e0b !important;
-    color: #fbbf24 !important;
-}
-
-/* Sidebar Navigation */
-html.pf-theme-dark .pf-c-page__sidebar,
-html[data-theme="dark"] .pf-c-page__sidebar,
-html.pf-theme-dark ak-sidebar,
-html[data-theme="dark"] ak-sidebar {
-    background-color: #080a0f !important;
-    border-right: 1px solid #1a202c !important;
-}
-
-html.pf-theme-dark .pf-c-nav__section-title,
-html[data-theme="dark"] .pf-c-nav__section-title {
-    color: #64748b !important;
-    font-size: 0.75rem !important;
-    font-weight: 600 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.05em !important;
-    padding: 0.75rem 1rem 0.35rem 1rem !important;
-}
-
-html.pf-theme-dark .pf-c-nav__link,
-html[data-theme="dark"] .pf-c-nav__link {
-    color: #94a3b8 !important;
-    transition: all 0.15s ease !important;
-}
-
-html.pf-theme-dark .pf-c-nav__link:hover,
-html[data-theme="dark"] .pf-c-nav__link:hover {
-    color: #fbbf24 !important;
-    background-color: rgba(245, 158, 11, 0.08) !important;
-}
-
-html.pf-theme-dark .pf-c-nav__link.pf-m-current,
-html[data-theme="dark"] .pf-c-nav__link.pf-m-current,
-html.pf-theme-dark .pf-c-nav__item.pf-m-current > .pf-c-nav__link,
-html[data-theme="dark"] .pf-c-nav__item.pf-m-current > .pf-c-nav__link {
-    color: #fbbf24 !important;
-    background-color: rgba(245, 158, 11, 0.12) !important;
-    font-weight: 600 !important;
-}
-
-html.pf-theme-dark .pf-c-nav__link.pf-m-current::after,
-html[data-theme="dark"] .pf-c-nav__link.pf-m-current::after,
-html.pf-theme-dark .pf-c-nav__item.pf-m-current > .pf-c-nav__link::after,
-html[data-theme="dark"] .pf-c-nav__item.pf-m-current > .pf-c-nav__link::after {
-    border-left: 3px solid #f59e0b !important;
-}
-
-/* Sidebar Version ("authentik information") in Dark Mode */
-html.pf-theme-dark ak-sidebar-version,
-html[data-theme="dark"] ak-sidebar-version,
-html.pf-theme-dark footer[aria-label="authentik information"],
-html[data-theme="dark"] footer[aria-label="authentik information"],
-html.pf-theme-dark .pf-c-page__sidebar footer,
-html[data-theme="dark"] .pf-c-page__sidebar footer {
-    border-top: 1px solid #1a202c !important;
-    background-color: #080a0f !important;
-}
-
-html.pf-theme-dark ak-sidebar-version button:hover,
-html[data-theme="dark"] ak-sidebar-version button:hover,
-html.pf-theme-dark footer[aria-label="authentik information"] button:hover,
-html[data-theme="dark"] footer[aria-label="authentik information"] button:hover {
-    background-color: rgba(245, 158, 11, 0.08) !important;
-    border-color: rgba(245, 158, 11, 0.2) !important;
-}
-
-html.pf-theme-dark ak-sidebar-version [part~="product-name"],
-html[data-theme="dark"] ak-sidebar-version [part~="product-name"],
-html.pf-theme-dark footer[aria-label="authentik information"] p:first-child,
-html[data-theme="dark"] footer[aria-label="authentik information"] p:first-child {
-    color: #cbd5e1 !important;
-}
-
-html.pf-theme-dark ak-sidebar-version [part~="product-version"],
-html[data-theme="dark"] ak-sidebar-version [part~="product-version"],
-html.pf-theme-dark footer[aria-label="authentik information"] p:last-child,
-html[data-theme="dark"] footer[aria-label="authentik information"] p:last-child {
-    color: #64748b !important;
-}
-
-html.pf-theme-dark ak-sidebar-version button:hover [part~="product-name"],
-html[data-theme="dark"] ak-sidebar-version button:hover [part~="product-name"],
-html.pf-theme-dark footer[aria-label="authentik information"] button:hover p:first-child,
-html[data-theme="dark"] footer[aria-label="authentik information"] button:hover p:first-child {
-    color: #fbbf24 !important;
-}
-
-html.pf-theme-dark ak-sidebar-version button:hover [part~="product-version"],
-html[data-theme="dark"] ak-sidebar-version button:hover [part~="product-version"],
-html.pf-theme-dark footer[aria-label="authentik information"] button:hover p:last-child,
-html[data-theme="dark"] footer[aria-label="authentik information"] button:hover p:last-child {
-    color: #fde68a !important;
-}
-
-/* Page Titles & Breadcrumbs in Dark Mode */
-html.pf-theme-dark .pf-c-page__main .pf-c-title,
-html[data-theme="dark"] .pf-c-page__main .pf-c-title,
-html.pf-theme-dark .pf-c-page__main-section .pf-c-title,
-html[data-theme="dark"] .pf-c-page__main-section .pf-c-title,
-html.pf-theme-dark .pf-c-modal-box .pf-c-title,
-html[data-theme="dark"] .pf-c-modal-box .pf-c-title {
-    color: #f8fafc !important;
-    text-align: left !important;
-    letter-spacing: -0.015em !important;
-}
-
-html.pf-theme-dark .pf-c-breadcrumb__item,
-html[data-theme="dark"] .pf-c-breadcrumb__item {
-    color: #64748b !important;
-}
-
-html.pf-theme-dark .pf-c-breadcrumb__link,
-html[data-theme="dark"] .pf-c-breadcrumb__link {
-    color: #94a3b8 !important;
-}
-
-html.pf-theme-dark .pf-c-breadcrumb__link:hover,
-html[data-theme="dark"] .pf-c-breadcrumb__link:hover {
-    color: #fbbf24 !important;
-}
-
-html.pf-theme-dark .pf-c-breadcrumb__item.pf-m-current,
-html[data-theme="dark"] .pf-c-breadcrumb__item.pf-m-current {
-    color: #cbd5e1 !important;
-}
-
-/* Standard Cards in Dark Mode */
-html.pf-theme-dark .pf-c-card:not(.pf-c-login__main),
-html[data-theme="dark"] .pf-c-card:not(.pf-c-login__main) {
-    background-color: #0e121a !important;
-    border: 1px solid #1c2333 !important;
-    border-top: 1px solid rgba(245, 158, 11, 0.35) !important;
-    border-radius: 12px !important;
-    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5) !important;
-    color: #e2e8f0 !important;
-    box-sizing: border-box !important;
-    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease !important;
-}
-
-html.pf-theme-dark .pf-c-card:not(.pf-c-login__main):hover,
-html[data-theme="dark"] .pf-c-card:not(.pf-c-login__main):hover {
-    border-color: rgba(245, 158, 11, 0.45) !important;
-}
-
-html.pf-theme-dark .pf-c-card:not(.pf-c-login__main) .pf-c-card__title,
-html[data-theme="dark"] .pf-c-card:not(.pf-c-login__main) .pf-c-card__title,
-html.pf-theme-dark .pf-c-card:not(.pf-c-login__main) .pf-c-card__header,
-html[data-theme="dark"] .pf-c-card:not(.pf-c-login__main) .pf-c-card__header {
-    color: #f8fafc !important;
-    font-weight: 600 !important;
-    text-align: left !important;
-}
-
-html.pf-theme-dark .pf-c-card:not(.pf-c-login__main) .pf-c-card__body,
-html[data-theme="dark"] .pf-c-card:not(.pf-c-login__main) .pf-c-card__body {
-    color: #cbd5e1 !important;
-}
-
-html.pf-theme-dark .pf-c-card.pf-m-non-selectable-raised,
-html[data-theme="dark"] .pf-c-card.pf-m-non-selectable-raised {
-    background-color: #0e121a !important;
-    border: 1px solid #1c2333 !important;
-    border-top: 1px solid rgba(245, 158, 11, 0.35) !important;
-    box-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.7), 0 0 1px 1px rgba(255, 255, 255, 0.04) !important;
-    cursor: default !important;
-}
-
-/* Enterprise-Only Cards in Dark Mode */
-html.pf-theme-dark .pf-c-card.ak-m-enterprise-only,
-html[data-theme="dark"] .pf-c-card.ak-m-enterprise-only,
-html.pf-theme-dark .pf-l-grid__item.pf-c-card.ak-m-enterprise-only,
-html[data-theme="dark"] .pf-l-grid__item.pf-c-card.ak-m-enterprise-only,
-html.pf-theme-dark .ak-m-enterprise-only,
-html[data-theme="dark"] .ak-m-enterprise-only {
-    background: linear-gradient(180deg, #121622 0%, #0e121a 100%) !important;
-    background-color: #0e121a !important;
-    border: 1px solid #232b3c !important;
-    border-top: 2px solid #f59e0b !important;
-    border-radius: 12px !important;
-    box-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.75), 0 0 20px -4px rgba(245, 158, 11, 0.15) !important;
-    position: relative !important;
-    overflow: hidden !important;
-    color: #e2e8f0 !important;
-    cursor: default !important;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
-}
-
-html.pf-theme-dark .pf-c-card.ak-m-enterprise-only::before,
-html[data-theme="dark"] .pf-c-card.ak-m-enterprise-only::before,
-html.pf-theme-dark .ak-m-enterprise-only::before,
-html[data-theme="dark"] .ak-m-enterprise-only::before {
-    content: "" !important;
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    height: 48px !important;
-    background: radial-gradient(ellipse 80% 100% at 50% 0%, rgba(245, 158, 11, 0.12) 0%, transparent 100%) !important;
-    pointer-events: none !important;
-}
-
-html.pf-theme-dark .pf-c-card.ak-m-enterprise-only:hover,
-html[data-theme="dark"] .pf-c-card.ak-m-enterprise-only:hover,
-html.pf-theme-dark .ak-m-enterprise-only:hover,
-html[data-theme="dark"] .ak-m-enterprise-only:hover {
-    border-color: rgba(245, 158, 11, 0.5) !important;
-    border-top-color: #fbbf24 !important;
-    box-shadow: 0 8px 32px -4px rgba(0, 0, 0, 0.85), 0 0 25px -2px rgba(245, 158, 11, 0.25) !important;
-}
-
-html.pf-theme-dark .ak-m-enterprise-only .pf-c-card__title,
-html[data-theme="dark"] .ak-m-enterprise-only .pf-c-card__title,
-html.pf-theme-dark .ak-m-enterprise-only .pf-c-card__header,
-html[data-theme="dark"] .ak-m-enterprise-only .pf-c-card__header {
-    color: #f8fafc !important;
-    font-weight: 600 !important;
-}
-
-html.pf-theme-dark .ak-m-enterprise-only .pf-c-card__body,
-html[data-theme="dark"] .ak-m-enterprise-only .pf-c-card__body {
-    color: #94a3b8 !important;
-    font-size: 0.875rem !important;
-    line-height: 1.55 !important;
-}
-
-html.pf-theme-dark .ak-m-enterprise-only .pf-c-card__footer,
-html[data-theme="dark"] .ak-m-enterprise-only .pf-c-card__footer {
-    border-top: 1px solid #1a202c !important;
-    padding-top: 0.85rem !important;
-    margin-top: auto !important;
-}
-
-html.pf-theme-dark .ak-m-enterprise-only .pf-c-label,
-html[data-theme="dark"] .ak-m-enterprise-only .pf-c-label,
-html.pf-theme-dark .ak-m-enterprise-only .pf-c-badge,
-html[data-theme="dark"] .ak-m-enterprise-only .pf-c-badge,
-html.pf-theme-dark .ak-m-enterprise-only [class*="enterprise-badge"],
-html[data-theme="dark"] .ak-m-enterprise-only [class*="enterprise-badge"] {
-    background-color: rgba(245, 158, 11, 0.15) !important;
-    color: #fbbf24 !important;
-    border: 1px solid rgba(245, 158, 11, 0.35) !important;
-    font-weight: 600 !important;
-    font-size: 0.725rem !important;
-    letter-spacing: 0.03em !important;
-    text-transform: uppercase !important;
-    border-radius: 6px !important;
-    padding: 0.2rem 0.55rem !important;
-}
-
-html.pf-theme-dark .ak-m-enterprise-only i,
-html[data-theme="dark"] .ak-m-enterprise-only i,
-html.pf-theme-dark .ak-m-enterprise-only svg,
-html[data-theme="dark"] .ak-m-enterprise-only svg,
-html.pf-theme-dark .ak-m-enterprise-only .pf-c-card__header-icon,
-html[data-theme="dark"] .ak-m-enterprise-only .pf-c-card__header-icon {
-    color: #fbbf24 !important;
-    fill: #fbbf24 !important;
-}
-
-html.pf-theme-dark .ak-m-enterprise-only .pf-c-button.pf-m-link,
-html[data-theme="dark"] .ak-m-enterprise-only .pf-c-button.pf-m-link,
-html.pf-theme-dark .ak-m-enterprise-only a.pf-c-button.pf-m-link,
-html[data-theme="dark"] .ak-m-enterprise-only a.pf-c-button.pf-m-link,
-html.pf-theme-dark .ak-m-enterprise-only a:not(.pf-c-button),
-html[data-theme="dark"] .ak-m-enterprise-only a:not(.pf-c-button) {
-    color: #fbbf24 !important;
-    font-weight: 600 !important;
-    font-size: 0.875rem !important;
-    text-decoration: none !important;
-}
-
-html.pf-theme-dark .ak-m-enterprise-only .pf-c-button.pf-m-link:hover,
-html[data-theme="dark"] .ak-m-enterprise-only .pf-c-button.pf-m-link:hover,
-html.pf-theme-dark .ak-m-enterprise-only a.pf-c-button.pf-m-link:hover,
-html[data-theme="dark"] .ak-m-enterprise-only a.pf-c-button.pf-m-link:hover,
-html.pf-theme-dark .ak-m-enterprise-only a:not(.pf-c-button):hover,
-html[data-theme="dark"] .ak-m-enterprise-only a:not(.pf-c-button):hover {
-    color: #fde68a !important;
-    text-decoration: underline !important;
-}
-
-/* Data Tables in Dark Mode */
-html.pf-theme-dark .pf-c-table,
-html[data-theme="dark"] .pf-c-table {
-    background-color: transparent !important;
-    color: #e2e8f0 !important;
-}
-
-html.pf-theme-dark .pf-c-table thead th,
-html[data-theme="dark"] .pf-c-table thead th {
-    background-color: #0a0d14 !important;
-    color: #94a3b8 !important;
-    border-bottom: 2px solid #232b3c !important;
-    font-weight: 600 !important;
-    font-size: 0.825rem !important;
-    letter-spacing: 0.02em !important;
-}
-
-html.pf-theme-dark .pf-c-table thead th button,
-html[data-theme="dark"] .pf-c-table thead th button,
-html.pf-theme-dark .pf-c-table__button,
-html[data-theme="dark"] .pf-c-table__button {
-    color: #94a3b8 !important;
-}
-
-html.pf-theme-dark .pf-c-table thead th button:hover,
-html[data-theme="dark"] .pf-c-table thead th button:hover,
-html.pf-theme-dark .pf-c-table__button:hover,
-html[data-theme="dark"] .pf-c-table__button:hover {
-    color: #fbbf24 !important;
-}
-
-html.pf-theme-dark .pf-c-table thead th.pf-m-selected button,
-html[data-theme="dark"] .pf-c-table thead th.pf-m-selected button,
-html.pf-theme-dark .pf-c-table thead th.pf-m-selected .pf-c-table__button,
-html[data-theme="dark"] .pf-c-table thead th.pf-m-selected .pf-c-table__button {
-    color: #fbbf24 !important;
-}
-
-html.pf-theme-dark .pf-c-table tbody tr,
-html[data-theme="dark"] .pf-c-table tbody tr {
-    background-color: transparent !important;
-    border-bottom: 1px solid #1a202c !important;
-    color: #cbd5e1 !important;
-}
-
-html.pf-theme-dark .pf-c-table tbody tr:hover,
-html[data-theme="dark"] .pf-c-table tbody tr:hover {
-    background-color: rgba(245, 158, 11, 0.04) !important;
-}
-
-html.pf-theme-dark .pf-c-table tbody tr.pf-m-selected,
-html[data-theme="dark"] .pf-c-table tbody tr.pf-m-selected {
-    background-color: rgba(245, 158, 11, 0.08) !important;
-}
-
-html.pf-theme-dark .pf-c-table tbody td a:not(.pf-c-button),
-html[data-theme="dark"] .pf-c-table tbody td a:not(.pf-c-button) {
-    color: #fbbf24 !important;
-    text-decoration: none !important;
-}
-
-html.pf-theme-dark .pf-c-table tbody td a:not(.pf-c-button):hover,
-html[data-theme="dark"] .pf-c-table tbody td a:not(.pf-c-button):hover {
-    color: #fde68a !important;
-    text-decoration: underline !important;
-}
-
-/* Form Controls in Dark Mode (Dashboard & Modals) */
-html.pf-theme-dark .pf-c-page .pf-c-form-control,
-html[data-theme="dark"] .pf-c-page .pf-c-form-control,
-html.pf-theme-dark .pf-c-modal-box .pf-c-form-control,
-html[data-theme="dark"] .pf-c-modal-box .pf-c-form-control {
-    background-color: #141822 !important;
-    color: #f8fafc !important;
-    border: 1px solid #232b3c !important;
-    border-radius: 8px !important;
-    height: auto !important;
-    min-height: 2.75rem !important;
-    padding: 0.6rem 0.85rem !important;
-    font-size: 0.95rem !important;
-    line-height: 1.5 !important;
-    box-sizing: border-box !important;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease !important;
-}
-
-html.pf-theme-dark .pf-c-page .pf-c-form-control:placeholder,
-html[data-theme="dark"] .pf-c-page .pf-c-form-control:placeholder,
-html.pf-theme-dark .pf-c-modal-box .pf-c-form-control:placeholder,
-html[data-theme="dark"] .pf-c-modal-box .pf-c-form-control:placeholder {
-    color: #475569 !important;
-}
-
-html.pf-theme-dark .pf-c-page .pf-c-form-control:focus,
-html[data-theme="dark"] .pf-c-page .pf-c-form-control:focus,
-html.pf-theme-dark .pf-c-modal-box .pf-c-form-control:focus,
-html[data-theme="dark"] .pf-c-modal-box .pf-c-form-control:focus {
-    background-color: #181d2a !important;
-    border-color: #f59e0b !important;
-    outline: none !important;
-    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22) !important;
-}
-
-html.pf-theme-dark .pf-c-page select,
-html[data-theme="dark"] .pf-c-page select,
-html.pf-theme-dark .pf-c-modal-box select,
-html[data-theme="dark"] .pf-c-modal-box select {
-    height: auto !important;
-    min-height: 2.75rem !important;
-    line-height: normal !important;
-    padding-top: 0.55rem !important;
-    padding-bottom: 0.55rem !important;
-    padding-left: 0.85rem !important;
-    padding-right: 2.25rem !important;
-    box-sizing: border-box !important;
-    vertical-align: middle !important;
-}
-
-html.pf-theme-dark .pf-c-page select option,
-html[data-theme="dark"] .pf-c-page select option,
-html.pf-theme-dark .pf-c-modal-box select option,
-html[data-theme="dark"] .pf-c-modal-box select option {
-    background-color: #141822 !important;
-    color: #f8fafc !important;
-}
-
-html.pf-theme-dark .pf-c-page .pf-c-form__label-text,
-html[data-theme="dark"] .pf-c-page .pf-c-form__label-text,
-html.pf-theme-dark .pf-c-page label.pf-c-form__label,
-html[data-theme="dark"] .pf-c-page label.pf-c-form__label,
-html.pf-theme-dark .pf-c-modal-box .pf-c-form__label-text,
-html[data-theme="dark"] .pf-c-modal-box .pf-c-form__label-text {
-    color: #cbd5e1 !important;
-    font-size: 0.825rem !important;
-    font-weight: 500 !important;
-}
-
-/* Secondary Buttons & Toggles in Dark Mode */
-html.pf-theme-dark .pf-c-button.pf-m-secondary,
-html[data-theme="dark"] .pf-c-button.pf-m-secondary {
-    background-color: #141822 !important;
-    color: #cbd5e1 !important;
-    border: 1px solid #232b3c !important;
-    border-radius: 8px !important;
-}
-
-html.pf-theme-dark .pf-c-button.pf-m-secondary:hover,
-html[data-theme="dark"] .pf-c-button.pf-m-secondary:hover {
-    background-color: #1c2230 !important;
-    border-color: #f59e0b !important;
-    color: #ffffff !important;
-}
-
-html.pf-theme-dark .pf-c-button.pf-m-plain,
-html[data-theme="dark"] .pf-c-button.pf-m-plain,
-html.pf-theme-dark .pf-c-dropdown__toggle.pf-m-plain,
-html[data-theme="dark"] .pf-c-dropdown__toggle.pf-m-plain {
-    color: #94a3b8 !important;
-}
-
-html.pf-theme-dark .pf-c-button.pf-m-plain:hover,
-html[data-theme="dark"] .pf-c-button.pf-m-plain:hover,
-html.pf-theme-dark .pf-c-dropdown__toggle.pf-m-plain:hover,
-html[data-theme="dark"] .pf-c-dropdown__toggle.pf-m-plain:hover {
-    color: #fbbf24 !important;
-    background-color: rgba(245, 158, 11, 0.12) !important;
-}
-
-html.pf-theme-dark .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
-html[data-theme="dark"] .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
-html.pf-theme-dark .pf-c-dropdown__toggle.pf-m-secondary,
-html[data-theme="dark"] .pf-c-dropdown__toggle.pf-m-secondary {
-    background-color: #141822 !important;
-    color: #cbd5e1 !important;
-    border: 1px solid #232b3c !important;
-    border-radius: 8px !important;
-}
-
-html.pf-theme-dark .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain):hover,
-html[data-theme="dark"] .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain):hover,
-html.pf-theme-dark .pf-c-dropdown__toggle.pf-m-secondary:hover,
-html[data-theme="dark"] .pf-c-dropdown__toggle.pf-m-secondary:hover {
-    background-color: #1c2230 !important;
-    border-color: #f59e0b !important;
-    color: #ffffff !important;
-}
-
-/* Dropdown Menus in Dark Mode */
-html.pf-theme-dark .pf-c-dropdown__menu,
-html[data-theme="dark"] .pf-c-dropdown__menu,
-html.pf-theme-dark .pf-c-options-menu__menu,
-html[data-theme="dark"] .pf-c-options-menu__menu {
-    background-color: #141822 !important;
-    border: 1px solid #232b3c !important;
-    border-radius: 8px !important;
-    box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.85) !important;
-}
-
-html.pf-theme-dark .pf-c-dropdown__menu-item,
-html[data-theme="dark"] .pf-c-dropdown__menu-item,
-html.pf-theme-dark .pf-c-options-menu__menu-item,
-html[data-theme="dark"] .pf-c-options-menu__menu-item {
-    color: #cbd5e1 !important;
-    font-size: 0.9rem !important;
-}
-
-html.pf-theme-dark .pf-c-dropdown__menu-item:hover,
-html[data-theme="dark"] .pf-c-dropdown__menu-item:hover,
-html.pf-theme-dark .pf-c-options-menu__menu-item:hover,
-html[data-theme="dark"] .pf-c-options-menu__menu-item:hover {
-    background-color: rgba(245, 158, 11, 0.15) !important;
-    color: #fbbf24 !important;
-}
-
-/* Modals & Dialogs in Dark Mode */
-html.pf-theme-dark .pf-c-backdrop,
-html[data-theme="dark"] .pf-c-backdrop {
-    background-color: rgba(0, 0, 0, 0.75) !important;
-    backdrop-filter: blur(4px) !important;
-}
-
-html.pf-theme-dark .pf-c-modal-box,
-html[data-theme="dark"] .pf-c-modal-box {
-    background-color: #0e121a !important;
-    border: 1px solid #232b3c !important;
-    border-top: 2px solid #f59e0b !important;
-    border-radius: 16px !important;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85) !important;
-    color: #e2e8f0 !important;
-}
-
-html.pf-theme-dark .pf-c-modal-box__title-text,
-html[data-theme="dark"] .pf-c-modal-box__title-text {
-    color: #f8fafc !important;
-    font-weight: 600 !important;
-}
-
-html.pf-theme-dark .pf-c-modal-box__footer,
-html[data-theme="dark"] .pf-c-modal-box__footer {
-    background-color: #0a0d14 !important;
-    border-top: 1px solid #1a202c !important;
-}
-
-/* Tabs in Dark Mode */
-html.pf-theme-dark .pf-c-tabs__link,
-html[data-theme="dark"] .pf-c-tabs__link {
-    color: #94a3b8 !important;
-}
-
-html.pf-theme-dark .pf-c-tabs__link:hover,
-html[data-theme="dark"] .pf-c-tabs__link:hover {
-    color: #fde68a !important;
-}
-
-html.pf-theme-dark .pf-c-tabs__item.pf-m-current .pf-c-tabs__link,
-html[data-theme="dark"] .pf-c-tabs__item.pf-m-current .pf-c-tabs__link {
-    color: #fbbf24 !important;
-    font-weight: 600 !important;
-}
-
-html.pf-theme-dark .pf-c-tabs__item.pf-m-current .pf-c-tabs__link::after,
-html[data-theme="dark"] .pf-c-tabs__item.pf-m-current .pf-c-tabs__link::after {
-    border-bottom-color: #f59e0b !important;
-}
-
-/* Chips in Dark Mode */
-html.pf-theme-dark .pf-c-chip,
-html[data-theme="dark"] .pf-c-chip {
-    background-color: #141822 !important;
-    color: #cbd5e1 !important;
-    border: 1px solid #232b3c !important;
-    border-radius: 4px !important;
-}
-
-html.pf-theme-dark .pf-c-chip__text,
-html[data-theme="dark"] .pf-c-chip__text {
-    color: #cbd5e1 !important;
-}
-
-/* --------------------------------------------------------------------------
-   7. USER-FACING SIGN-IN FLOW & AUTHENTICATION CARD (CONCEPT 2: OBSIDIAN & AMBER GLOW)
-   Always maintains the signature dark wallpaper backdrop and obsidian card
-   -------------------------------------------------------------------------- */
+/* Wallpaper Backdrop */
 .pf-c-background-image {
-    --pf-c-background-image--BackgroundImage: var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
-    --pf-c-background-image--BackgroundImage-2x: var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
-    --pf-c-background-image--BackgroundImage--sm: var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
-    --pf-c-background-image--BackgroundImage--sm-2x: var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
-    --pf-c-background-image--BackgroundImage--lg: var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
+    --pf-c-background-image--BackgroundImage: var(--ak-global--background-image, none) !important;
+    --pf-c-background-image--BackgroundImage-2x: var(--ak-global--background-image, none) !important;
+    --pf-c-background-image--BackgroundImage--sm: var(--ak-global--background-image, none) !important;
+    --pf-c-background-image--BackgroundImage--sm-2x: var(--ak-global--background-image, none) !important;
+    --pf-c-background-image--BackgroundImage--lg: var(--ak-global--background-image, none) !important;
     --pf-c-background-image--Filter: none !important;
 }
 
 body.pf-c-background-image {
-    background-color: transparent !important;
+    background-color: #080a0f !important;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
     color: #e2e8f0 !important;
 }
@@ -1571,28 +931,36 @@ body.pf-c-background-image {
 .pf-c-background-image::before {
     content: "" !important;
     position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
+    inset: 0 !important;
     width: 100% !important;
     height: 100% !important;
+    min-height: 100dvh !important;
     z-index: -1 !important;
     background-color: #080a0f !important;
     background-image:
         radial-gradient(ellipse 70% 45% at 50% 0%, rgba(245, 158, 11, 0.12) 0%, transparent 70%),
         linear-gradient(rgba(8, 10, 15, 0.72), rgba(8, 10, 15, 0.82)),
-        var(--ak-global--background-image, url("/media/public/branding/bg_signin.jpg")) !important;
+        var(--ak-global--background-image, none) !important;
     background-size: cover !important;
     background-position: center center !important;
     background-repeat: no-repeat !important;
-    background-attachment: fixed !important;
+    background-attachment: scroll !important;
     filter: none !important;
 }
 
-/* Authentication Main Card (Obsidian Surface & Amber Border Glow) */
-.pf-c-login__main,
-.pf-c-login .pf-c-card,
-ak-flow-executor .pf-c-card {
-    background-color: #0d1017 !important;
+/* Keep wallpaper visible on mobile (override Authentik's solid mobile overlay) */
+.pf-c-login {
+    --ak-c-login--BackgroundColorOverlay: transparent !important;
+}
+
+@media (max-width: 35rem), (max-height: 17.5rem) {
+    .pf-c-login {
+        --ak-c-login--BackgroundColorOverlay: transparent !important;
+    }
+}
+
+/* Obsidian Authentication Card */
+:is(.pf-c-login__main, .pf-c-login .pf-c-card, ak-flow-executor .pf-c-card) {
     background: #0d1017 !important;
     border-radius: 16px !important;
     border: 1px solid rgba(255, 255, 255, 0.08) !important;
@@ -1601,13 +969,28 @@ ak-flow-executor .pf-c-card {
         0 0 0 1px rgba(0, 0, 0, 0.8),
         0 24px 50px -10px rgba(0, 0, 0, 0.9),
         0 0 40px -10px rgba(245, 158, 11, 0.08) !important;
-    padding: 2.25rem 2rem !important;
+    padding: 2rem 1.75rem !important;
     max-width: 440px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
     margin: 0 auto !important;
     color: #e2e8f0 !important;
+    --pf-c-login__main-body--PaddingLeft: 0 !important;
+    --pf-c-login__main-body--PaddingRight: 0 !important;
+    --pf-c-login__main-body--md--PaddingLeft: 0 !important;
+    --pf-c-login__main-body--md--PaddingRight: 0 !important;
+    --pf-c-login__main-body--PaddingBottom: 0 !important;
 }
 
-/* Branding Header & Monogram Logo */
+/* Remove duplicate PatternFly body padding so Turnstile (min 300px) never clips */
+:is(.pf-c-login__main-body, ak-flow-card .pf-c-login__main-body) {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    padding-bottom: 0 !important;
+    box-sizing: border-box !important;
+}
+
+/* Branding Header & Logo */
 .pf-c-login__main-header {
     padding: 0 0 1.5rem 0 !important;
     text-align: center !important;
@@ -1617,45 +1000,42 @@ ak-flow-executor .pf-c-card {
     justify-content: center !important;
 }
 
-.pf-c-login__main-header .branding-logo,
-.pf-c-login__main-header img {
+.pf-c-login__main-header :is(.branding-logo, img) {
     max-height: 52px !important;
     width: auto !important;
     margin: 0 auto !important;
     filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.7));
 }
 
-/* Sign-In Flow Typography (Scoped strictly to login card) */
-.pf-c-login__main .pf-c-title,
-.pf-c-login__main-header h1,
-.pf-c-login__main-body h1,
-.pf-c-login__main-body h2 {
+/* Flow Typography */
+:is(
+    .pf-c-login__main .pf-c-title,
+    .pf-c-login__main-header h1,
+    .pf-c-login__main-body h1,
+    .pf-c-login__main-body h2
+) {
     color: #f8fafc !important;
     font-size: 1.35rem !important;
     font-weight: 600 !important;
     letter-spacing: -0.015em !important;
-    margin-top: 0.5rem !important;
-    margin-bottom: 0.5rem !important;
+    margin: 0.5rem 0 !important;
     text-align: center !important;
 }
 
-.pf-c-login__main-body p,
-.pf-c-login__main-body .pf-c-form__helper-text {
+.pf-c-login__main-body p {
     color: #94a3b8 !important;
     font-size: 0.875rem !important;
 }
 
-/* ==========================================================================
-   FLOW / SIGN-IN FORM CONTROLS & INPUTS (BULLETPROOF TEXT & BACKGROUND)
-   ========================================================================== */
-
-/* 1. CSS Custom Properties Cascade into Web Components & Shadow Roots */
-.pf-c-login,
-.pf-c-login__main,
-ak-flow-executor,
-ak-stage-identification,
-ak-stage-password,
-body.pf-c-background-image {
+/* Flow Form Custom Properties (Cascade into Web Components & Shadow Roots) */
+:is(
+    .pf-c-login,
+    .pf-c-login__main,
+    ak-flow-executor,
+    ak-stage-identification,
+    ak-stage-password,
+    body.pf-c-background-image
+) {
     --pf-global--Color--100: #f8fafc !important;
     --pf-global--Color--200: #cbd5e1 !important;
     --pf-global--Color--dark-100: #f8fafc !important;
@@ -1664,30 +1044,17 @@ body.pf-c-background-image {
     --pf-c-form-control--Color: #f8fafc !important;
     --pf-c-form-control--BackgroundColor: #141822 !important;
     --pf-c-form-control--BorderColor: #232b3c !important;
-    --pf-c-form-control--focus--BorderColor: #f59e0b !important;
+    --pf-c-form-control--focus--BorderColor: var(--nal-amber-500) !important;
     --pf-c-form-control--placeholder--Color: #64748b !important;
 }
 
-/* 2. Direct Element & Class Styling for All Flow Inputs */
-.pf-c-login input,
-.pf-c-login textarea,
-.pf-c-login select,
-.pf-c-login .pf-c-form-control,
-.pf-c-login__main input,
-.pf-c-login__main textarea,
-.pf-c-login__main select,
-.pf-c-login__main .pf-c-form-control,
-ak-flow-executor input,
-ak-flow-executor textarea,
-ak-flow-executor select,
-ak-flow-executor .pf-c-form-control,
-ak-form-element input,
-ak-flow-input-password input {
-    background-color: #141822 !important;
+/* Flow Form Inputs */
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element, ak-flow-input-password)
+    :is(input, textarea, select, .pf-c-form-control) {
     background: #141822 !important;
     color: #f8fafc !important;
     -webkit-text-fill-color: #f8fafc !important;
-    caret-color: #f59e0b !important;
+    caret-color: var(--nal-amber-500) !important;
     border: 1px solid #232b3c !important;
     border-radius: 8px !important;
     min-height: 2.75rem !important;
@@ -1698,97 +1065,56 @@ ak-flow-input-password input {
     transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease !important;
 }
 
-/* 3. Focus State */
-.pf-c-login input:focus,
-.pf-c-login textarea:focus,
-.pf-c-login select:focus,
-.pf-c-login .pf-c-form-control:focus,
-.pf-c-login__main input:focus,
-.pf-c-login__main textarea:focus,
-.pf-c-login__main select:focus,
-.pf-c-login__main .pf-c-form-control:focus,
-ak-flow-executor input:focus,
-ak-flow-executor textarea:focus,
-ak-flow-executor select:focus,
-ak-flow-executor .pf-c-form-control:focus,
-ak-form-element input:focus,
-ak-flow-input-password input:focus {
-    background-color: #181d2a !important;
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element, ak-flow-input-password)
+    :is(input, textarea, select, .pf-c-form-control):focus {
     background: #181d2a !important;
-    border-color: #f59e0b !important;
+    border-color: var(--nal-amber-500) !important;
     color: #ffffff !important;
     -webkit-text-fill-color: #ffffff !important;
     outline: none !important;
     box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22) !important;
 }
 
-/* 4. Placeholders */
-.pf-c-login input::placeholder,
-.pf-c-login textarea::placeholder,
-.pf-c-login .pf-c-form-control::placeholder,
-.pf-c-login__main input::placeholder,
-.pf-c-login__main textarea::placeholder,
-.pf-c-login__main .pf-c-form-control::placeholder,
-ak-flow-executor input::placeholder,
-ak-flow-executor textarea::placeholder,
-ak-flow-executor .pf-c-form-control::placeholder,
-ak-form-element input::placeholder,
-ak-flow-input-password input::placeholder {
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element, ak-flow-input-password)
+    :is(input, textarea, .pf-c-form-control)::placeholder {
     color: #64748b !important;
     -webkit-text-fill-color: #64748b !important;
     opacity: 1 !important;
 }
 
-/* 5. Browser Autofill Override (Fixes Chrome / Safari / Edge black text / white bg) */
-.pf-c-login input:-webkit-autofill,
-.pf-c-login input:-webkit-autofill:hover,
-.pf-c-login input:-webkit-autofill:focus,
-.pf-c-login__main input:-webkit-autofill,
-.pf-c-login__main input:-webkit-autofill:hover,
-.pf-c-login__main input:-webkit-autofill:focus,
-ak-flow-executor input:-webkit-autofill,
-ak-flow-executor input:-webkit-autofill:hover,
-ak-flow-executor input:-webkit-autofill:focus,
-ak-form-element input:-webkit-autofill,
-ak-flow-input-password input:-webkit-autofill {
+/* Browser Autofill Override (Prevents white bg / dark text in Chrome, Safari, Edge) */
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element, ak-flow-input-password)
+    input:-webkit-autofill,
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element, ak-flow-input-password)
+    input:-webkit-autofill:hover,
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element, ak-flow-input-password)
+    input:-webkit-autofill:focus {
     -webkit-text-fill-color: #f8fafc !important;
-    -webkit-box-shadow: 0 0 0px 1000px #141822 inset !important;
-    box-shadow: 0 0 0px 1000px #141822 inset !important;
-    caret-color: #f59e0b !important;
+    -webkit-box-shadow: 0 0 0 1000px #141822 inset !important;
+    box-shadow: 0 0 0 1000px #141822 inset !important;
+    caret-color: var(--nal-amber-500) !important;
     transition: background-color 5000s ease-in-out 0s !important;
 }
 
-/* 6. Password Input Group & Eye Toggle Button */
-.pf-c-login .pf-c-input-group,
-.pf-c-login__main .pf-c-input-group,
-ak-flow-executor .pf-c-input-group,
-ak-flow-input-password .pf-c-input-group {
+/* Password Input Group & Visibility Toggle */
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-flow-input-password) .pf-c-input-group {
     display: flex !important;
     width: 100% !important;
     position: relative !important;
 }
 
-.pf-c-login .pf-c-input-group input,
-.pf-c-login__main .pf-c-input-group input,
-ak-flow-executor .pf-c-input-group input,
-ak-flow-input-password .pf-c-input-group input {
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-flow-input-password) .pf-c-input-group input {
     border-top-right-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
     flex: 1 1 auto !important;
 }
 
-.pf-c-login .pf-c-input-group .pf-c-button,
-.pf-c-login__main .pf-c-input-group .pf-c-button,
-ak-flow-executor .pf-c-input-group .pf-c-button,
-ak-flow-input-password .pf-c-input-group .pf-c-button {
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-flow-input-password) .pf-c-input-group .pf-c-button {
     background-color: #141822 !important;
     color: #94a3b8 !important;
     border: 1px solid #232b3c !important;
     border-left: none !important;
-    border-top-right-radius: 8px !important;
-    border-bottom-right-radius: 8px !important;
-    border-top-left-radius: 0 !important;
-    border-bottom-left-radius: 0 !important;
+    border-radius: 0 8px 8px 0 !important;
     min-height: 2.75rem !important;
     padding: 0 0.85rem !important;
     display: inline-flex !important;
@@ -1797,23 +1123,14 @@ ak-flow-input-password .pf-c-input-group .pf-c-button {
     cursor: pointer !important;
 }
 
-.pf-c-login .pf-c-input-group .pf-c-button:hover,
-.pf-c-login__main .pf-c-input-group .pf-c-button:hover,
-ak-flow-executor .pf-c-input-group .pf-c-button:hover,
-ak-flow-input-password .pf-c-input-group .pf-c-button:hover {
-    color: #fbbf24 !important;
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-flow-input-password) .pf-c-input-group .pf-c-button:hover {
+    color: var(--nal-amber-400) !important;
     background-color: #1c2230 !important;
 }
 
-/* 7. Form Labels & Helper Text in Flow Cards */
-.pf-c-login .pf-c-form__label-text,
-.pf-c-login label.pf-c-form__label,
-.pf-c-login__main .pf-c-form__label-text,
-.pf-c-login__main label.pf-c-form__label,
-ak-flow-executor .pf-c-form__label-text,
-ak-flow-executor label.pf-c-form__label,
-ak-form-element .pf-c-form__label-text,
-ak-form-element label.pf-c-form__label {
+/* Flow Labels, Helper Text & Checkboxes */
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element)
+    :is(.pf-c-form__label-text, label.pf-c-form__label) {
     color: #cbd5e1 !important;
     font-size: 0.825rem !important;
     font-weight: 500 !important;
@@ -1822,35 +1139,44 @@ ak-form-element label.pf-c-form__label {
     display: inline-block !important;
 }
 
-.pf-c-login .pf-c-form__helper-text,
-.pf-c-login__main .pf-c-form__helper-text,
-ak-flow-executor .pf-c-form__helper-text,
-ak-form-element .pf-c-form__helper-text {
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element) .pf-c-form__helper-text {
     color: #94a3b8 !important;
     font-size: 0.8rem !important;
     margin-top: 0.25rem !important;
 }
 
-/* 8. Checkboxes in Login Flows ("Remember Me", etc.) */
-.pf-c-login .pf-c-check__input,
-.pf-c-login__main .pf-c-check__input,
-ak-flow-executor .pf-c-check__input {
-    accent-color: #f59e0b !important;
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) .pf-c-check__input {
+    accent-color: var(--nal-amber-500) !important;
 }
 
-.pf-c-login .pf-c-check__label,
-.pf-c-login__main .pf-c-check__label,
-ak-flow-executor .pf-c-check__label {
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) .pf-c-check__label {
     color: #cbd5e1 !important;
     font-size: 0.875rem !important;
 }
 
-/* Flow Alerts & Validation Callouts */
+/* Cloudflare Turnstile / CAPTCHA Stage Container */
+ak-stage-captcha {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+:is(ak-stage-captcha .ak-interactive-challenge, iframe.ak-interactive-challenge, iframe#ak-captcha) {
+    display: block !important;
+    width: 100% !important;
+    min-height: 68px !important;
+    border: none !important;
+    margin: 0 auto !important;
+    border-radius: 8px !important;
+    box-sizing: border-box !important;
+}
+
+/* Flow Alerts */
 .pf-c-alert {
     border-radius: 8px !important;
     margin-bottom: 1rem !important;
-    border-width: 1px !important;
-    border-style: solid !important;
+    border: 1px solid transparent !important;
 }
 
 .pf-c-alert.pf-m-danger {
@@ -1863,8 +1189,8 @@ ak-flow-executor .pf-c-check__label {
 .pf-c-alert.pf-m-warning {
     background-color: rgba(245, 158, 11, 0.12) !important;
     border-color: rgba(245, 158, 11, 0.3) !important;
-    border-left: 4px solid #f59e0b !important;
-    color: #fde68a !important;
+    border-left: 4px solid var(--nal-amber-500) !important;
+    color: var(--nal-amber-200) !important;
 }
 
 .pf-c-alert.pf-m-success {
@@ -1875,11 +1201,13 @@ ak-flow-executor .pf-c-check__label {
 }
 
 /* Hide Flow Footers & "Powered by authentik" */
-ak-flow-executor ak-brand-links,
-.pf-c-login ak-brand-links,
-.pf-c-login [name="flow-links"],
-.pf-c-login .pf-c-login__footer,
-.pf-c-login footer[name="site-footer"] {
+:is(
+    ak-flow-executor ak-brand-links,
+    .pf-c-login ak-brand-links,
+    .pf-c-login [name="flow-links"],
+    .pf-c-login .pf-c-login__footer,
+    .pf-c-login footer[name="site-footer"]
+) {
     display: none !important;
     visibility: hidden !important;
     height: 0 !important;
@@ -1888,8 +1216,7 @@ ak-flow-executor ak-brand-links,
 }
 
 /* Sign-In Language Selector */
-ak-locale-select,
-.pf-c-login__header {
+:is(ak-locale-select, .pf-c-login__header) {
     color: #64748b !important;
 }
 
@@ -1900,8 +1227,7 @@ ak-locale-select {
     align-items: center !important;
 }
 
-ak-locale-select select,
-ak-locale-select [part="select"] {
+ak-locale-select :is(select, [part="select"]) {
     background-color: #141822 !important;
     color: #94a3b8 !important;
     border: 1px solid #232b3c !important;
@@ -1909,10 +1235,7 @@ ak-locale-select [part="select"] {
     height: auto !important;
     min-height: 2.25rem !important;
     line-height: normal !important;
-    padding-top: 0.35rem !important;
-    padding-bottom: 0.35rem !important;
-    padding-left: 2rem !important;
-    padding-right: 1.5rem !important;
+    padding: 0.35rem 1.5rem 0.35rem 2rem !important;
     box-sizing: border-box !important;
     vertical-align: middle !important;
     cursor: pointer !important;
@@ -1923,80 +1246,65 @@ ak-locale-select select option {
     color: #f8fafc !important;
 }
 
+/* Mobile Sign-In Card Spacing (>= 300px inner width for Turnstile on 360px+ viewports) */
+@media (max-width: 35rem) {
+    :is(.pf-c-login__main, .pf-c-login .pf-c-card, ak-flow-executor .pf-c-card) {
+        width: calc(100% - 1.5rem) !important;
+        max-width: calc(100% - 1.5rem) !important;
+        padding: 1.5rem 1rem !important;
+    }
+}
+
+@media (max-width: 22.5rem) {
+    :is(.pf-c-login__main, .pf-c-login .pf-c-card, ak-flow-executor .pf-c-card) {
+        width: calc(100% - 0.75rem) !important;
+        max-width: calc(100% - 0.75rem) !important;
+        padding: 1.25rem 0.75rem !important;
+    }
+}
+
 /* --------------------------------------------------------------------------
-   8. STATUS LABELS, BADGES & SLEEK SCROLLBARS
+   8. Status Badges, Labels & Scrollbars
    -------------------------------------------------------------------------- */
 .pf-c-badge.pf-m-unread {
-    background-color: #f59e0b !important;
-    color: #0a0d14 !important;
+    background-color: var(--nal-amber-500) !important;
+    color: var(--nal-on-amber) !important;
     font-weight: 700 !important;
 }
 
-.pf-c-label.pf-m-blue,
-.pf-c-label.pf-m-orange,
-.pf-c-label.pf-m-gold {
+:is(.pf-c-label.pf-m-blue, .pf-c-label.pf-m-orange, .pf-c-label.pf-m-gold) {
     background-color: rgba(245, 158, 11, 0.15) !important;
-    color: #d97706 !important;
+    color: var(--nal-label-amber) !important;
     border: 1px solid rgba(245, 158, 11, 0.3) !important;
-}
-
-html.pf-theme-dark .pf-c-label.pf-m-blue,
-html.pf-theme-dark .pf-c-label.pf-m-orange,
-html.pf-theme-dark .pf-c-label.pf-m-gold {
-    color: #fbbf24 !important;
 }
 
 .pf-c-label.pf-m-green {
     background-color: rgba(16, 185, 129, 0.15) !important;
-    color: #059669 !important;
+    color: var(--nal-label-green) !important;
     border: 1px solid rgba(16, 185, 129, 0.3) !important;
-}
-
-html.pf-theme-dark .pf-c-label.pf-m-green {
-    color: #34d399 !important;
 }
 
 .pf-c-label.pf-m-red {
     background-color: rgba(239, 68, 68, 0.15) !important;
-    color: #dc2626 !important;
+    color: var(--nal-label-red) !important;
     border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
-html.pf-theme-dark .pf-c-label.pf-m-red {
-    color: #f87171 !important;
-}
-
-/* Sleek Scrollbars */
+/* Scrollbars */
 *::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
 
-html:not(.pf-theme-dark) *::-webkit-scrollbar-track {
-    background: #f1f5f9;
+*::-webkit-scrollbar-track {
+    background: var(--nal-scrollbar-track);
 }
 
-html:not(.pf-theme-dark) *::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
+*::-webkit-scrollbar-thumb {
+    background: var(--nal-scrollbar-thumb);
     border-radius: 4px;
 }
 
-html:not(.pf-theme-dark) *::-webkit-scrollbar-thumb:hover {
-    background: #f59e0b;
-}
-
-html.pf-theme-dark *::-webkit-scrollbar-track,
-html[data-theme="dark"] *::-webkit-scrollbar-track {
-    background: #080a0f;
-}
-
-html.pf-theme-dark *::-webkit-scrollbar-thumb,
-html[data-theme="dark"] *::-webkit-scrollbar-thumb {
-    background: #1c2333;
-    border-radius: 4px;
-}
-
-html.pf-theme-dark *::-webkit-scrollbar-thumb:hover,
-html[data-theme="dark"] *::-webkit-scrollbar-thumb:hover {
-    background: #f59e0b;
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--nal-amber-500);
 }
