@@ -28,7 +28,7 @@ type Backend interface {
 	DeleteNode(ctx context.Context, name string) error
 }
 
-type Store interface {
+type TaskStore interface {
 	CreateTask(ctx context.Context, task *models.Task) (*models.Task, error)
 	AppendTaskLog(ctx context.Context, taskID string, stream string, line string) (models.TaskLogLine, error)
 	FinishTask(ctx context.Context, taskID string, status string, errMsg string) error
@@ -36,14 +36,26 @@ type Store interface {
 	GetTaskWithLogs(ctx context.Context, taskID string) (*models.Task, []models.TaskLogLine, error)
 	GetRawLogPath(taskID string) string
 	SubscribeTaskLogs(taskID string) (<-chan models.TaskLogLine, func())
+}
+
+type SnapshotStore interface {
 	SaveSnapshot(ctx context.Context, snap *models.RollbackSnapshot) error
 	GetLatestSnapshot(ctx context.Context, serviceName string) (*models.RollbackSnapshot, error)
 	ListSnapshots(ctx context.Context) (map[string]models.RollbackSnapshot, error)
+}
+
+type SkippedStore interface {
 	SetSkippedVersion(ctx context.Context, targetType, targetName, version, actor string) error
 	RemoveSkippedVersion(ctx context.Context, targetType, targetName string) error
 	ListSkippedVersions(ctx context.Context) (map[string]string, error)
+}
+
+type AlertStore interface {
 	RecordAlertSent(ctx context.Context, fingerprint, alertType string) error
 	HasAlertBeenSent(ctx context.Context, fingerprint string) (bool, error)
+}
+
+type NodeStore interface {
 	UpsertNode(ctx context.Context, node models.NodeInfo) error
 	UpdateNodeHealth(ctx context.Context, name string, online bool, lastSeen time.Time, lastError string) error
 	AnnounceNode(ctx context.Context, req models.NodeInfo) (models.NodeStatus, error)
@@ -52,8 +64,20 @@ type Store interface {
 	ListNodes(ctx context.Context) ([]models.NodeInfo, error)
 	ApproveNode(ctx context.Context, name string) error
 	RejectNode(ctx context.Context, name string) error
+}
+
+type ScanResultStore interface {
 	SaveScanResult(ctx context.Context, scan *models.ScanResult) error
 	LoadLatestScanResult(ctx context.Context) (*models.ScanResult, error)
+}
+
+type Store interface {
+	TaskStore
+	SnapshotStore
+	SkippedStore
+	AlertStore
+	NodeStore
+	ScanResultStore
 	FlushPending(ctx context.Context) error
 }
 

@@ -21,8 +21,7 @@ func (s *Server) handleTasksList(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusInternalServerError, "failed to list tasks")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(tasks)
+	writeJSON(w, http.StatusOK, tasks)
 }
 
 func (s *Server) handleTaskDetailOrStream(w http.ResponseWriter, r *http.Request) {
@@ -61,8 +60,7 @@ func (s *Server) handleTaskDetailOrStream(w http.ResponseWriter, r *http.Request
 		auth.WriteJSONError(w, http.StatusNotFound, "task not found")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"task": task,
 		"logs": logs,
 	})

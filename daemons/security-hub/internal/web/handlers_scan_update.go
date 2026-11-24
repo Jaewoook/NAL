@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -34,17 +33,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		if scan.Items[i].Node == "" {
 			scan.Items[i].Node = hubName
 		}
-		if scan.Items[i].TargetType != models.TargetDocker || scan.Items[i].HasRollback {
-			continue
-		}
-		if snap, ok := snapshots[scan.Items[i].Node+":"+scan.Items[i].Name]; ok {
-			scan.Items[i].HasRollback = true
-			scan.Items[i].RollbackVersion = snap.PreviousVersion
-		} else if snap, ok := snapshots[scan.Items[i].Name]; ok && strings.EqualFold(scan.Items[i].Node, hubName) {
-			scan.Items[i].HasRollback = true
-			scan.Items[i].RollbackVersion = snap.PreviousVersion
-		}
 	}
+	scanner.ApplyDockerSnapshots(scan.Items, snapshots, hubName)
+
 	nodes := s.buildNodesOverview(ctx)
 	summarized := scanner.ApplySkippedAndSummarize(scan.Items, skipped)
 	summarized.ScannedAt = scan.ScannedAt
@@ -62,8 +53,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		scanningNodes = []string{}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"hub_node":            hubName,
 		"nodes":               nodes,
 		"scan":                summarized,
@@ -73,6 +63,44 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"active_scan_task_id": activeScanTaskID,
 		"scanning_nodes":      scanningNodes,
 	})
+}
+
+func parseRequestedScanNode(r *http.Request) (string, int, string) {
+	queryNode := strings.TrimSpace(r.URL.Query().Get("node"))
+	var bodyNode string
+	if r.Body != nil {
+		rawBody, readErr := io.ReadAll(io.LimitReader(r.Body, (1<<20)+1))
+		if readErr != nil {
+			return "", http.StatusBadRequest, "failed to read request body"
+		}
+		if len(rawBody) > 1<<20 {
+			return "", http.StatusRequestEntityTooLarge, "request body too large"
+		}
+		if len(bytes.TrimSpace(rawBody)) > 0 {
+			var req struct {
+				Node *string `json:"node"`
+			}
+			dec := json.NewDecoder(bytes.NewReader(rawBody))
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&req); err != nil {
+				return "", http.StatusBadRequest, "invalid json request body"
+			}
+			var extra any
+			if err := dec.Decode(&extra); err != io.EOF {
+				return "", http.StatusBadRequest, "invalid trailing data in request body"
+			}
+			if req.Node != nil {
+				bodyNode = strings.TrimSpace(*req.Node)
+			}
+		}
+	}
+	if queryNode != "" && bodyNode != "" && !strings.EqualFold(queryNode, bodyNode) {
+		return "", http.StatusBadRequest, "conflicting node specified in query and body"
+	}
+	if queryNode != "" {
+		return queryNode, 0, ""
+	}
+	return bodyNode, 0, ""
 }
 
 func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
@@ -85,152 +113,42 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse optional requested node from query param (?node=...) or JSON request body ({"node": "..."})
-	queryNode := strings.TrimSpace(r.URL.Query().Get("node"))
-	var bodyNode string
-	if r.Body != nil {
-		rawBody, readErr := io.ReadAll(io.LimitReader(r.Body, (1<<20)+1))
-		if readErr != nil {
-			auth.WriteJSONError(w, http.StatusBadRequest, "failed to read request body")
-			return
-		}
-		if len(rawBody) > 1<<20 {
-			auth.WriteJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
-			return
-		}
-		if len(bytes.TrimSpace(rawBody)) > 0 {
-			var req struct {
-				Node *string `json:"node"`
-			}
-			dec := json.NewDecoder(bytes.NewReader(rawBody))
-			dec.DisallowUnknownFields()
-			if err := dec.Decode(&req); err != nil {
-				auth.WriteJSONError(w, http.StatusBadRequest, "invalid json request body")
-				return
-			}
-			var extra any
-			if err := dec.Decode(&extra); err != io.EOF {
-				auth.WriteJSONError(w, http.StatusBadRequest, "invalid trailing data in request body")
-				return
-			}
-			if req.Node != nil {
-				bodyNode = strings.TrimSpace(*req.Node)
-			}
-		}
-	}
-	if queryNode != "" && bodyNode != "" && !strings.EqualFold(queryNode, bodyNode) {
-		auth.WriteJSONError(w, http.StatusBadRequest, "conflicting node specified in query and body")
-		return
-	}
-	requestedNode := queryNode
-	if requestedNode == "" {
-		requestedNode = bodyNode
-	}
-
-	s.orch.LockScanStart()
-	startLocked := true
-	defer func() {
-		if startLocked {
-			s.orch.UnlockScanStart()
-		}
-	}()
-
-	if scanning, activeID, scanningNodes := s.orch.GetScanState(); scanning {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error":          "scan already running",
-			"task_id":        activeID,
-			"scanning_nodes": scanningNodes,
-		})
+	requestedNode, errStatus, errMsg := parseRequestedScanNode(r)
+	if errStatus != 0 {
+		auth.WriteJSONError(w, errStatus, errMsg)
 		return
 	}
 
-	hubName := s.localNodeName()
-	actor := "web"
-	if claims := s.sessionClaims(r); claims != nil {
-		actor = claims.Method + ":" + claims.Subject
-	}
-
-	var taskNode string
-	var targetType string
-	var targetName string
-	var initialScanningNodes []string
-	var isSingleNode bool
-
-	if requestedNode != "" {
-		targetNode, err := s.orch.ResolveTargetNode(r.Context(), requestedNode)
-		if err != nil {
-			if errors.Is(err, scanner.ErrScanNodeNotFound) {
-				auth.WriteJSONError(w, http.StatusNotFound, err.Error())
-				return
-			}
-			if errors.Is(err, scanner.ErrScanNodeNotApproved) {
-				auth.WriteJSONError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+	reservation, err := s.orch.BeginScan(r.Context(), scanner.BeginScanRequest{
+		RequestedNode: requestedNode,
+		TriggeredBy:   s.requestActor(r),
+	})
+	if err != nil {
+		var inProg *scanner.ScanInProgressError
+		if errors.As(err, &inProg) {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":          "scan already running",
+				"task_id":        inProg.ActiveTaskID,
+				"scanning_nodes": inProg.ScanningNodes,
+			})
 			return
 		}
-		isSingleNode = true
-		taskNode = targetNode.Name
-		targetType = "node"
-		targetName = targetNode.Name
-		initialScanningNodes = []string{targetNode.Name}
-	} else {
-		taskNode = hubName
-		targetType = "system"
-		targetName = "all"
-		initialScanningNodes = []string{hubName}
-		for _, n := range s.buildNodesOverview(r.Context()) {
-			if !strings.EqualFold(n.Name, hubName) && (n.Status == "" || n.Status == models.NodeStatusApproved) {
-				initialScanningNodes = append(initialScanningNodes, n.Name)
-			}
-		}
-	}
-
-	var taskID string
-	if s.store != nil {
-		task, err := s.store.CreateTask(r.Context(), &models.Task{
-			Node:        taskNode,
-			TaskType:    "security_scan",
-			TargetType:  targetType,
-			TargetName:  targetName,
-			TriggeredBy: actor,
-			Status:      "running",
-		})
-		if err != nil {
-			auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		if errors.Is(err, scanner.ErrScanNodeNotFound) {
+			auth.WriteJSONError(w, http.StatusNotFound, err.Error())
 			return
 		}
-		taskID = task.ID
-	} else {
-		taskID = fmt.Sprintf("task_%d", time.Now().UnixNano())
-	}
-
-	started, activeID := s.orch.StartScanWithNodes(taskID, initialScanningNodes)
-	if !started {
-		if s.store != nil {
-			abortCtx, abortCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer abortCancel()
-			_ = s.store.FinishTask(abortCtx, taskID, "aborted", "scan already running")
+		if errors.Is(err, scanner.ErrScanNodeNotApproved) {
+			auth.WriteJSONError(w, http.StatusBadRequest, err.Error())
+			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error":          "scan already running",
-			"task_id":        activeID,
-			"scanning_nodes": s.orch.ScanningNodes(),
-		})
+		auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.orch.UnlockScanStart()
-	startLocked = false
 
 	s.scanWG.Add(1)
-	go func(tid string, single bool, singleTarget string) {
+	go func(res *scanner.ScanReservation) {
 		defer s.scanWG.Done()
-		defer s.orch.FinishScanTask(tid)
+		defer s.orch.FinishScanTask(res.TaskID)
 
 		scanCtx, scanCancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer scanCancel()
@@ -245,42 +163,40 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var scan *models.ScanResult
-		var err error
-		if single {
-			scan, err = s.orch.RunNodeScanWithTask(scanCtx, singleTarget, tid)
+		var runErr error
+		if res.IsSingleNode {
+			scan, runErr = s.orch.RunNodeScanWithTask(scanCtx, res.Node, res.TaskID)
 		} else {
-			scan, err = s.orch.RunFullScanWithTask(scanCtx, tid)
+			scan, runErr = s.orch.RunFullScanWithTask(scanCtx, res.TaskID)
 		}
 
-		s.orch.FinishScanTask(tid)
+		s.orch.FinishScanTask(res.TaskID)
 
-		if err != nil {
+		if runErr != nil {
 			if s.store != nil {
 				finishCtx, finishCancel := context.WithTimeout(context.Background(), 3*time.Second)
 				defer finishCancel()
-				_ = s.store.FinishTask(finishCtx, tid, "failed", err.Error())
+				_ = s.store.FinishTask(finishCtx, res.TaskID, "failed", runErr.Error())
 			}
 			return
 		}
 		if s.store != nil {
-			curTask, _, _ := s.store.GetTaskWithLogs(scanCtx, tid)
+			curTask, _, _ := s.store.GetTaskWithLogs(scanCtx, res.TaskID)
 			if curTask != nil && curTask.Status == "running" {
-				_ = s.store.FinishTask(scanCtx, tid, "succeeded", "")
+				_ = s.store.FinishTask(scanCtx, res.TaskID, "succeeded", "")
 			}
 		}
 		if s.alerter != nil {
 			_, _ = s.alerter.NotifyScanFindings(scanCtx, scan)
 		}
-	}(taskID, isSingleNode, taskNode)
+	}(reservation)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"task_id":        taskID,
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"task_id":        reservation.TaskID,
 		"status":         "running",
-		"node":           taskNode,
-		"target_name":    targetName,
-		"scanning_nodes": initialScanningNodes,
+		"node":           reservation.Node,
+		"target_name":    reservation.TargetName,
+		"scanning_nodes": reservation.ScanningNodes,
 	})
 }
 
@@ -293,7 +209,6 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusInternalServerError, "updater not configured")
 		return
 	}
-	claims := s.sessionClaims(r)
 	var req updater.UpdateRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		auth.WriteJSONError(w, http.StatusBadRequest, "invalid request")
@@ -303,7 +218,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if claims != nil {
+	if claims := s.sessionClaims(r); claims != nil {
 		req.TriggeredBy = claims.Method + ":" + claims.Subject
 	}
 	task, err := s.updMgr.TriggerUpdate(r.Context(), req)
@@ -315,8 +230,7 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(task)
+	writeJSON(w, http.StatusOK, task)
 }
 
 func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
@@ -328,7 +242,6 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusInternalServerError, "updater not configured")
 		return
 	}
-	claims := s.sessionClaims(r)
 	var req struct {
 		Node        string `json:"node"`
 		ServiceName string `json:"service_name"`
@@ -337,11 +250,7 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusBadRequest, "service_name required")
 		return
 	}
-	actor := "web"
-	if claims != nil {
-		actor = claims.Method + ":" + claims.Subject
-	}
-	task, err := s.updMgr.RollbackServiceOnNode(r.Context(), req.Node, req.ServiceName, actor)
+	task, err := s.updMgr.RollbackServiceOnNode(r.Context(), req.Node, req.ServiceName, s.requestActor(r))
 	if err != nil {
 		if errors.Is(err, updater.ErrUpdateInProgress) {
 			auth.WriteJSONError(w, http.StatusConflict, err.Error())
@@ -350,8 +259,7 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(task)
+	writeJSON(w, http.StatusOK, task)
 }
 
 func (s *Server) handleSkip(w http.ResponseWriter, r *http.Request) {
@@ -359,11 +267,7 @@ func (s *Server) handleSkip(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusInternalServerError, "store is not configured")
 		return
 	}
-	claims := s.sessionClaims(r)
-	actor := "web"
-	if claims != nil {
-		actor = claims.Method + ":" + claims.Subject
-	}
+	actor := s.requestActor(r)
 	switch r.Method {
 	case http.MethodPost:
 		var req struct {
@@ -384,8 +288,7 @@ func (s *Server) handleSkip(w http.ResponseWriter, r *http.Request) {
 			auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "skipped"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "skipped"})
 	case http.MethodDelete:
 		node := strings.TrimSpace(r.URL.Query().Get("node"))
 		tt := strings.TrimSpace(r.URL.Query().Get("target_type"))
@@ -400,8 +303,7 @@ func (s *Server) handleSkip(w http.ResponseWriter, r *http.Request) {
 			auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "unskipped"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "unskipped"})
 	default:
 		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}

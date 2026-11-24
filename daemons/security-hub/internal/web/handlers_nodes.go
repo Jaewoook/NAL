@@ -52,8 +52,7 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	switch r.Method {
 	case http.MethodGet:
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(s.buildNodesOverview(ctx))
+		writeJSON(w, http.StatusOK, s.buildNodesOverview(ctx))
 	case http.MethodPost:
 		var req models.NodeInfo
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.URL) == "" {
@@ -76,8 +75,7 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 			auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "saved",
 			"nodes":  s.buildNodesOverview(ctx),
 		})
@@ -91,8 +89,7 @@ func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
 			auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "removed",
 			"nodes":  s.buildNodesOverview(ctx),
 		})
@@ -166,8 +163,19 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusForbidden, "node rejected")
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": string(status)})
+	writeJSON(w, http.StatusOK, map[string]string{"status": string(status)})
+}
+
+func parseNodeNameParam(r *http.Request) string {
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		var req struct {
+			Name string `json:"name"`
+		}
+		_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req)
+		name = strings.TrimSpace(req.Name)
+	}
+	return name
 }
 
 func (s *Server) handleNodeApprove(w http.ResponseWriter, r *http.Request) {
@@ -179,14 +187,7 @@ func (s *Server) handleNodeApprove(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusInternalServerError, "store is not configured")
 		return
 	}
-	name := strings.TrimSpace(r.URL.Query().Get("name"))
-	if name == "" {
-		var req struct {
-			Name string `json:"name"`
-		}
-		_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req)
-		name = strings.TrimSpace(req.Name)
-	}
+	name := parseNodeNameParam(r)
 	if name == "" {
 		auth.WriteJSONError(w, http.StatusBadRequest, "name parameter required")
 		return
@@ -197,8 +198,7 @@ func (s *Server) handleNodeApprove(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "approved",
 		"name":   name,
 		"nodes":  s.buildNodesOverview(ctx),
@@ -214,14 +214,7 @@ func (s *Server) handleNodeReject(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusInternalServerError, "store is not configured")
 		return
 	}
-	name := strings.TrimSpace(r.URL.Query().Get("name"))
-	if name == "" {
-		var req struct {
-			Name string `json:"name"`
-		}
-		_ = json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req)
-		name = strings.TrimSpace(req.Name)
-	}
+	name := parseNodeNameParam(r)
 	if name == "" {
 		auth.WriteJSONError(w, http.StatusBadRequest, "name parameter required")
 		return
@@ -232,8 +225,7 @@ func (s *Server) handleNodeReject(w http.ResponseWriter, r *http.Request) {
 		auth.WriteJSONError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "rejected",
 		"name":   name,
 		"nodes":  s.buildNodesOverview(ctx),

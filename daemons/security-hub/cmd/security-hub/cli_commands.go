@@ -123,6 +123,14 @@ func runDBCommand(rest []string, cfg *config.Config, out io.Writer) int {
 	return 0
 }
 
+func openCLISpoolStore(cfg *config.Config, withPostgres bool) (*db.SpoolStore, error) {
+	var pg db.Backend
+	if withPostgres {
+		pg = db.NewPostgresBackendWithPassword(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil)
+	}
+	return db.NewCLISpoolStore(cfg.Database.DataDir, pg)
+}
+
 func runScanCommand(rest []string, cfg *config.Config, out io.Writer) int {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.SetOutput(out)
@@ -134,8 +142,7 @@ func runScanCommand(rest []string, cfg *config.Config, out io.Writer) int {
 		fmt.Fprintln(out, "Usage: security-hub scan [-node <name>]")
 		return 1
 	}
-	pg := db.NewPostgresBackendWithPassword(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil)
-	store, err := db.NewCLISpoolStore(cfg.Database.DataDir, pg)
+	store, err := openCLISpoolStore(cfg, true)
 	if err != nil {
 		fmt.Fprintf(out, "Failed to open spool store: %v\n", err)
 		return 1
@@ -183,8 +190,7 @@ func runRollbackCommand(rest []string, cfg *config.Config, out io.Writer) int {
 		fmt.Fprintln(out, "Usage: security-hub rollback <service-name>")
 		return 1
 	}
-	pg := db.NewPostgresBackendWithPassword(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil)
-	store, err := db.NewCLISpoolStore(cfg.Database.DataDir, pg)
+	store, err := openCLISpoolStore(cfg, true)
 	if err != nil {
 		fmt.Fprintf(out, "Failed to open spool store: %v\n", err)
 		return 1
@@ -201,7 +207,7 @@ func runRollbackCommand(rest []string, cfg *config.Config, out io.Writer) int {
 }
 
 func runTestAlertCommand(cfg *config.Config, out io.Writer) int {
-	store, err := db.NewCLISpoolStore(cfg.Database.DataDir, nil)
+	store, err := openCLISpoolStore(cfg, false)
 	if err != nil {
 		fmt.Fprintf(out, "Failed to open spool store: %v\n", err)
 		return 1
@@ -220,11 +226,7 @@ func runNodeCommand(rest []string, cfg *config.Config, out io.Writer) int {
 		fmt.Fprintln(out, "Usage: security-hub node <add|list|remove>")
 		return 1
 	}
-	var pg db.Backend
-	if rest[0] == "add" || rest[0] == "remove" {
-		pg = db.NewPostgresBackendWithPassword(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil)
-	}
-	store, err := db.NewCLISpoolStore(cfg.Database.DataDir, pg)
+	store, err := openCLISpoolStore(cfg, rest[0] == "add" || rest[0] == "remove")
 	if err != nil {
 		fmt.Fprintf(out, "Failed to open spool store: %v\n", err)
 		return 1

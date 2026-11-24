@@ -1,7 +1,6 @@
 package web
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -9,11 +8,10 @@ import (
 )
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	oidcConfigured := s.cfg != nil && s.cfg.Auth.OIDCIssuer != ""
 	hasPasskeys := s.authMgr != nil && s.authMgr.HasRegisteredPasskeys()
 	if s.authMgr == nil {
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		writeJSON(w, http.StatusOK, map[string]any{
 			"authenticated":   false,
 			"oidc_configured": oidcConfigured,
 			"has_passkeys":    hasPasskeys,
@@ -22,7 +20,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	}
 	claims, err := s.authMgr.VerifyRequest(r)
 	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		writeJSON(w, http.StatusOK, map[string]any{
 			"authenticated":   false,
 			"oidc_configured": oidcConfigured,
 			"has_passkeys":    hasPasskeys,
@@ -33,7 +31,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	if atIdx := strings.Index(username, "@"); atIdx != -1 {
 		username = username[:atIdx]
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"authenticated":   true,
 		"subject":         claims.Subject,
 		"username":        username,
@@ -79,6 +77,5 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		}
 		s.authMgr.ClearSessionCookie(w)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "logged_out"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
 }

@@ -52,16 +52,10 @@ func (m *Manager) runRemoteAgentUpdate(ctx context.Context, taskID string, req U
 	}
 	nodeInfo, err := m.store.GetNode(ctx, req.Node)
 	if err != nil {
-		errMsg := fmt.Sprintf("unknown remote node %q: %v", req.Node, err)
-		m.logStep(ctx, taskID, "error", errMsg)
-		m.finishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf("%s", errMsg)
+		return m.failTask(ctx, taskID, "unknown remote node %q: %v", req.Node, err)
 	}
 	if nodeInfo.Status != models.NodeStatusApproved {
-		errMsg := fmt.Sprintf("cannot update unapproved node %q (status: %s)", req.Node, nodeInfo.Status)
-		m.logStep(ctx, taskID, "error", errMsg)
-		m.finishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf("%s", errMsg)
+		return m.failTask(ctx, taskID, "cannot update unapproved node %q (status: %s)", req.Node, nodeInfo.Status)
 	}
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("Forwarding update for %s (%s -> %s) to remote agent %s (%s)...", req.TargetName, req.TargetType, req.TargetVersion, nodeInfo.Name, nodeInfo.URL))
 	agentReq := req
@@ -79,19 +73,13 @@ func (m *Manager) runRemoteAgentUpdate(ctx context.Context, taskID string, req U
 	}
 	resp, err := m.safeHTTPClient().Do(httpReq)
 	if err != nil {
-		errMsg := fmt.Sprintf("failed to contact remote agent %s: %v", nodeInfo.Name, err)
-		m.logStep(ctx, taskID, "error", errMsg)
-		m.finishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf("%s", errMsg)
+		return m.failTask(ctx, taskID, "failed to contact remote agent %s: %v", nodeInfo.Name, err)
 	}
 	defer resp.Body.Close()
 
 	var payload agentResponsePayload
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&payload); err != nil {
-		errMsg := fmt.Sprintf("invalid response from agent %s (HTTP %d): %v", nodeInfo.Name, resp.StatusCode, err)
-		m.logStep(ctx, taskID, "error", errMsg)
-		m.finishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf("%s", errMsg)
+		return m.failTask(ctx, taskID, "invalid response from agent %s (HTTP %d): %v", nodeInfo.Name, resp.StatusCode, err)
 	}
 	for _, l := range payload.Logs {
 		m.logStep(ctx, taskID, l.Stream, fmt.Sprintf("[%s] %s", nodeInfo.Name, l.Line))

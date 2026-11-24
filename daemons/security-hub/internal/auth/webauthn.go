@@ -109,23 +109,69 @@ func (m *Manager) consumeChallengeFor(ch, expectedKind, expectedSubject string) 
 	return time.Now().UTC().Before(entry.ExpiresAt)
 }
 
-func (m *Manager) BeginPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
+func (m *Manager) requireAuthenticatedRPID(w http.ResponseWriter, r *http.Request) (*SessionClaims, string, bool) {
 	if r.Method != http.MethodPost {
 		WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
+		return nil, "", false
 	}
 	claims, err := m.VerifyRequest(r)
 	if err != nil {
 		WriteJSONError(w, http.StatusUnauthorized, "unauthorized")
-		return
+		return nil, "", false
 	}
 	if err := m.VerifyCSRF(r); err != nil {
 		WriteJSONError(w, http.StatusForbidden, "csrf validation failed")
-		return
+		return nil, "", false
 	}
 	rpid := m.effectiveRPID()
 	if rpid == "" {
 		WriteJSONError(w, http.StatusBadRequest, "WebAuthn RP ID is not configured")
+		return nil, "", false
+	}
+	return claims, rpid, true
+}
+
+func (m *Manager) requireOriginAndRPID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if r.Method != http.MethodPost {
+		WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return "", false
+	}
+	if err := m.VerifyOriginAndFetchSite(r); err != nil {
+		WriteJSONError(w, http.StatusForbidden, "origin check failed")
+		return "", false
+	}
+	rpid := m.effectiveRPID()
+	if rpid == "" {
+		WriteJSONError(w, http.StatusBadRequest, "WebAuthn RP ID is not configured")
+		return "", false
+	}
+	return rpid, true
+}
+
+func (m *Manager) verifyWebAuthnClientData(clientDataBytes []byte, expectedType, rpid, kind, subject string, challengeErrStatus int, challengeErrMsg string) (int, string) {
+	var clientData struct {
+		Type      string `json:"type"`
+		Challenge string `json:"challenge"`
+		Origin    string `json:"origin"`
+	}
+	if err := json.Unmarshal(clientDataBytes, &clientData); err != nil {
+		return http.StatusBadRequest, "invalid clientDataJSON"
+	}
+	if clientData.Type != expectedType {
+		return http.StatusBadRequest, "invalid clientData type"
+	}
+	if !m.isValidWebAuthnOrigin(clientData.Origin, rpid) {
+		return http.StatusBadRequest, "clientData origin mismatch"
+	}
+	if !m.consumeChallengeFor(clientData.Challenge, kind, subject) {
+		return challengeErrStatus, challengeErrMsg
+	}
+	return 0, ""
+}
+
+func (m *Manager) BeginPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
+	claims, rpid, ok := m.requireAuthenticatedRPID(w, r)
+	if !ok {
 		return
 	}
 	ch, err := m.newChallengeFor("register", claims.Subject)
@@ -146,22 +192,8 @@ func (m *Manager) BeginPasskeyRegistration(w http.ResponseWriter, r *http.Reques
 }
 
 func (m *Manager) FinishPasskeyRegistration(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	claims, err := m.VerifyRequest(r)
-	if err != nil {
-		WriteJSONError(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	if err := m.VerifyCSRF(r); err != nil {
-		WriteJSONError(w, http.StatusForbidden, "csrf validation failed")
-		return
-	}
-	rpid := m.effectiveRPID()
-	if rpid == "" {
-		WriteJSONError(w, http.StatusBadRequest, "WebAuthn RP ID is not configured")
+	claims, rpid, ok := m.requireAuthenticatedRPID(w, r)
+	if !ok {
 		return
 	}
 
@@ -188,25 +220,8 @@ func (m *Manager) FinishPasskeyRegistration(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	var clientData struct {
-		Type      string `json:"type"`
-		Challenge string `json:"challenge"`
-		Origin    string `json:"origin"`
-	}
-	if err := json.Unmarshal(clientDataBytes, &clientData); err != nil {
-		WriteJSONError(w, http.StatusBadRequest, "invalid clientDataJSON")
-		return
-	}
-	if clientData.Type != "webauthn.create" {
-		WriteJSONError(w, http.StatusBadRequest, "invalid clientData type")
-		return
-	}
-	if !m.isValidWebAuthnOrigin(clientData.Origin, rpid) {
-		WriteJSONError(w, http.StatusBadRequest, "clientData origin mismatch")
-		return
-	}
-	if !m.consumeChallengeFor(clientData.Challenge, "register", claims.Subject) {
-		WriteJSONError(w, http.StatusBadRequest, "invalid or expired challenge")
+	if status, msg := m.verifyWebAuthnClientData(clientDataBytes, "webauthn.create", rpid, "register", claims.Subject, http.StatusBadRequest, "invalid or expired challenge"); status != 0 {
+		WriteJSONError(w, status, msg)
 		return
 	}
 
@@ -271,17 +286,8 @@ func (m *Manager) FinishPasskeyRegistration(w http.ResponseWriter, r *http.Reque
 }
 
 func (m *Manager) BeginPasskeyLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if err := m.VerifyOriginAndFetchSite(r); err != nil {
-		WriteJSONError(w, http.StatusForbidden, "origin check failed")
-		return
-	}
-	rpid := m.effectiveRPID()
-	if rpid == "" {
-		WriteJSONError(w, http.StatusBadRequest, "WebAuthn RP ID is not configured")
+	rpid, ok := m.requireOriginAndRPID(w, r)
+	if !ok {
 		return
 	}
 	ch, err := m.newChallengeFor("login", "")
@@ -309,17 +315,8 @@ func (m *Manager) BeginPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if err := m.VerifyOriginAndFetchSite(r); err != nil {
-		WriteJSONError(w, http.StatusForbidden, "origin check failed")
-		return
-	}
-	rpid := m.effectiveRPID()
-	if rpid == "" {
-		WriteJSONError(w, http.StatusBadRequest, "WebAuthn RP ID is not configured")
+	rpid, ok := m.requireOriginAndRPID(w, r)
+	if !ok {
 		return
 	}
 
@@ -361,21 +358,8 @@ func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var clientData struct {
-		Type      string `json:"type"`
-		Challenge string `json:"challenge"`
-		Origin    string `json:"origin"`
-	}
-	if err := json.Unmarshal(clientDataBytes, &clientData); err != nil {
-		WriteJSONError(w, http.StatusBadRequest, "invalid clientDataJSON")
-		return
-	}
-	if clientData.Type != "webauthn.get" {
-		WriteJSONError(w, http.StatusBadRequest, "invalid clientData type")
-		return
-	}
-	if !m.consumeChallengeFor(clientData.Challenge, "login", "") {
-		WriteJSONError(w, http.StatusUnauthorized, "invalid or expired WebAuthn challenge")
+	if status, msg := m.verifyWebAuthnClientData(clientDataBytes, "webauthn.get", rpid, "login", "", http.StatusUnauthorized, "invalid or expired WebAuthn challenge"); status != 0 {
+		WriteJSONError(w, status, msg)
 		return
 	}
 	if len(authData) < 37 {
@@ -389,10 +373,6 @@ func (m *Manager) FinishPasskeyLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if (authData[32] & 0x01) == 0 {
 		WriteJSONError(w, http.StatusBadRequest, "User Presence flag not set")
-		return
-	}
-	if !m.isValidWebAuthnOrigin(clientData.Origin, rpid) {
-		WriteJSONError(w, http.StatusBadRequest, "clientData origin mismatch")
 		return
 	}
 

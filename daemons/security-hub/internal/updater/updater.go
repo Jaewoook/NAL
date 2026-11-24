@@ -322,6 +322,13 @@ func (m *Manager) TriggerUpdate(ctx context.Context, req UpdateRequest) (*models
 	return task, nil
 }
 
+func (m *Manager) failTask(ctx context.Context, taskID, format string, args ...any) error {
+	errMsg := fmt.Sprintf(format, args...)
+	m.logStep(ctx, taskID, "error", errMsg)
+	m.finishTask(ctx, taskID, "failed", errMsg)
+	return fmt.Errorf("%s", errMsg)
+}
+
 func (m *Manager) RunUpdateSync(ctx context.Context, taskID string, req UpdateRequest) error {
 	req = normalizeUpdateRequest(req)
 	if err := ValidateUpdateRequest(req); err != nil {

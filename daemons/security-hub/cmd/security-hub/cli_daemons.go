@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -9,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -17,13 +17,53 @@ import (
 	"github.com/jaewoook/security-hub/internal/auth"
 	"github.com/jaewoook/security-hub/internal/config"
 	"github.com/jaewoook/security-hub/internal/db"
-	"github.com/jaewoook/security-hub/internal/models"
 	"github.com/jaewoook/security-hub/internal/notifier"
 	"github.com/jaewoook/security-hub/internal/scanner"
 	"github.com/jaewoook/security-hub/internal/service"
 	"github.com/jaewoook/security-hub/internal/updater"
 	"github.com/jaewoook/security-hub/internal/web"
 )
+
+func serveHTTPWithGracefulShutdown(ctx context.Context, stop context.CancelFunc, addr string, handler http.Handler, onShutdown func(), drain func(context.Context), bgWG *sync.WaitGroup, out io.Writer, label, listenBanner string) int {
+	httpSrv := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	if onShutdown != nil {
+		httpSrv.RegisterOnShutdown(onShutdown)
+	}
+
+	var shutWG sync.WaitGroup
+	shutWG.Add(1)
+	go func() {
+		defer shutWG.Done()
+		<-ctx.Done()
+		shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_ = httpSrv.Shutdown(shutCtx)
+		if drain != nil {
+			drainCtx, drainCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer drainCancel()
+			drain(drainCtx)
+		}
+	}()
+
+	fmt.Fprintln(out, listenBanner)
+	listenErr := httpSrv.ListenAndServe()
+	stop()
+	shutWG.Wait()
+	if bgWG != nil {
+		bgWG.Wait()
+	}
+	if listenErr != nil && listenErr != http.ErrServerClosed {
+		fmt.Fprintf(out, "%s error: %v\n", label, listenErr)
+		return 1
+	}
+	return 0
+}
 
 func runDaemon(cfg *config.Config, out io.Writer) int {
 	pg := db.NewPostgresBackendWithPassword(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil)
@@ -67,7 +107,7 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 	bgWG.Add(1)
 	go func() {
 		defer bgWG.Done()
-		runScheduledScan(ctx, cfg, store, orch, alerter)
+		runScheduledScan(ctx, orch, alerter)
 		interval := time.Duration(cfg.Scanner.IntervalHours) * time.Hour
 		if interval <= 0 {
 			interval = 6 * time.Hour
@@ -79,107 +119,45 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				runScheduledScan(ctx, cfg, store, orch, alerter)
+				runScheduledScan(ctx, orch, alerter)
 			}
 		}
 	}()
 
 	addr := fmt.Sprintf("%s:%d", cfg.Web.Host, cfg.Web.Port)
-	httpSrv := &http.Server{
-		Addr:              addr,
-		Handler:           srv.Handler(),
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
-	httpSrv.RegisterOnShutdown(srv.NotifyShutdown)
-
-	var shutWG sync.WaitGroup
-	shutWG.Add(1)
-	go func() {
-		defer shutWG.Done()
-		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		_ = httpSrv.Shutdown(shutCtx)
-		updCtx, updCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer updCancel()
-		_ = updMgr.Wait(updCtx)
-		_ = srv.Wait(updCtx)
-	}()
-
-	fmt.Fprintf(out, "NAL Security Hub listening on http://%s\n", addr)
-	listenErr := httpSrv.ListenAndServe()
-	stop()
-	shutWG.Wait()
-	bgWG.Wait()
-	if listenErr != nil && listenErr != http.ErrServerClosed {
-		fmt.Fprintf(out, "HTTP server error: %v\n", listenErr)
-		return 1
-	}
-	return 0
+	return serveHTTPWithGracefulShutdown(
+		ctx,
+		stop,
+		addr,
+		srv.Handler(),
+		srv.NotifyShutdown,
+		func(drainCtx context.Context) {
+			_ = updMgr.Wait(drainCtx)
+			_ = srv.Wait(drainCtx)
+		},
+		&bgWG,
+		out,
+		"HTTP server",
+		fmt.Sprintf("NAL Security Hub listening on http://%s", addr),
+	)
 }
 
-func runScheduledScan(ctx context.Context, cfg *config.Config, store *db.SpoolStore, orch *scanner.Orchestrator, alerter *notifier.Alerter) {
-	orch.LockScanStart()
-	startLocked := true
-	defer func() {
-		if startLocked {
-			orch.UnlockScanStart()
-		}
-	}()
-
-	if scanning, _ := orch.IsScanning(); scanning {
-		return
-	}
-	hubName := cfg.NodeName
-	if hubName == "" {
-		hubName = config.DefaultNodeName()
-	}
-	initialNodes := []string{hubName}
-	if store != nil {
-		if remoteNodes, err := store.ListNodes(ctx); err == nil {
-			for _, rn := range remoteNodes {
-				if !strings.EqualFold(rn.Name, hubName) && (rn.Status == "" || rn.Status == models.NodeStatusApproved) {
-					initialNodes = append(initialNodes, rn.Name)
-				}
-			}
-		}
-	}
-	var taskID string
-	if store != nil {
-		t, err := store.CreateTask(ctx, &models.Task{
-			Node:        hubName,
-			TaskType:    "security_scan",
-			TargetType:  "system",
-			TargetName:  "all",
-			TriggeredBy: "scanner",
-			Status:      "running",
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[Scheduler] Failed to create scheduled scan task: %v\n", err)
-			return
-		}
-		taskID = t.ID
-	}
-	if taskID == "" {
-		taskID = fmt.Sprintf("scan_%d", time.Now().UnixNano())
-	}
-	started, _ := orch.StartScanWithNodes(taskID, initialNodes)
-	if !started {
-		if store != nil {
-			_ = store.FinishTask(context.Background(), taskID, "aborted", "scan already running")
+func runScheduledScan(ctx context.Context, orch *scanner.Orchestrator, alerter *notifier.Alerter) {
+	reservation, err := orch.BeginScan(ctx, scanner.BeginScanRequest{
+		TriggeredBy: "scanner",
+	})
+	if err != nil {
+		if !errors.Is(err, scanner.ErrScanInProgress) {
+			fmt.Fprintf(os.Stderr, "[Scheduler] Failed to start scheduled scan: %v\n", err)
 		}
 		return
 	}
-	orch.UnlockScanStart()
-	startLocked = false
 
-	defer orch.FinishScanTask(taskID)
+	defer orch.FinishScanTask(reservation.TaskID)
 	scanCtx, scanCancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer scanCancel()
-	if res, err := orch.RunFullScanWithTask(scanCtx, taskID); err == nil {
-		orch.FinishScanTask(taskID)
+	if res, err := orch.RunFullScanWithTask(scanCtx, reservation.TaskID); err == nil {
+		orch.FinishScanTask(reservation.TaskID)
 		if alerter != nil {
 			_, _ = alerter.NotifyScanFindings(scanCtx, res)
 		}
@@ -267,35 +245,18 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Web.Host, cfg.Web.Port)
-	httpSrv := &http.Server{
-		Addr:              addr,
-		Handler:           srv.AgentHandler(),
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		IdleTimeout:       120 * time.Second,
-	}
-	httpSrv.RegisterOnShutdown(srv.NotifyShutdown)
-	var shutWG sync.WaitGroup
-	shutWG.Add(1)
-	go func() {
-		defer shutWG.Done()
-		<-ctx.Done()
-		shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		_ = httpSrv.Shutdown(shutCtx)
-		updCtx, updCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer updCancel()
-		_ = updMgr.Wait(updCtx)
-	}()
-
-	fmt.Fprintf(out, "NAL Security Hub Agent [%s] listening on http://%s\n", cfg.NodeName, addr)
-	listenErr := httpSrv.ListenAndServe()
-	stop()
-	shutWG.Wait()
-	bgWG.Wait()
-	if listenErr != nil && listenErr != http.ErrServerClosed {
-		fmt.Fprintf(out, "Agent HTTP server error: %v\n", listenErr)
-		return 1
-	}
-	return 0
+	return serveHTTPWithGracefulShutdown(
+		ctx,
+		stop,
+		addr,
+		srv.AgentHandler(),
+		srv.NotifyShutdown,
+		func(drainCtx context.Context) {
+			_ = updMgr.Wait(drainCtx)
+		},
+		&bgWG,
+		out,
+		"Agent HTTP server",
+		fmt.Sprintf("NAL Security Hub Agent [%s] listening on http://%s", cfg.NodeName, addr),
+	)
 }

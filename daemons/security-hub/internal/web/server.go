@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -160,6 +161,21 @@ func (s *Server) sessionClaims(r *http.Request) *auth.SessionClaims {
 		return nil
 	}
 	return claims
+}
+
+func (s *Server) requestActor(r *http.Request) string {
+	if claims := s.sessionClaims(r); claims != nil {
+		return claims.Method + ":" + claims.Subject
+	}
+	return "web"
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	if status != 0 && status != http.StatusOK {
+		w.WriteHeader(status)
+	}
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func (s *Server) Handler() http.Handler {

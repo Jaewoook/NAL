@@ -1,9 +1,7 @@
 package updater
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,10 +16,7 @@ import (
 func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req UpdateRequest) error {
 	svcName, svcKey, ok := splitDockerTarget(req.TargetName)
 	if !ok {
-		errMsg := fmt.Sprintf("invalid service name %q", req.TargetName)
-		m.logStep(ctx, taskID, "error", errMsg)
-		m.finishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf("%s", errMsg)
+		return m.failTask(ctx, taskID, "invalid service name %q", req.TargetName)
 	}
 
 	servicesDir := "../../services"
@@ -44,10 +39,7 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	composeDir := filepath.Join(servicesDir, svcName)
 	refs, err := scanner.ParseComposeImageRefs(composeDir)
 	if err != nil || len(refs) == 0 {
-		errMsg := fmt.Sprintf("failed to inspect compose service %s: %v", svcName, err)
-		m.logStep(ctx, taskID, "error", errMsg)
-		m.finishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf("%s", errMsg)
+		return m.failTask(ctx, taskID, "failed to inspect compose service %s: %v", svcName, err)
 	}
 
 	ref := refs[0]
@@ -61,10 +53,7 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 			}
 		}
 		if !matched {
-			errMsg := fmt.Sprintf("service key %q not found in compose service %s", svcKey, svcName)
-			m.logStep(ctx, taskID, "error", errMsg)
-			m.finishTask(ctx, taskID, "failed", errMsg)
-			return fmt.Errorf("%s", errMsg)
+			return m.failTask(ctx, taskID, "service key %q not found in compose service %s", svcKey, svcName)
 		}
 	}
 
@@ -73,20 +62,14 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 		targetTag = ref.Tag
 	}
 	if !IsValidDockerTag(targetTag) {
-		errMsg := fmt.Sprintf("invalid target image tag %q", targetTag)
-		m.logStep(ctx, taskID, "error", errMsg)
-		m.finishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf("%s", errMsg)
+		return m.failTask(ctx, taskID, "invalid target image tag %q", targetTag)
 	}
 
 	// Step 1: Save Rollback Snapshot
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 1/6: Saving rollback snapshot for %s (%s:%s)...", req.TargetName, ref.ImageRepo, ref.Tag))
 	composeBytes, readErr := os.ReadFile(ref.ComposePath)
 	if readErr != nil {
-		errMsg := fmt.Sprintf("failed to read compose file for snapshot: %v", readErr)
-		m.logStep(ctx, taskID, "error", errMsg)
-		m.finishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf("%s", errMsg)
+		return m.failTask(ctx, taskID, "failed to read compose file for snapshot: %v", readErr)
 	}
 	envBytes, _ := os.ReadFile(ref.EnvPath)
 	prevDigest := m.inspectDigest(ctx, composeDir, ref.ServiceKey, ref.ContainerName, ref.ImageRepo+":"+ref.Tag)
@@ -123,19 +106,13 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 		m.logStep(ctx, taskID, "stdout", strings.TrimSpace(string(pullOut)))
 	}
 	if pullErr != nil {
-		errMsg := fmt.Sprintf("docker pull failed for %s: %v", targetImage, pullErr)
-		m.logStep(ctx, taskID, "error", errMsg)
-		m.finishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf("%s", errMsg)
+		return m.failTask(ctx, taskID, "docker pull failed for %s: %v", targetImage, pullErr)
 	}
 
 	// Step 4: Surgical Config Update & Container Recreate
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 4/6: Applying tag %s and recreating container...", targetTag))
 	if _, _, err := UpdateFileTag(ref.ComposePath, ref.EnvPath, ref.ServiceKey, targetTag); err != nil {
-		errMsg := fmt.Sprintf("failed to update compose tag: %v", err)
-		m.logStep(ctx, taskID, "error", errMsg)
-		m.finishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf("%s", errMsg)
+		return m.failTask(ctx, taskID, "failed to update compose tag: %v", err)
 	}
 
 	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ docker compose --project-directory %s up -d", composeDir))
@@ -202,79 +179,9 @@ func (m *Manager) runPreUpdateBackup(ctx context.Context, taskID string, runBack
 		m.logStep(ctx, taskID, "stdout", strings.TrimSpace(string(out)))
 	}
 	if bErr != nil {
-		errMsg := fmt.Sprintf("pre-update volume backup failed, aborting update: %v", bErr)
-		m.logStep(ctx, taskID, "error", errMsg)
-		m.finishTask(ctx, taskID, "failed", errMsg)
-		return fmt.Errorf("%s", errMsg)
+		return m.failTask(ctx, taskID, "pre-update volume backup failed, aborting update: %v", bErr)
 	}
 	return nil
-}
-
-func (m *Manager) commitComposeFile(ctx context.Context, taskID, stepPrefix, composePath string, preEditBytes []byte, commitMsg string) {
-	if m.cfg == nil || !m.cfg.Updater.Git.Enabled {
-		m.logStep(ctx, taskID, "info", stepPrefix+"Git auto-commit disabled; skipping.")
-		return
-	}
-	m.gitMu.Lock()
-	defer m.gitMu.Unlock()
-	gitCfg := m.cfg.Updater.Git
-	botName := strings.TrimSpace(gitCfg.BotName)
-	if botName == "" {
-		botName = "NAL Bot"
-	}
-	botEmail := strings.TrimSpace(gitCfg.BotEmail)
-	if botEmail == "" {
-		botEmail = "nal-git-system@jaewook.me"
-	}
-	gpgKey := strings.TrimSpace(gitCfg.GPGKey)
-	if gpgKey == "" {
-		gpgKey = "024D4017DFF5360A"
-	}
-
-	composeDir := filepath.Dir(composePath)
-	composeFile := filepath.Base(composePath)
-
-	m.logStep(ctx, taskID, "info", fmt.Sprintf("%sCommitting updated %s as %s <%s>...", stepPrefix, composeFile, botName, botEmail))
-	headOut, headErr := m.runner.Run(ctx, "git", "-C", composeDir, "show", "HEAD:./"+composeFile)
-	if headErr != nil {
-		m.logStep(ctx, taskID, "warn", fmt.Sprintf("Skipping git commit (failed to inspect HEAD version of %s): %v", composePath, headErr))
-		return
-	}
-	if !bytes.Equal(preEditBytes, headOut) {
-		m.logStep(ctx, taskID, "warn", fmt.Sprintf("Skipping git commit: %s had pre-existing uncommitted changes before this operation.", composeFile))
-		return
-	}
-	postEditBytes, readErr := os.ReadFile(composePath)
-	if readErr != nil || bytes.Equal(postEditBytes, headOut) {
-		m.logStep(ctx, taskID, "info", fmt.Sprintf("No git changes in %s; skipping commit.", composeFile))
-		return
-	}
-
-	args := []string{
-		"-C", composeDir,
-		"-c", "user.name=" + botName,
-		"-c", "user.email=" + botEmail,
-		"commit",
-		"--only",
-		fmt.Sprintf("--author=%s <%s>", botName, botEmail),
-	}
-	if gitCfg.GPGSign {
-		args = append(args, "-S"+gpgKey)
-	} else {
-		args = append(args, "--no-gpg-sign")
-	}
-	args = append(args, "-m", commitMsg, "--", composeFile)
-
-	m.logStep(ctx, taskID, "cmd", "$ git "+strings.Join(args, " "))
-	commitOut, commitErr := m.runner.Run(ctx, "git", args...)
-	if len(commitOut) > 0 {
-		m.logStep(ctx, taskID, "stdout", strings.TrimSpace(string(commitOut)))
-	}
-	if commitErr != nil {
-		m.logStep(ctx, taskID, "warn", fmt.Sprintf("Git commit warning (container remains healthy): %v", commitErr))
-		return
-	}
-	m.logStep(ctx, taskID, "info", fmt.Sprintf("Committed %s to NAL repository.", composeFile))
 }
 
 func (m *Manager) RollbackService(ctx context.Context, serviceName, triggeredBy string) (*models.Task, error) {
@@ -322,6 +229,18 @@ func (m *Manager) rollbackLocalService(execCtx context.Context, localNode, svcDi
 	return task, nil
 }
 
+func (m *Manager) isCriticalService(svcName string) bool {
+	if m.cfg == nil {
+		return false
+	}
+	for _, c := range m.cfg.Updater.CriticalServices {
+		if c == svcName {
+			return true
+		}
+	}
+	return false
+}
+
 func existingFilePerm(path string, fallback os.FileMode) os.FileMode {
 	if st, err := os.Stat(path); err == nil && st.Mode().Perm() != 0 {
 		return st.Mode().Perm()
@@ -356,171 +275,4 @@ func (m *Manager) restoreSnapshot(ctx context.Context, taskID string, snap *mode
 		m.logStep(ctx, taskID, "stdout", strings.TrimSpace(string(out)))
 	}
 	return err
-}
-
-func isHexContainerID(s string) bool {
-	if len(s) < 12 || len(s) > 64 {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		isDigit := c >= '0' && c <= '9'
-		isLowerHex := c >= 'a' && c <= 'f'
-		isUpperHex := c >= 'A' && c <= 'F'
-		if !isDigit && !isLowerHex && !isUpperHex {
-			return false
-		}
-	}
-	return true
-}
-
-func (m *Manager) resolveComposeContainer(ctx context.Context, composeDir, serviceKey string) string {
-	if composeDir == "" || serviceKey == "" {
-		return ""
-	}
-	out, err := m.runner.Run(ctx, "docker", "compose", "--project-directory", composeDir, "ps", "-a", "-q", serviceKey)
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		cand := strings.TrimSpace(line)
-		if isHexContainerID(cand) {
-			return cand
-		}
-	}
-	return ""
-}
-
-func extractRepoDigest(dOut []byte) string {
-	var digests []string
-	if json.Unmarshal(dOut, &digests) == nil && len(digests) > 0 {
-		if idx := strings.Index(digests[0], "sha256:"); idx >= 0 {
-			return digests[0][idx:]
-		}
-	}
-	return ""
-}
-
-func (m *Manager) inspectDigest(ctx context.Context, composeDir, serviceKey, containerName, imageRef string) string {
-	var imgID string
-	if containerName != "" {
-		if out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{json .Image}}", containerName); err == nil {
-			imgID = strings.Trim(strings.TrimSpace(string(out)), `"`)
-		}
-	}
-	if imgID == "" && composeDir != "" && serviceKey != "" {
-		if cid := m.resolveComposeContainer(ctx, composeDir, serviceKey); cid != "" {
-			if out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{json .Image}}", cid); err == nil {
-				imgID = strings.Trim(strings.TrimSpace(string(out)), `"`)
-			}
-		}
-	}
-	if imgID != "" {
-		if dOut, err := m.runner.Run(ctx, "docker", "image", "inspect", "--format", "{{json .RepoDigests}}", imgID); err == nil {
-			if dig := extractRepoDigest(dOut); dig != "" {
-				return dig
-			}
-		}
-	}
-	if imageRef != "" {
-		if dOut, err := m.runner.Run(ctx, "docker", "image", "inspect", "--format", "{{json .RepoDigests}}", imageRef); err == nil {
-			if dig := extractRepoDigest(dOut); dig != "" {
-				return dig
-			}
-		}
-	}
-	return ""
-}
-
-func (m *Manager) verifyContainerHealthy(ctx context.Context, composeDir, serviceKey, containerName, svcName string) error {
-	timeoutSec := 60
-	if m.cfg != nil && m.cfg.Updater.DeadManTimeoutSeconds > 0 {
-		timeoutSec = m.cfg.Updater.DeadManTimeoutSeconds
-	}
-	poll := m.pollInterval
-	if poll <= 0 {
-		poll = 2 * time.Second
-	}
-	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
-
-	for {
-		targetContainer := containerName
-		out, err := m.runner.Run(ctx, "docker", "inspect", "--format", "{{json .State}}", targetContainer)
-		if err != nil && composeDir != "" && serviceKey != "" {
-			if cid := m.resolveComposeContainer(ctx, composeDir, serviceKey); cid != "" {
-				targetContainer = cid
-				out, err = m.runner.Run(ctx, "docker", "inspect", "--format", "{{json .State}}", targetContainer)
-			}
-		}
-		if err != nil {
-			if time.Now().After(deadline) {
-				return fmt.Errorf("failed to inspect container %s: %w", targetContainer, err)
-			}
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(poll):
-			}
-			continue
-		}
-		raw := strings.TrimSpace(string(out))
-
-		var stateObj struct {
-			Status       string `json:"Status"`
-			Restarting   bool   `json:"Restarting"`
-			HealthStatus string `json:"HealthStatus"`
-			Health       *struct {
-				Status string `json:"Status"`
-			} `json:"Health"`
-		}
-		if strings.HasPrefix(raw, "{") && json.Unmarshal([]byte(raw), &stateObj) == nil {
-			if stateObj.Status == "created" {
-				// Container is still initializing; continue polling until deadline
-			} else if stateObj.Restarting || (stateObj.Status != "running" && stateObj.Status != "ok") {
-				return fmt.Errorf("container %s state is %q (restarting=%v)", targetContainer, stateObj.Status, stateObj.Restarting)
-			} else {
-				health := stateObj.HealthStatus
-				if health == "" && stateObj.Health != nil {
-					health = stateObj.Health.Status
-				}
-				switch health {
-				case "unhealthy":
-					return fmt.Errorf("container %s healthcheck reported unhealthy", targetContainer)
-				case "starting":
-					// Container is still initializing its healthcheck; continue polling until deadline
-				case "", "healthy":
-					return nil
-				}
-			}
-		} else {
-			if raw == "created" {
-				// Container is still initializing; continue polling until deadline
-			} else if raw != "running" && raw != "ok" {
-				return fmt.Errorf("container %s state is %q (expected running)", targetContainer, raw)
-			} else {
-				return nil
-			}
-		}
-
-		if time.Now().After(deadline) {
-			return fmt.Errorf("container %s did not become healthy within %ds", targetContainer, timeoutSec)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(poll):
-		}
-	}
-}
-
-func (m *Manager) isCriticalService(svcName string) bool {
-	if m.cfg == nil {
-		return false
-	}
-	for _, c := range m.cfg.Updater.CriticalServices {
-		if c == svcName {
-			return true
-		}
-	}
-	return false
 }

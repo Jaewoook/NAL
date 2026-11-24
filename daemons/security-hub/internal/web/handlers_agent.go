@@ -15,8 +15,7 @@ import (
 )
 
 func (s *Server) handleAgentInfo(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(models.NodeInfo{
+	writeJSON(w, http.StatusOK, models.NodeInfo{
 		Name:       s.localNodeName(),
 		Role:       "agent",
 		Online:     true,
@@ -56,8 +55,7 @@ func (s *Server) handleAgentScan(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"node":  nodeName,
 		"items": items,
 	})
@@ -114,8 +112,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		status = task.Status
 		errMsg = task.ErrorMsg
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"status":    status,
 		"error_msg": errMsg,
 		"logs":      logs,
@@ -153,8 +150,7 @@ func (s *Server) handleAgentRollback(w http.ResponseWriter, r *http.Request) {
 		status = finalTask.Status
 		errMsg = finalTask.ErrorMsg
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"status":    status,
 		"error_msg": errMsg,
 		"logs":      logs,

@@ -15,13 +15,13 @@ import (
 
 type Alerter struct {
 	cfg          config.EmailConfig
-	store        db.Store
+	store        db.AlertStore
 	sendMailFunc sendMailFunc
 	dialer       dialerFunc
 	timeout      time.Duration
 }
 
-func NewAlerter(cfg config.EmailConfig, store db.Store) *Alerter {
+func NewAlerter(cfg config.EmailConfig, store db.AlertStore) *Alerter {
 	return &Alerter{
 		cfg:          cfg,
 		store:        store,
