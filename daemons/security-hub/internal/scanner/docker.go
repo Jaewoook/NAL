@@ -185,33 +185,36 @@ func NewDockerScanner(servicesDir string, critical []string, stateful map[string
 	}
 }
 
+func (d *DockerScanner) inspectImageRepoDigest(ctx context.Context, ref string) string {
+	if d.runner == nil {
+		return ""
+	}
+	dOut, err := d.runner.Run(ctx, "docker", "image", "inspect", "--format", "{{json .RepoDigests}}", ref)
+	if err != nil {
+		return ""
+	}
+	var digests []string
+	if json.Unmarshal(dOut, &digests) != nil || len(digests) == 0 {
+		return ""
+	}
+	if idx := strings.Index(digests[0], "sha256:"); idx >= 0 {
+		return digests[0][idx:]
+	}
+	return ""
+}
+
 func (d *DockerScanner) InspectContainerDigest(ctx context.Context, containerName, imageRef string) string {
 	if d.runner == nil {
 		return ""
 	}
-	out, err := d.runner.Run(ctx, "docker", "inspect", "--format", "{{json .Image}}", containerName)
-	if err == nil {
-		imgID := strings.Trim(strings.TrimSpace(string(out)), `"`)
-		if imgID != "" {
-			if dOut, err := d.runner.Run(ctx, "docker", "image", "inspect", "--format", "{{json .RepoDigests}}", imgID); err == nil {
-				var digests []string
-				if json.Unmarshal(dOut, &digests) == nil && len(digests) > 0 {
-					if idx := strings.Index(digests[0], "sha256:"); idx >= 0 {
-						return digests[0][idx:]
-					}
-				}
+	if out, err := d.runner.Run(ctx, "docker", "inspect", "--format", "{{json .Image}}", containerName); err == nil {
+		if imgID := strings.Trim(strings.TrimSpace(string(out)), `"`); imgID != "" {
+			if digest := d.inspectImageRepoDigest(ctx, imgID); digest != "" {
+				return digest
 			}
 		}
 	}
-	if dOut, err := d.runner.Run(ctx, "docker", "image", "inspect", "--format", "{{json .RepoDigests}}", imageRef); err == nil {
-		var digests []string
-		if json.Unmarshal(dOut, &digests) == nil && len(digests) > 0 {
-			if idx := strings.Index(digests[0], "sha256:"); idx >= 0 {
-				return digests[0][idx:]
-			}
-		}
-	}
-	return ""
+	return d.inspectImageRepoDigest(ctx, imageRef)
 }
 
 func ReleaseNotesURLForImage(repo string) string {

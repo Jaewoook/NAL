@@ -34,11 +34,7 @@ type PostgresBackend struct {
 	schemaReady   bool
 }
 
-func NewPostgresBackend(containerName, dbName, dbUser string, runner CLIRunner) *PostgresBackend {
-	return NewPostgresBackendWithPassword(containerName, dbName, dbUser, "", runner)
-}
-
-func NewPostgresBackendWithPassword(containerName, dbName, dbUser, dbPass string, runner CLIRunner) *PostgresBackend {
+func resolvePostgresNames(containerName, dbName, dbUser string) (string, string, string) {
 	if containerName == "" {
 		containerName = "postgresql"
 	}
@@ -48,6 +44,15 @@ func NewPostgresBackendWithPassword(containerName, dbName, dbUser, dbPass string
 	if dbUser == "" {
 		dbUser = "security_hub"
 	}
+	return containerName, dbName, dbUser
+}
+
+func NewPostgresBackend(containerName, dbName, dbUser string, runner CLIRunner) *PostgresBackend {
+	return NewPostgresBackendWithPassword(containerName, dbName, dbUser, "", runner)
+}
+
+func NewPostgresBackendWithPassword(containerName, dbName, dbUser, dbPass string, runner CLIRunner) *PostgresBackend {
+	containerName, dbName, dbUser = resolvePostgresNames(containerName, dbName, dbUser)
 	return &PostgresBackend{
 		containerName: containerName,
 		dbName:        dbName,
@@ -302,6 +307,11 @@ func (p *PostgresBackend) DeleteNode(ctx context.Context, name string) error {
 	return p.execSQL(ctx, sql)
 }
 
+func execContainerPsql(runner CLIRunner, container, sql string) ([]byte, error) {
+	return runner("docker", "exec", "-i", container,
+		"sh", "-c", `psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -c "$1"`, "--", sql)
+}
+
 func ProvisionDatabase(ctx context.Context, containerName, dbName, dbUser, dbPass string, runner CLIRunner) error {
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
@@ -311,20 +321,11 @@ func ProvisionDatabase(ctx context.Context, containerName, dbName, dbUser, dbPas
 	if runner == nil {
 		runner = defaultRunner
 	}
-	if containerName == "" {
-		containerName = "postgresql"
-	}
-	if dbName == "" {
-		dbName = "security_hub_db"
-	}
-	if dbUser == "" {
-		dbUser = "security_hub"
-	}
+	containerName, dbName, dbUser = resolvePostgresNames(containerName, dbName, dbUser)
 
 	roleSQL := fmt.Sprintf("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = %s) THEN CREATE USER %s WITH PASSWORD %s; ELSE ALTER USER %s WITH PASSWORD %s; END IF; END $$;",
 		quoteLiteral(dbUser), quoteIdent(dbUser), quoteLiteral(dbPass), quoteIdent(dbUser), quoteLiteral(dbPass))
-	if out, err := runner("docker", "exec", "-i", containerName,
-		"sh", "-c", `psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -c "$1"`, "--", roleSQL); err != nil {
+	if out, err := execContainerPsql(runner, containerName, roleSQL); err != nil {
 		return fmt.Errorf("failed to create/update role %s in container %q: %w (%s)", dbUser, containerName, err, strings.TrimSpace(string(out)))
 	}
 
@@ -333,15 +334,13 @@ func ProvisionDatabase(ctx context.Context, containerName, dbName, dbUser, dbPas
 		"sh", "-c", `psql -tAc "$1" -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}"`, "--", checkSQL)
 	if strings.TrimSpace(string(checkDB)) != "1" {
 		createDB := fmt.Sprintf("CREATE DATABASE %s OWNER %s;", quoteIdent(dbName), quoteIdent(dbUser))
-		if out, err := runner("docker", "exec", "-i", containerName,
-			"sh", "-c", `psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -c "$1"`, "--", createDB); err != nil {
+		if out, err := execContainerPsql(runner, containerName, createDB); err != nil {
 			return fmt.Errorf("failed to create database %s: %w (%s)", dbName, err, strings.TrimSpace(string(out)))
 		}
 	}
 
 	grantSQL := fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE %s TO %s;", quoteIdent(dbName), quoteIdent(dbUser))
-	_, _ = runner("docker", "exec", "-i", containerName,
-		"sh", "-c", `psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -c "$1"`, "--", grantSQL)
+	_, _ = execContainerPsql(runner, containerName, grantSQL)
 
 	pg := NewPostgresBackendWithPassword(containerName, dbName, dbUser, dbPass, runner)
 	if err := pg.ensureSchema(ctx); err != nil {

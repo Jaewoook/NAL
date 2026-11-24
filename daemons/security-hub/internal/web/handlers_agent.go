@@ -106,8 +106,7 @@ func (s *Server) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.updMgr.RunUpdateSync(updCtx, task.ID, req)
 	finalTask, logs, _ := s.store.GetTaskWithLogs(updCtx, task.ID)
-	status := "succeeded"
-	errMsg := ""
+	var status, errMsg string
 	if finalTask != nil {
 		status = finalTask.Status
 		errMsg = finalTask.ErrorMsg

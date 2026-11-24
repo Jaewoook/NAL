@@ -297,10 +297,8 @@ func TestAlerter_DefaultSendMail_Timeout(t *testing.T) {
 	alerter := NewAlerter(cfg, nil)
 	alerter.timeout = 50 * time.Millisecond
 	alerter.dialer = func(ctx context.Context, addr string, isImplicit bool, clientTLS *tls.Config) (net.Conn, error) {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+		<-ctx.Done()
+		return nil, ctx.Err()
 	}
 
 	err := alerter.SendTestEmail(context.Background())
@@ -314,7 +312,7 @@ func TestAlerter_STARTTLS_Required_FailsFastIfMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	go func() {
 		conn, err := ln.Accept()

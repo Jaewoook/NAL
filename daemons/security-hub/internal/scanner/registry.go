@@ -88,6 +88,13 @@ func compareParsedVer(a, b parsedVer) int {
 	return 0
 }
 
+func dockerHubHostAndRepo(repo string) (host, normalizedRepo, tokenURL string) {
+	if !strings.Contains(repo, "/") {
+		repo = "library/" + repo
+	}
+	return "https://registry-1.docker.io", repo, fmt.Sprintf("https://auth.docker.io/token?service=registry.docker.io&scope=repository:%s:pull", repo)
+}
+
 func parseRegistryHostAndRepo(imageRepo string) (host, repo, tokenURL string) {
 	switch {
 	case strings.HasPrefix(imageRepo, "ghcr.io/"):
@@ -97,24 +104,15 @@ func parseRegistryHostAndRepo(imageRepo string) (host, repo, tokenURL string) {
 		repo = strings.TrimPrefix(imageRepo, "lscr.io/")
 		return "https://lscr.io", repo, fmt.Sprintf("https://lscr.io/token?scope=repository:%s:pull", repo)
 	case strings.HasPrefix(imageRepo, "docker.io/"):
-		repo = strings.TrimPrefix(imageRepo, "docker.io/")
-		if !strings.Contains(repo, "/") {
-			repo = "library/" + repo
-		}
-		return "https://registry-1.docker.io", repo, fmt.Sprintf("https://auth.docker.io/token?service=registry.docker.io&scope=repository:%s:pull", repo)
+		return dockerHubHostAndRepo(strings.TrimPrefix(imageRepo, "docker.io/"))
 	default:
 		if slash := strings.IndexByte(imageRepo, '/'); slash > 0 {
 			first := imageRepo[:slash]
 			if strings.ContainsAny(first, ".:") || first == "localhost" {
-				repo = imageRepo[slash+1:]
-				return "https://" + first, repo, ""
+				return "https://" + first, imageRepo[slash+1:], ""
 			}
 		}
-		repo = imageRepo
-		if !strings.Contains(repo, "/") {
-			repo = "library/" + repo
-		}
-		return "https://registry-1.docker.io", repo, fmt.Sprintf("https://auth.docker.io/token?service=registry.docker.io&scope=repository:%s:pull", repo)
+		return dockerHubHostAndRepo(imageRepo)
 	}
 }
 
@@ -291,11 +289,8 @@ func (r *RegistryClient) fetchTagsList(ctx context.Context, host, repo, token st
 	return allTags, nil
 }
 
-func (r *RegistryClient) CheckImageUpdates(ctx context.Context, imageRef string, currentDigest string) (latestVersion string, availableTags []string, remoteDigest string, outdated bool, err error) {
-	imageRepo, currentTag := SplitImageRepoAndTag(imageRef)
-	host, repo, tokenURL := parseRegistryHostAndRepo(imageRepo)
+func (r *RegistryClient) resolveDigestAndToken(ctx context.Context, host, repo, currentTag, tokenURL string) (string, string) {
 	token := r.fetchToken(ctx, tokenURL)
-
 	remoteDigest, wwwAuth := r.fetchRemoteDigest(ctx, host, repo, currentTag, token)
 	if remoteDigest == "" && token == "" && wwwAuth != "" {
 		if bearerURL := parseWWWAuthenticateBearer(wwwAuth, repo); bearerURL != "" {
@@ -305,20 +300,23 @@ func (r *RegistryClient) CheckImageUpdates(ctx context.Context, imageRef string,
 			}
 		}
 	}
-	rawTags, tagsErr := r.fetchTagsList(ctx, host, repo, token)
-	if tagsErr != nil && remoteDigest == "" {
-		return currentTag, []string{currentTag}, "", false, tagsErr
-	}
+	return remoteDigest, token
+}
 
-	curParsed, curIsSemver := parseVersionTag(currentTag)
-	if !curIsSemver && strings.Contains(currentTag, "-") {
+func parseCurrentTagSemver(currentTag string) (parsedVer, bool) {
+	if curParsed, ok := parseVersionTag(currentTag); ok {
+		return curParsed, true
+	}
+	if strings.Contains(currentTag, "-") {
 		parts := strings.SplitN(currentTag, "-", 2)
-		if maj, errConv := strconv.Atoi(parts[0]); errConv == nil {
-			curParsed = parsedVer{raw: currentTag, major: maj, suffix: parts[1]}
-			curIsSemver = true
+		if maj, err := strconv.Atoi(parts[0]); err == nil {
+			return parsedVer{raw: currentTag, major: maj, suffix: parts[1]}, true
 		}
 	}
+	return parsedVer{}, false
+}
 
+func filterAndSortCandidateTags(rawTags []string, curParsed parsedVer, curIsSemver bool) []parsedVer {
 	curPrerelease := curIsSemver && isPrereleaseSuffix(curParsed.suffix)
 	var candidates []parsedVer
 	for _, t := range rawTags {
@@ -327,35 +325,52 @@ func (r *RegistryClient) CheckImageUpdates(ctx context.Context, imageRef string,
 			continue
 		}
 		if curIsSemver && curParsed.suffix != pv.suffix {
-			if !(curPrerelease && pv.suffix == "") {
+			if !curPrerelease || pv.suffix != "" {
 				continue
 			}
 		}
 		candidates = append(candidates, pv)
 	}
-
 	sort.Slice(candidates, func(i, j int) bool {
 		return compareParsedVer(candidates[i], candidates[j]) > 0
 	})
+	return candidates
+}
 
+func topCandidateTags(candidates []parsedVer, limit int) []string {
+	var tags []string
 	for _, c := range candidates {
-		availableTags = append(availableTags, c.raw)
-		if len(availableTags) >= 12 {
+		tags = append(tags, c.raw)
+		if len(tags) >= limit {
 			break
 		}
 	}
+	return tags
+}
+
+func ensureLatestTagIncluded(availableTags []string, currentTag, latestVersion string) []string {
+	if len(availableTags) == 0 {
+		return []string{currentTag}
+	}
+	for _, t := range availableTags {
+		if t == latestVersion {
+			return availableTags
+		}
+	}
+	return append(availableTags, latestVersion)
+}
+
+func selectImageUpdateTarget(currentTag, currentDigest, remoteDigest string, curParsed parsedVer, curIsSemver bool, candidates []parsedVer) (latestVersion string, availableTags []string, outdated bool) {
+	availableTags = topCandidateTags(candidates, 12)
 
 	if IsFloatingTag(currentTag) {
 		availableTags = append([]string{currentTag}, availableTags...)
+		latestVersion = currentTag
 		if len(candidates) > 0 {
 			latestVersion = candidates[0].raw
-		} else {
-			latestVersion = currentTag
 		}
-		if currentDigest != "" && remoteDigest != "" && currentDigest != remoteDigest {
-			outdated = true
-		}
-		return latestVersion, availableTags, remoteDigest, outdated, nil
+		outdated = currentDigest != "" && remoteDigest != "" && currentDigest != remoteDigest
+		return latestVersion, availableTags, outdated
 	}
 
 	latestVersion = currentTag
@@ -372,19 +387,22 @@ func (r *RegistryClient) CheckImageUpdates(ctx context.Context, imageRef string,
 			outdated = true
 		}
 	}
-	if len(availableTags) == 0 {
-		availableTags = []string{currentTag}
-	} else {
-		foundLatest := false
-		for _, t := range availableTags {
-			if t == latestVersion {
-				foundLatest = true
-				break
-			}
-		}
-		if !foundLatest {
-			availableTags = append(availableTags, latestVersion)
-		}
+	availableTags = ensureLatestTagIncluded(availableTags, currentTag, latestVersion)
+	return latestVersion, availableTags, outdated
+}
+
+func (r *RegistryClient) CheckImageUpdates(ctx context.Context, imageRef string, currentDigest string) (latestVersion string, availableTags []string, remoteDigest string, outdated bool, err error) {
+	imageRepo, currentTag := SplitImageRepoAndTag(imageRef)
+	host, repo, tokenURL := parseRegistryHostAndRepo(imageRepo)
+	remoteDigest, token := r.resolveDigestAndToken(ctx, host, repo, currentTag, tokenURL)
+
+	rawTags, tagsErr := r.fetchTagsList(ctx, host, repo, token)
+	if tagsErr != nil && remoteDigest == "" {
+		return currentTag, []string{currentTag}, "", false, tagsErr
 	}
+
+	curParsed, curIsSemver := parseCurrentTagSemver(currentTag)
+	candidates := filterAndSortCandidateTags(rawTags, curParsed, curIsSemver)
+	latestVersion, availableTags, outdated = selectImageUpdateTarget(currentTag, currentDigest, remoteDigest, curParsed, curIsSemver, candidates)
 	return latestVersion, availableTags, remoteDigest, outdated, nil
 }

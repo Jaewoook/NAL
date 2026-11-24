@@ -3,9 +3,10 @@ package updater
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/jaewoook/security-hub/internal/fsutil"
 )
 
 var (
@@ -20,41 +21,6 @@ var (
 // IsValidDockerTag validates that tag conforms to OCI/Docker tag character and length rules.
 func IsValidDockerTag(tag string) bool {
 	return validDockerTagRe.MatchString(tag)
-}
-
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmpFile, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp.*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if _, err := tmpFile.Write(data); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Chmod(perm); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	cleanup = false
-	return nil
 }
 
 func replaceImageTagPart(expr, targetTag string) string {
@@ -137,6 +103,116 @@ func scanServiceImageLines(lines []string) []serviceImageMatch {
 	return out
 }
 
+func readOptionalEnvFile(envPath string) ([]byte, os.FileMode, error) {
+	envPerm := os.FileMode(0600)
+	if envPath == "" {
+		return nil, envPerm, nil
+	}
+	envInfo, err := os.Stat(envPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, envPerm, nil
+		}
+		return nil, 0, fmt.Errorf("failed to stat env file %s: %w", envPath, err)
+	}
+	if p := envInfo.Mode().Perm(); p != 0 {
+		envPerm = p
+	}
+	rawEnv, err := os.ReadFile(envPath)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to read env file %s: %w", envPath, err)
+	}
+	return rawEnv, envPerm, nil
+}
+
+func findServiceTargetExpr(matches []serviceImageMatch, serviceKey string) string {
+	if serviceKey == "" {
+		return ""
+	}
+	for _, m := range matches {
+		if m.svcName == serviceKey {
+			return m.expr
+		}
+	}
+	return ""
+}
+
+func matchesServiceTarget(m serviceImageMatch, serviceKey, targetExpr string) bool {
+	if serviceKey == "" {
+		return true
+	}
+	if targetExpr != "" {
+		return m.expr == targetExpr
+	}
+	return m.svcName == serviceKey
+}
+
+func rewriteComposeImageExpr(expr, targetTag string) (newExpr, envVar string, fullImage bool, err error) {
+	// Case 1: Image expression ends with `:${VAR:-default}` or `:${VAR-default}`
+	if sub := trailingEnvTagRe.FindStringSubmatch(expr); len(sub) == 5 {
+		repoPart := sub[1]
+		varName := sub[2]
+		sep := sub[3]
+		if sep == "" {
+			sep = ":-"
+		}
+		return fmt.Sprintf("%s:${%s%s%s}", repoPart, varName, sep, targetTag), varName, false, nil
+	}
+
+	// Case 2: Whole image expression is `${VAR:-repo:tag}` or `${VAR}`
+	if sub := fullImageEnvRe.FindStringSubmatch(expr); len(sub) == 4 {
+		varName := sub[1]
+		sep := sub[2]
+		defVal := sub[3]
+		if defVal == "" {
+			return expr, varName, true, nil
+		}
+		if sep == "" {
+			sep = ":-"
+		}
+		newDef := replaceImageTagPart(defVal, targetTag)
+		return fmt.Sprintf("${%s%s%s}", varName, sep, newDef), varName, true, nil
+	}
+
+	if strings.ContainsAny(expr, "${}") {
+		return "", "", false, fmt.Errorf("unsupported variable interpolation format in image expression %q", expr)
+	}
+
+	// Case 3: Standard `repo:tag`, digest-pinned `repo:tag@sha256:...`, or tagless `repo`
+	return replaceImageTagPart(expr, targetTag), "", false, nil
+}
+
+func updateEnvVarInRawEnv(rawEnv []byte, envVar string, fullImage bool, targetTag string) (updated []byte, changed bool, err error) {
+	if len(rawEnv) == 0 || envVar == "" {
+		return rawEnv, false, nil
+	}
+	envLines := strings.Split(string(rawEnv), "\n")
+	for i, el := range envLines {
+		trimmed := strings.TrimSpace(el)
+		if strings.HasPrefix(trimmed, "#") || trimmed == "" {
+			continue
+		}
+		idx := strings.IndexByte(el, '=')
+		if idx <= 0 || strings.TrimSpace(el[:idx]) != envVar {
+			continue
+		}
+		val := strings.Trim(strings.TrimSpace(el[idx+1:]), `"'`)
+		if fullImage {
+			if val == "" {
+				return nil, false, fmt.Errorf("cannot update empty image env variable %s", envVar)
+			}
+			envLines[i] = fmt.Sprintf("%s=%s", envVar, replaceImageTagPart(val, targetTag))
+		} else {
+			envLines[i] = fmt.Sprintf("%s=%s", envVar, targetTag)
+		}
+		changed = true
+	}
+	if !changed {
+		return rawEnv, false, nil
+	}
+	return []byte(strings.Join(envLines, "\n")), true, nil
+}
+
 // UpdateFileTag surgically updates the image tag in compose.yml and/or .env
 // without re-serializing YAML or stripping comments. When serviceKey is set,
 // only that service (and any sibling service in the same file sharing the exact
@@ -153,143 +229,54 @@ func UpdateFileTag(composePath, envPath, serviceKey, targetTag string) (updatedC
 	if composePerm == 0 {
 		composePerm = 0644
 	}
-
 	rawCompose, err := os.ReadFile(composePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read compose file: %w", err)
 	}
-
-	var rawEnv []byte
-	envPerm := os.FileMode(0600)
-	if envPath != "" {
-		if envInfo, sErr := os.Stat(envPath); sErr == nil {
-			if p := envInfo.Mode().Perm(); p != 0 {
-				envPerm = p
-			}
-			rawEnv, err = os.ReadFile(envPath)
-			if err != nil {
-				return nil, nil, fmt.Errorf("failed to read env file %s: %w", envPath, err)
-			}
-		} else if !os.IsNotExist(sErr) {
-			return nil, nil, fmt.Errorf("failed to stat env file %s: %w", envPath, sErr)
-		}
+	rawEnv, envPerm, err := readOptionalEnvFile(envPath)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	lines := strings.Split(string(rawCompose), "\n")
 	matches := scanServiceImageLines(lines)
-
-	var targetExpr string
-	if serviceKey != "" {
-		for _, m := range matches {
-			if m.svcName == serviceKey {
-				targetExpr = m.expr
-				break
-			}
-		}
-	}
+	targetExpr := findServiceTargetExpr(matches, serviceKey)
 
 	var envVarToUpdate string
 	var envVarFullImage bool
 	matchedLine := false
-
 	for _, m := range matches {
-		if serviceKey != "" {
-			if targetExpr != "" {
-				if m.expr != targetExpr {
-					continue
-				}
-			} else if m.svcName != serviceKey {
-				continue
-			}
+		if !matchesServiceTarget(m, serviceKey, targetExpr) {
+			continue
 		}
 		matchedLine = true
-
-		// Case 1: Image expression ends with `:${VAR:-default}` or `:${VAR-default}`
-		if sub := trailingEnvTagRe.FindStringSubmatch(m.expr); len(sub) == 5 {
-			repoPart := sub[1]
-			varName := sub[2]
-			sep := sub[3]
-			if sep == "" {
-				sep = ":-"
-			}
-			envVarToUpdate = varName
-			envVarFullImage = false
-			newExpr := fmt.Sprintf("%s:${%s%s%s}", repoPart, varName, sep, targetTag)
-			lines[m.lineIdx] = m.prefix + m.quoteOpen + newExpr + m.quoteClose + m.trailing
-			continue
+		newExpr, envVar, fullImg, err := rewriteComposeImageExpr(m.expr, targetTag)
+		if err != nil {
+			return nil, nil, err
 		}
-
-		// Case 2: Whole image expression is `${VAR:-repo:tag}` or `${VAR}`
-		if sub := fullImageEnvRe.FindStringSubmatch(m.expr); len(sub) == 4 {
-			varName := sub[1]
-			sep := sub[2]
-			defVal := sub[3]
-			envVarToUpdate = varName
-			envVarFullImage = true
-			if defVal != "" {
-				if sep == "" {
-					sep = ":-"
-				}
-				newDef := replaceImageTagPart(defVal, targetTag)
-				newExpr := fmt.Sprintf("${%s%s%s}", varName, sep, newDef)
-				lines[m.lineIdx] = m.prefix + m.quoteOpen + newExpr + m.quoteClose + m.trailing
-			}
-			continue
+		if envVar != "" {
+			envVarToUpdate = envVar
+			envVarFullImage = fullImg
 		}
-
-		if strings.ContainsAny(m.expr, "${}") {
-			return nil, nil, fmt.Errorf("unsupported variable interpolation format in image expression %q", m.expr)
-		}
-
-		// Case 3: Standard `repo:tag`, digest-pinned `repo:tag@sha256:...`, or tagless `repo`
-		newExpr := replaceImageTagPart(m.expr, targetTag)
 		lines[m.lineIdx] = m.prefix + m.quoteOpen + newExpr + m.quoteClose + m.trailing
 	}
-
 	if !matchedLine {
 		return nil, nil, fmt.Errorf("no matching image line found in %s", composePath)
 	}
 
-	if len(rawEnv) > 0 && envVarToUpdate != "" {
-		envLines := strings.Split(string(rawEnv), "\n")
-		replaced := false
-		for i, el := range envLines {
-			trimmed := strings.TrimSpace(el)
-			if strings.HasPrefix(trimmed, "#") || trimmed == "" {
-				continue
-			}
-			if idx := strings.IndexByte(el, '='); idx > 0 {
-				k := strings.TrimSpace(el[:idx])
-				if k == envVarToUpdate {
-					val := strings.Trim(strings.TrimSpace(el[idx+1:]), `"'`)
-					if envVarFullImage {
-						if val == "" {
-							return nil, nil, fmt.Errorf("cannot update empty image env variable %s", k)
-						}
-						envLines[i] = fmt.Sprintf("%s=%s", k, replaceImageTagPart(val, targetTag))
-					} else {
-						envLines[i] = fmt.Sprintf("%s=%s", k, targetTag)
-					}
-					replaced = true
-				}
-			}
+	updatedEnv, envChanged, err := updateEnvVarInRawEnv(rawEnv, envVarToUpdate, envVarFullImage, targetTag)
+	if err != nil {
+		return nil, nil, err
+	}
+	if envChanged {
+		if err := fsutil.WriteFileAtomic(envPath, updatedEnv, envPerm); err != nil {
+			return nil, nil, fmt.Errorf("failed to write env file %s: %w", envPath, err)
 		}
-		if replaced {
-			updatedEnv = []byte(strings.Join(envLines, "\n"))
-			if err := writeFileAtomic(envPath, updatedEnv, envPerm); err != nil {
-				return nil, nil, fmt.Errorf("failed to write env file %s: %w", envPath, err)
-			}
-		} else {
-			updatedEnv = rawEnv
-		}
-	} else {
-		updatedEnv = rawEnv
 	}
 
 	updatedCompose = []byte(strings.Join(lines, "\n"))
-	if err := writeFileAtomic(composePath, updatedCompose, composePerm); err != nil {
+	if err := fsutil.WriteFileAtomic(composePath, updatedCompose, composePerm); err != nil {
 		return nil, nil, fmt.Errorf("failed to write compose file %s: %w", composePath, err)
 	}
-
 	return updatedCompose, updatedEnv, nil
 }

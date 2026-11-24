@@ -19,6 +19,44 @@ func NewBrewScanner(runner CommandRunner) *BrewScanner {
 	return &BrewScanner{runner: runner}
 }
 
+type brewFormulaInfo struct {
+	Name     string `json:"name"`
+	Versions struct {
+		Stable string `json:"stable"`
+	} `json:"versions"`
+	Installed []struct {
+		Version string `json:"version"`
+	} `json:"installed"`
+	Pinned     bool `json:"pinned"`
+	Outdated   bool `json:"outdated"`
+	Deprecated bool `json:"deprecated"`
+	Disabled   bool `json:"disabled"`
+}
+
+type brewCaskInfo struct {
+	Token      string `json:"token"`
+	Version    string `json:"version"`
+	Installed  string `json:"installed"`
+	Outdated   bool   `json:"outdated"`
+	Deprecated bool   `json:"deprecated"`
+	Disabled   bool   `json:"disabled"`
+}
+
+type brewItemInput struct {
+	name              string
+	curVer            string
+	stableVer         string
+	reportedOutdated  bool
+	pinned            bool
+	isCask            bool
+	outdatedMap       map[string]string
+	outdatedSucceeded bool
+	releaseNotesURL   string
+	eol               models.EoLInfo
+	brokenLinkage     bool
+	linkageDetails    string
+}
+
 func brewFormulaNotesURL(name string) string {
 	parts := strings.Split(name, "/")
 	if len(parts) == 3 {
@@ -32,6 +70,141 @@ func brewFormulaNotesURL(name string) string {
 	return "https://formulae.brew.sh/formula/" + url.PathEscape(name)
 }
 
+func (b *BrewScanner) queryBrewOutdated(ctx context.Context) (map[string]string, bool) {
+	outdatedMap := make(map[string]string)
+	outRaw, err := b.runner.Run(ctx, "brew", "outdated", "--json=v2")
+	if err != nil {
+		return outdatedMap, false
+	}
+	var outPayload struct {
+		Formulae []struct {
+			Name           string `json:"name"`
+			CurrentVersion string `json:"current_version"`
+		} `json:"formulae"`
+		Casks []struct {
+			Name           string `json:"name"`
+			CurrentVersion string `json:"current_version"`
+		} `json:"casks"`
+	}
+	if json.Unmarshal(outRaw, &outPayload) != nil {
+		return outdatedMap, false
+	}
+	for _, f := range outPayload.Formulae {
+		outdatedMap[f.Name] = f.CurrentVersion
+	}
+	for _, c := range outPayload.Casks {
+		outdatedMap[c.Name] = c.CurrentVersion
+	}
+	return outdatedMap, true
+}
+
+func (b *BrewScanner) checkFormulaLinkage(ctx context.Context, formulae []brewFormulaInfo) ([]bool, []string) {
+	nFormulae := len(formulae)
+	brokenFlags := make([]bool, nFormulae)
+	linkageDetails := make([]string, nFormulae)
+	if nFormulae == 0 {
+		return brokenFlags, linkageDetails
+	}
+
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for idx, f := range formulae {
+		wg.Add(1)
+		go func(i int, formulaName string) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+			lCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			defer cancel()
+			if linkOut, linkErr := b.runner.Run(lCtx, "brew", "linkage", "--test", formulaName); linkErr != nil && ctx.Err() == nil {
+				brokenFlags[i] = true
+				linkageDetails[i] = strings.TrimSpace(string(linkOut))
+			}
+		}(idx, f.Name)
+	}
+	wg.Wait()
+	return brokenFlags, linkageDetails
+}
+
+func brewFormulaEoL(f brewFormulaInfo) models.EoLInfo {
+	if f.Deprecated || f.Disabled {
+		return models.EoLInfo{
+			Product: f.Name,
+			Status:  models.EoLExpired,
+			Message: "Formula deprecated/disabled in Homebrew",
+		}
+	}
+	if f.Pinned {
+		return models.EoLInfo{
+			Product: f.Name,
+			Status:  models.EoLSupported,
+			Message: "Pinned in Homebrew",
+		}
+	}
+	// Preserve EoLUnknown default so downstream EoLChecker.CheckEoL enriches mapped formulae.
+	return models.EoLInfo{Status: models.EoLUnknown}
+}
+
+func brewCaskEoL(c brewCaskInfo) models.EoLInfo {
+	if c.Deprecated || c.Disabled {
+		return models.EoLInfo{
+			Product: c.Token,
+			Status:  models.EoLExpired,
+			Message: "Cask deprecated/disabled",
+		}
+	}
+	return models.EoLInfo{Status: models.EoLSupported, Message: "Homebrew Cask"}
+}
+
+func buildBrewManagedItem(in brewItemInput) models.ManagedItem {
+	latestVer := in.stableVer
+	if ov, ok := in.outdatedMap[in.name]; ok && ov != "" {
+		latestVer = ov
+	}
+
+	_, isOutdated := in.outdatedMap[in.name]
+	if !isOutdated && in.reportedOutdated {
+		isOutdated = true
+	}
+	if !isOutdated && !in.outdatedSucceeded && !in.pinned && latestVer != "" && in.curVer != "" {
+		if in.isCask {
+			isOutdated = in.curVer != latestVer
+		} else {
+			isOutdated = !strings.HasPrefix(in.curVer, latestVer)
+		}
+	}
+	if in.pinned {
+		isOutdated = false
+	}
+
+	avail := []string{latestVer}
+	if in.curVer != "" && in.curVer != latestVer {
+		avail = []string{latestVer, in.curVer}
+	}
+
+	return models.ManagedItem{
+		TargetType:      models.TargetBrew,
+		Name:            in.name,
+		CurrentVersion:  curVerOrEmpty(in.curVer),
+		LatestVersion:   latestVer,
+		AvailableTags:   avail,
+		Outdated:        isOutdated,
+		BrokenLinkage:   in.brokenLinkage,
+		LinkageDetails:  in.linkageDetails,
+		ReleaseNotesURL: in.releaseNotesURL,
+		EoL:             in.eol,
+		LastCheckedAt:   time.Now().UTC(),
+	}
+}
+
+func curVerOrEmpty(s string) string {
+	return s
+}
+
 func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error) {
 	if b.runner == nil {
 		return nil, nil
@@ -43,83 +216,15 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 	}
 
 	var infoPayload struct {
-		Formulae []struct {
-			Name     string `json:"name"`
-			Versions struct {
-				Stable string `json:"stable"`
-			} `json:"versions"`
-			Installed []struct {
-				Version string `json:"version"`
-			} `json:"installed"`
-			Pinned     bool `json:"pinned"`
-			Outdated   bool `json:"outdated"`
-			Deprecated bool `json:"deprecated"`
-			Disabled   bool `json:"disabled"`
-		} `json:"formulae"`
-		Casks []struct {
-			Token      string `json:"token"`
-			Version    string `json:"version"`
-			Installed  string `json:"installed"`
-			Outdated   bool   `json:"outdated"`
-			Deprecated bool   `json:"deprecated"`
-			Disabled   bool   `json:"disabled"`
-		} `json:"casks"`
+		Formulae []brewFormulaInfo `json:"formulae"`
+		Casks    []brewCaskInfo    `json:"casks"`
 	}
 	if err := json.Unmarshal(infoOut, &infoPayload); err != nil {
 		return nil, err
 	}
 
-	outdatedMap := make(map[string]string)
-	outdatedSucceeded := false
-	if outRaw, err := b.runner.Run(ctx, "brew", "outdated", "--json=v2"); err == nil {
-		var outPayload struct {
-			Formulae []struct {
-				Name           string `json:"name"`
-				CurrentVersion string `json:"current_version"`
-			} `json:"formulae"`
-			Casks []struct {
-				Name           string `json:"name"`
-				CurrentVersion string `json:"current_version"`
-			} `json:"casks"`
-		}
-		if json.Unmarshal(outRaw, &outPayload) == nil {
-			outdatedSucceeded = true
-			for _, f := range outPayload.Formulae {
-				outdatedMap[f.Name] = f.CurrentVersion
-			}
-			for _, c := range outPayload.Casks {
-				outdatedMap[c.Name] = c.CurrentVersion
-			}
-		}
-	}
-
-	// Bounded concurrent `brew linkage --test` checks across installed formulae
-	nFormulae := len(infoPayload.Formulae)
-	brokenFlags := make([]bool, nFormulae)
-	linkageDetails := make([]string, nFormulae)
-	if nFormulae > 0 {
-		sem := make(chan struct{}, 4)
-		var wg sync.WaitGroup
-		for idx, f := range infoPayload.Formulae {
-			wg.Add(1)
-			go func(i int, formulaName string) {
-				defer wg.Done()
-				select {
-				case sem <- struct{}{}:
-					defer func() { <-sem }()
-				case <-ctx.Done():
-					return
-				}
-				lCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-				defer cancel()
-				if linkOut, linkErr := b.runner.Run(lCtx, "brew", "linkage", "--test", formulaName); linkErr != nil && ctx.Err() == nil {
-					brokenFlags[i] = true
-					linkageDetails[i] = strings.TrimSpace(string(linkOut))
-				}
-			}(idx, f.Name)
-		}
-		wg.Wait()
-	}
+	outdatedMap, outdatedSucceeded := b.queryBrewOutdated(ctx)
+	brokenFlags, linkageDetails := b.checkFormulaLinkage(ctx, infoPayload.Formulae)
 
 	var items []models.ManagedItem
 	for idx, f := range infoPayload.Formulae {
@@ -127,88 +232,34 @@ func (b *BrewScanner) ScanBrew(ctx context.Context) ([]models.ManagedItem, error
 		if len(f.Installed) > 0 {
 			curVer = f.Installed[len(f.Installed)-1].Version
 		}
-		latestVer := f.Versions.Stable
-		if ov, ok := outdatedMap[f.Name]; ok && ov != "" {
-			latestVer = ov
-		}
-		_, isOutdated := outdatedMap[f.Name]
-		if !isOutdated && f.Outdated {
-			isOutdated = true
-		}
-		if !isOutdated && !outdatedSucceeded && !f.Pinned && latestVer != "" && curVer != "" && !strings.HasPrefix(curVer, latestVer) {
-			isOutdated = true
-		}
-		if f.Pinned {
-			isOutdated = false
-		}
-
-		eol := models.EoLInfo{Status: models.EoLUnknown}
-		if f.Deprecated || f.Disabled {
-			eol = models.EoLInfo{
-				Product: f.Name,
-				Status:  models.EoLExpired,
-				Message: "Formula deprecated/disabled in Homebrew",
-			}
-		} else if f.Pinned {
-			eol = models.EoLInfo{
-				Product: f.Name,
-				Status:  models.EoLSupported,
-				Message: "Pinned in Homebrew",
-			}
-		}
-
-		avail := []string{latestVer}
-		if curVer != "" && curVer != latestVer {
-			avail = []string{latestVer, curVer}
-		}
-
-		items = append(items, models.ManagedItem{
-			TargetType:      models.TargetBrew,
-			Name:            f.Name,
-			CurrentVersion:  curVer,
-			LatestVersion:   latestVer,
-			AvailableTags:   avail,
-			Outdated:        isOutdated,
-			BrokenLinkage:   brokenFlags[idx],
-			LinkageDetails:  linkageDetails[idx],
-			ReleaseNotesURL: brewFormulaNotesURL(f.Name),
-			EoL:             eol,
-			LastCheckedAt:   time.Now().UTC(),
-		})
+		items = append(items, buildBrewManagedItem(brewItemInput{
+			name:              f.Name,
+			curVer:            curVer,
+			stableVer:         f.Versions.Stable,
+			reportedOutdated:  f.Outdated,
+			pinned:            f.Pinned,
+			isCask:            false,
+			outdatedMap:       outdatedMap,
+			outdatedSucceeded: outdatedSucceeded,
+			releaseNotesURL:   brewFormulaNotesURL(f.Name),
+			eol:               brewFormulaEoL(f),
+			brokenLinkage:     brokenFlags[idx],
+			linkageDetails:    linkageDetails[idx],
+		}))
 	}
 
 	for _, c := range infoPayload.Casks {
-		curVer := c.Installed
-		latestVer := c.Version
-		if ov, ok := outdatedMap[c.Token]; ok && ov != "" {
-			latestVer = ov
-		}
-		_, isOutdated := outdatedMap[c.Token]
-		if !isOutdated && c.Outdated {
-			isOutdated = true
-		}
-		if !isOutdated && !outdatedSucceeded && latestVer != "" && curVer != "" && curVer != latestVer {
-			isOutdated = true
-		}
-		eol := models.EoLInfo{Status: models.EoLSupported, Message: "Homebrew Cask"}
-		if c.Deprecated || c.Disabled {
-			eol = models.EoLInfo{Product: c.Token, Status: models.EoLExpired, Message: "Cask deprecated/disabled"}
-		}
-		avail := []string{latestVer}
-		if curVer != "" && curVer != latestVer {
-			avail = []string{latestVer, curVer}
-		}
-		items = append(items, models.ManagedItem{
-			TargetType:      models.TargetBrew,
-			Name:            c.Token,
-			CurrentVersion:  curVer,
-			LatestVersion:   latestVer,
-			AvailableTags:   avail,
-			Outdated:        isOutdated,
-			ReleaseNotesURL: "https://formulae.brew.sh/cask/" + url.PathEscape(c.Token),
-			EoL:             eol,
-			LastCheckedAt:   time.Now().UTC(),
-		})
+		items = append(items, buildBrewManagedItem(brewItemInput{
+			name:              c.Token,
+			curVer:            c.Installed,
+			stableVer:         c.Version,
+			reportedOutdated:  c.Outdated,
+			isCask:            true,
+			outdatedMap:       outdatedMap,
+			outdatedSucceeded: outdatedSucceeded,
+			releaseNotesURL:   "https://formulae.brew.sh/cask/" + url.PathEscape(c.Token),
+			eol:               brewCaskEoL(c),
+		}))
 	}
 	return items, nil
 }

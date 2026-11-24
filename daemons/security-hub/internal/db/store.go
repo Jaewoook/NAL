@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jaewoook/security-hub/internal/fsutil"
 	"github.com/jaewoook/security-hub/internal/models"
 )
 
@@ -87,41 +88,6 @@ type SpoolStore struct {
 	lastDiskHash [32]byte
 	lockFile     *os.File
 	subscribers  map[string]map[chan models.TaskLogLine]struct{}
-}
-
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmpFile, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp.*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if _, err := tmpFile.Write(data); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Chmod(perm); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	cleanup = false
-	return nil
 }
 
 func initStateMaps(st *localStateFile) {
@@ -376,7 +342,7 @@ func (s *SpoolStore) saveStateLocked() error {
 	if err != nil {
 		return err
 	}
-	if err := writeFileAtomic(s.statePath, raw, 0600); err != nil {
+	if err := fsutil.WriteFileAtomic(s.statePath, raw, 0600); err != nil {
 		return err
 	}
 	s.lastDiskHash = sha256.Sum256(raw)
@@ -416,7 +382,7 @@ func (s *SpoolStore) SaveScanResult(ctx context.Context, scan *models.ScanResult
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(s.scanPath, raw, 0600)
+	return fsutil.WriteFileAtomic(s.scanPath, raw, 0600)
 }
 
 func (s *SpoolStore) LoadLatestScanResult(ctx context.Context) (*models.ScanResult, error) {

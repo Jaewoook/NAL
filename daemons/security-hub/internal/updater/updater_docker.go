@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaewoook/security-hub/internal/fsutil"
 	"github.com/jaewoook/security-hub/internal/models"
 	"github.com/jaewoook/security-hub/internal/scanner"
 )
@@ -331,13 +332,13 @@ func existingFilePerm(path string, fallback os.FileMode) os.FileMode {
 func (m *Manager) restoreSnapshot(ctx context.Context, taskID string, snap *models.RollbackSnapshot, composeDir string) error {
 	if len(snap.ComposeBackup) > 0 && snap.ComposePath != "" {
 		perm := existingFilePerm(snap.ComposePath, 0644)
-		if err := writeFileAtomic(snap.ComposePath, snap.ComposeBackup, perm); err != nil {
+		if err := fsutil.WriteFileAtomic(snap.ComposePath, snap.ComposeBackup, perm); err != nil {
 			return fmt.Errorf("failed to restore compose file %s: %w", snap.ComposePath, err)
 		}
 	}
 	if len(snap.EnvBackup) > 0 && snap.EnvPath != "" {
 		perm := existingFilePerm(snap.EnvPath, 0600)
-		if err := writeFileAtomic(snap.EnvPath, snap.EnvBackup, perm); err != nil {
+		if err := fsutil.WriteFileAtomic(snap.EnvPath, snap.EnvBackup, perm); err != nil {
 			return fmt.Errorf("failed to restore env file %s: %w", snap.EnvPath, err)
 		}
 	}
@@ -363,7 +364,10 @@ func isHexContainerID(s string) bool {
 	}
 	for i := 0; i < len(s); i++ {
 		c := s[i]
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		isDigit := c >= '0' && c <= '9'
+		isLowerHex := c >= 'a' && c <= 'f'
+		isUpperHex := c >= 'A' && c <= 'F'
+		if !isDigit && !isLowerHex && !isUpperHex {
 			return false
 		}
 	}
@@ -479,12 +483,12 @@ func (m *Manager) verifyContainerHealthy(ctx context.Context, composeDir, servic
 				if health == "" && stateObj.Health != nil {
 					health = stateObj.Health.Status
 				}
-				if health == "unhealthy" {
+				switch health {
+				case "unhealthy":
 					return fmt.Errorf("container %s healthcheck reported unhealthy", targetContainer)
-				}
-				if health == "starting" {
+				case "starting":
 					// Container is still initializing its healthcheck; continue polling until deadline
-				} else if health == "" || health == "healthy" {
+				case "", "healthy":
 					return nil
 				}
 			}

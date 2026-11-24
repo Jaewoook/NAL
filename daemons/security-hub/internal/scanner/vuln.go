@@ -62,6 +62,10 @@ type osvVulnRecord struct {
 	} `json:"affected"`
 }
 
+type osvBatchResult struct {
+	Vulns []osvVulnRecord `json:"vulns"`
+}
+
 func cleanUpstreamVersion(raw string) string {
 	cleanVer := strings.TrimSpace(raw)
 	if idx := strings.IndexByte(cleanVer, ':'); idx >= 0 {
@@ -182,10 +186,9 @@ func extractOSVFixedVersion(vuln osvVulnRecord) string {
 	return fixedVer
 }
 
-func (v *VulnScanner) CheckVulnerabilities(ctx context.Context, items []models.ManagedItem) error {
+func buildOSVBatchQueries(items []models.ManagedItem) ([]osvQuery, []int) {
 	var queries []osvQuery
 	var queryIdxToItem []int
-
 	for i := range items {
 		eco, pkg, ver, ok := mapItemToOSVPackage(items[i])
 		if !ok {
@@ -198,115 +201,168 @@ func (v *VulnScanner) CheckVulnerabilities(ctx context.Context, items []models.M
 		queries = append(queries, q)
 		queryIdxToItem = append(queryIdxToItem, i)
 	}
+	return queries, queryIdxToItem
+}
 
-	if len(queries) > 0 && v.httpClient != nil {
-		reqBody, _ := json.Marshal(struct {
-			Queries []osvQuery `json:"queries"`
-		}{Queries: queries})
+func (v *VulnScanner) postOSVBatch(ctx context.Context, queries []osvQuery) ([]osvBatchResult, bool) {
+	reqBody, err := json.Marshal(struct {
+		Queries []osvQuery `json:"queries"`
+	}{Queries: queries})
+	if err != nil {
+		return nil, false
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, v.osvURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, false
+	}
+	req.Header.Set("Content-Type", "application/json")
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, v.osvURL, bytes.NewReader(reqBody))
-		if err == nil {
-			req.Header.Set("Content-Type", "application/json")
-			resp, err := v.httpClient.Do(req)
-			if err == nil {
-				defer resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
-					var batchResp struct {
-						Results []struct {
-							Vulns []osvVulnRecord `json:"vulns"`
-						} `json:"results"`
-					}
-					if json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&batchResp) == nil {
-						detailCache := make(map[string]osvVulnRecord)
-						for qIdx, res := range batchResp.Results {
-							if qIdx >= len(queryIdxToItem) {
-								break
-							}
-							itemIdx := queryIdxToItem[qIdx]
-							for _, vuln := range res.Vulns {
-								if vuln.ID != "" && (vuln.Summary == "" || vuln.DatabaseSpecific.Severity == "") {
-									det, cached := detailCache[vuln.ID]
-									if !cached {
-										if fetched, ok := v.fetchOSVVulnDetail(ctx, vuln.ID); ok {
-											det = fetched
-											detailCache[vuln.ID] = fetched
-										}
-									}
-									if vuln.Summary == "" {
-										vuln.Summary = det.Summary
-										if vuln.Summary == "" {
-											vuln.Summary = det.Details
-										}
-									}
-									if vuln.DatabaseSpecific.Severity == "" {
-										vuln.DatabaseSpecific.Severity = det.DatabaseSpecific.Severity
-									}
-									if len(vuln.Severity) == 0 {
-										vuln.Severity = det.Severity
-									}
-									if len(vuln.Affected) == 0 {
-										vuln.Affected = det.Affected
-									}
-								}
-
-								sev := extractOSVSeverity(vuln)
-								fixedVer := extractOSVFixedVersion(vuln)
-								appendVuln(&items[itemIdx], models.Vulnerability{
-									ID:           vuln.ID,
-									Summary:      vuln.Summary,
-									Severity:     sev,
-									FixedVersion: fixedVer,
-									URL:          "https://osv.dev/vulnerability/" + url.PathEscape(vuln.ID),
-								})
-							}
-						}
-					}
-				}
-			}
-		}
+	resp, err := v.httpClient.Do(req)
+	if err != nil {
+		return nil, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, false
 	}
 
-	// Optional Trivy image scan if trivy is installed on the host
-	if v.runner != nil {
-		if _, err := v.runner.Run(ctx, "trivy", "--version"); err == nil {
-			for i := range items {
-				if items[i].TargetType != models.TargetDocker || items[i].ImageRef == "" {
-					continue
-				}
-				trivyCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-				out, err := v.runner.Run(trivyCtx, "trivy", "image", "--format", "json", "--quiet", "--scanners", "vuln", "--", items[i].ImageRef)
-				cancel()
-				if err != nil {
-					continue
-				}
-				var trivyRes struct {
-					Results []struct {
-						Vulnerabilities []struct {
-							VulnerabilityID string `json:"VulnerabilityID"`
-							Title           string `json:"Title"`
-							Severity        string `json:"Severity"`
-							FixedVersion    string `json:"FixedVersion"`
-							PrimaryURL      string `json:"PrimaryURL"`
-						} `json:"Vulnerabilities"`
-					} `json:"Results"`
-				}
-				if json.Unmarshal(out, &trivyRes) == nil {
-					for _, r := range trivyRes.Results {
-						for _, tv := range r.Vulnerabilities {
-							appendVuln(&items[i], models.Vulnerability{
-								ID:           tv.VulnerabilityID,
-								Summary:      tv.Title,
-								Severity:     normalizeSeverity(tv.Severity),
-								FixedVersion: tv.FixedVersion,
-								URL:          tv.PrimaryURL,
-							})
-						}
-					}
-				}
-			}
+	var batchResp struct {
+		Results []osvBatchResult `json:"results"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&batchResp) != nil {
+		return nil, false
+	}
+	return batchResp.Results, true
+}
+
+func (v *VulnScanner) backfillOSVDetails(ctx context.Context, vuln osvVulnRecord, detailCache map[string]osvVulnRecord) osvVulnRecord {
+	if vuln.ID == "" || (vuln.Summary != "" && vuln.DatabaseSpecific.Severity != "") {
+		return vuln
+	}
+	det, cached := detailCache[vuln.ID]
+	if !cached {
+		if fetched, ok := v.fetchOSVVulnDetail(ctx, vuln.ID); ok {
+			det = fetched
+			detailCache[vuln.ID] = fetched
 		}
 	}
+	if vuln.Summary == "" {
+		vuln.Summary = det.Summary
+		if vuln.Summary == "" {
+			vuln.Summary = det.Details
+		}
+	}
+	if vuln.DatabaseSpecific.Severity == "" {
+		vuln.DatabaseSpecific.Severity = det.DatabaseSpecific.Severity
+	}
+	if len(vuln.Severity) == 0 {
+		vuln.Severity = det.Severity
+	}
+	if len(vuln.Affected) == 0 {
+		vuln.Affected = det.Affected
+	}
+	return vuln
+}
 
+func (v *VulnScanner) checkOSVBatch(ctx context.Context, items []models.ManagedItem) {
+	if v.httpClient == nil {
+		return
+	}
+	queries, queryIdxToItem := buildOSVBatchQueries(items)
+	if len(queries) == 0 {
+		return
+	}
+	results, ok := v.postOSVBatch(ctx, queries)
+	if !ok {
+		return
+	}
+
+	detailCache := make(map[string]osvVulnRecord)
+	for qIdx, res := range results {
+		if qIdx >= len(queryIdxToItem) {
+			break
+		}
+		if len(res.Vulns) == 0 {
+			continue
+		}
+		item := &items[queryIdxToItem[qIdx]]
+		for _, vuln := range res.Vulns {
+			vuln = v.backfillOSVDetails(ctx, vuln, detailCache)
+			appendVuln(item, models.Vulnerability{
+				ID:           vuln.ID,
+				Summary:      vuln.Summary,
+				Severity:     extractOSVSeverity(vuln),
+				FixedVersion: extractOSVFixedVersion(vuln),
+				URL:          "https://osv.dev/vulnerability/" + url.PathEscape(vuln.ID),
+			})
+		}
+		recountSeverities(item)
+	}
+}
+
+func (v *VulnScanner) scanTrivyImage(ctx context.Context, imageRef string) ([]models.Vulnerability, bool) {
+	trivyCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	out, err := v.runner.Run(trivyCtx, "trivy", "image", "--format", "json", "--quiet", "--scanners", "vuln", "--", imageRef)
+	cancel()
+	if err != nil {
+		return nil, false
+	}
+
+	var trivyRes struct {
+		Results []struct {
+			Vulnerabilities []struct {
+				VulnerabilityID string `json:"VulnerabilityID"`
+				Title           string `json:"Title"`
+				Severity        string `json:"Severity"`
+				FixedVersion    string `json:"FixedVersion"`
+				PrimaryURL      string `json:"PrimaryURL"`
+			} `json:"Vulnerabilities"`
+		} `json:"Results"`
+	}
+	if json.Unmarshal(out, &trivyRes) != nil {
+		return nil, false
+	}
+
+	var vulns []models.Vulnerability
+	for _, r := range trivyRes.Results {
+		for _, tv := range r.Vulnerabilities {
+			vulns = append(vulns, models.Vulnerability{
+				ID:           tv.VulnerabilityID,
+				Summary:      tv.Title,
+				Severity:     normalizeSeverity(tv.Severity),
+				FixedVersion: tv.FixedVersion,
+				URL:          tv.PrimaryURL,
+			})
+		}
+	}
+	return vulns, true
+}
+
+func (v *VulnScanner) checkTrivyImages(ctx context.Context, items []models.ManagedItem) {
+	if v.runner == nil {
+		return
+	}
+	if _, err := v.runner.Run(ctx, "trivy", "--version"); err != nil {
+		return
+	}
+	for i := range items {
+		if items[i].TargetType != models.TargetDocker || items[i].ImageRef == "" {
+			continue
+		}
+		vulns, ok := v.scanTrivyImage(ctx, items[i].ImageRef)
+		if !ok || len(vulns) == 0 {
+			continue
+		}
+		for _, tv := range vulns {
+			appendVuln(&items[i], tv)
+		}
+		recountSeverities(&items[i])
+	}
+}
+
+func (v *VulnScanner) CheckVulnerabilities(ctx context.Context, items []models.ManagedItem) error {
+	v.checkOSVBatch(ctx, items)
+	v.checkTrivyImages(ctx, items)
 	return nil
 }
 
@@ -317,14 +373,23 @@ func appendVuln(item *models.ManagedItem, v models.Vulnerability) {
 		}
 	}
 	item.Vulnerabilities = append(item.Vulnerabilities, v)
-	switch v.Severity {
-	case models.SeverityCritical:
-		item.CritCount++
-	case models.SeverityHigh:
-		item.HighCount++
-	case models.SeverityMedium:
-		item.MedCount++
-	default:
-		item.LowCount++
+}
+
+func recountSeverities(item *models.ManagedItem) {
+	item.CritCount = 0
+	item.HighCount = 0
+	item.MedCount = 0
+	item.LowCount = 0
+	for _, v := range item.Vulnerabilities {
+		switch v.Severity {
+		case models.SeverityCritical:
+			item.CritCount++
+		case models.SeverityHigh:
+			item.HighCount++
+		case models.SeverityMedium:
+			item.MedCount++
+		default:
+			item.LowCount++
+		}
 	}
 }

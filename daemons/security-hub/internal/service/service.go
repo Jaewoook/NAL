@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/jaewoook/security-hub/internal/fsutil"
 )
 
 var cmdRunner = func(name string, args ...string) ([]byte, error) {
@@ -112,41 +114,6 @@ func GenerateLaunchdPlist(binaryPath, workingDir string) string {
 `, LaunchdLabel, escapedBin, escapedDir, escapedDir, escapedDir)
 }
 
-func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmpFile, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp.*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-	cleanup := true
-	defer func() {
-		if cleanup {
-			_ = os.Remove(tmpPath)
-		}
-	}()
-	if _, err := tmpFile.Write(data); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Chmod(perm); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	cleanup = false
-	return nil
-}
-
 func InstallPlist(destPath, binaryPath, workingDir string) error {
 	binaryPath = strings.TrimSpace(binaryPath)
 	if binaryPath == "" {
@@ -187,7 +154,7 @@ func InstallPlist(destPath, binaryPath, workingDir string) error {
 		return err
 	}
 	content := GenerateLaunchdPlist(absBin, absWD)
-	return writeFileAtomic(destPath, []byte(content), 0600)
+	return fsutil.WriteFileAtomic(destPath, []byte(content), 0600)
 }
 
 func startLaunchdService(plist, label, installCmd string) error {

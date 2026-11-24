@@ -16,6 +16,7 @@ import (
 
 	"github.com/jaewoook/security-hub/internal/auth"
 	"github.com/jaewoook/security-hub/internal/config"
+	"github.com/jaewoook/security-hub/internal/httputil"
 	"github.com/jaewoook/security-hub/internal/models"
 )
 
@@ -302,18 +303,7 @@ func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
 		httpReq.Header.Set("X-NAL-Node-Token", tok)
 	}
 
-	probeClient := &http.Client{
-		Timeout: 3 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	if s.httpClient != nil {
-		probeClient.Transport = s.httpClient.Transport
-		if s.httpClient.Timeout > 0 {
-			probeClient.Timeout = s.httpClient.Timeout
-		}
-	}
+	probeClient := httputil.NoRedirectClient(s.httpClient, 3*time.Second)
 
 	start := time.Now()
 	resp, err := probeClient.Do(httpReq)

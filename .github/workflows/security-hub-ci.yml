@@ -97,6 +97,12 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.15.0
+          working-directory: daemons/security-hub
+
       - name: Run Go tests with race detector
         run: go test -v -race -count=1 ./...
 

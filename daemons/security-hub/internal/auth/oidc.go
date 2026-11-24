@@ -2,24 +2,19 @@ package auth
 
 import (
 	"context"
-	"crypto"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/hmac"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/sha512"
-	"encoding/base64"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
-	"math/big"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/jaewoook/security-hub/internal/httputil"
 )
 
 type oidcDiscoveryDoc struct {
@@ -27,26 +22,6 @@ type oidcDiscoveryDoc struct {
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	TokenEndpoint         string `json:"token_endpoint"`
 	JWKSURI               string `json:"jwks_uri"`
-}
-
-type jwkKey struct {
-	Kty string `json:"kty"`
-	Use string `json:"use"`
-	Alg string `json:"alg"`
-	Kid string `json:"kid"`
-	// RSA
-	N string `json:"n"`
-	E string `json:"e"`
-	// EC
-	Crv string `json:"crv"`
-	X   string `json:"x"`
-	Y   string `json:"y"`
-}
-
-type jwtHeader struct {
-	Alg string `json:"alg"`
-	Kid string `json:"kid"`
-	Typ string `json:"typ"`
 }
 
 func validateHTTPSURL(raw string) (*url.URL, error) {
@@ -102,7 +77,7 @@ func (m *Manager) discoverOIDC(ctx context.Context) (oidcDiscoveryDoc, error) {
 	if err != nil {
 		return oidcDiscoveryDoc{}, err
 	}
-	resp, err := m.safeHTTPClient().Do(req)
+	resp, err := httputil.NoRedirectClient(m.httpClient, oidcHTTPTimeout).Do(req)
 	if err != nil {
 		return oidcDiscoveryDoc{}, err
 	}
@@ -154,7 +129,7 @@ func (m *Manager) fetchJWKS(ctx context.Context, jwksURI string, forceRefresh bo
 	if err != nil {
 		return nil, err
 	}
-	resp, err := m.safeHTTPClient().Do(req)
+	resp, err := httputil.NoRedirectClient(m.httpClient, oidcHTTPTimeout).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -191,195 +166,153 @@ func (m *Manager) resolveJWKSURI(ctx context.Context) (string, error) {
 	return fallbackJWKS, nil
 }
 
-func hashSpecForAlg(alg string) (crypto.Hash, func() hash.Hash, error) {
-	switch alg {
-	case "RS256", "ES256", "HS256":
-		return crypto.SHA256, sha256.New, nil
-	case "RS384", "ES384", "HS384":
-		return crypto.SHA384, sha512.New384, nil
-	case "RS512", "ES512", "HS512":
-		return crypto.SHA512, sha512.New, nil
-	default:
-		return 0, nil, fmt.Errorf("unsupported JWT signing algorithm %q", alg)
+func (m *Manager) StartOIDCLogin(w http.ResponseWriter, r *http.Request) {
+	if m.cfg.OIDCIssuer == "" {
+		http.Error(w, "OIDC issuer is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	issURL, err := validateHTTPSURL(m.cfg.OIDCIssuer)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("invalid OIDC issuer configuration: %v", err), http.StatusServiceUnavailable)
+		return
+	}
+
+	authURL, _, _ := m.oidcFallbackEndpoints(issURL.String())
+	discCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	doc, dErr := m.discoverOIDC(discCtx)
+	cancel()
+	if dErr == nil && doc.AuthorizationEndpoint != "" {
+		authURL = doc.AuthorizationEndpoint
+	}
+
+	stateBytes := make([]byte, 16)
+	nonceBytes := make([]byte, 16)
+	if _, err := rand.Read(stateBytes); err != nil {
+		http.Error(w, "failed to generate OAuth state", http.StatusInternalServerError)
+		return
+	}
+	if _, err := rand.Read(nonceBytes); err != nil {
+		http.Error(w, "failed to generate OIDC nonce", http.StatusInternalServerError)
+		return
+	}
+	state := hex.EncodeToString(stateBytes)
+	nonce := hex.EncodeToString(nonceBytes)
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     OIDCStateCookieName,
+		Value:    state,
+		Path:     "/api/auth/oidc/callback",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   m.isSecureCookie(),
+		MaxAge:   300,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     OIDCNonceCookieName,
+		Value:    nonce,
+		Path:     "/api/auth/oidc/callback",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   m.isSecureCookie(),
+		MaxAge:   300,
+	})
+
+	q := url.Values{}
+	q.Set("client_id", m.cfg.OIDCClientID)
+	q.Set("response_type", "code")
+	q.Set("scope", "openid profile email")
+	q.Set("redirect_uri", m.cfg.RedirectURL)
+	q.Set("state", state)
+	q.Set("nonce", nonce)
+	http.Redirect(w, r, authURL+"?"+q.Encode(), http.StatusFound)
+}
+
+func clearOIDCCallbackCookies(w http.ResponseWriter, secure bool) {
+	for _, name := range []string{OIDCStateCookieName, OIDCNonceCookieName} {
+		http.SetCookie(w, &http.Cookie{
+			Name:     name,
+			Value:    "",
+			Path:     "/api/auth/oidc/callback",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   secure,
+			MaxAge:   -1,
+		})
 	}
 }
 
-func verifySignatureWithJWK(key jwkKey, alg string, signingInput, sig []byte) error {
-	if key.Use != "" && key.Use != "sig" {
-		return errors.New("JWK key is not marked for signature verification")
+func (m *Manager) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	issURL, issErr := validateHTTPSURL(m.cfg.OIDCIssuer)
+	if issErr != nil {
+		http.Error(w, "invalid OIDC issuer configuration", http.StatusServiceUnavailable)
+		return
 	}
-	if key.Alg != "" && key.Alg != alg {
-		return fmt.Errorf("JWK alg %q does not match JWT header alg %q", key.Alg, alg)
+
+	state := r.URL.Query().Get("state")
+	stateCookie, err := r.Cookie(OIDCStateCookieName)
+	nonceCookie, nonceErr := r.Cookie(OIDCNonceCookieName)
+	clearOIDCCallbackCookies(w, m.isSecureCookie())
+	if err != nil || state == "" || stateCookie.Value == "" || !hmac.Equal([]byte(stateCookie.Value), []byte(state)) {
+		http.Error(w, "invalid or missing OAuth state parameter (CSRF detected)", http.StatusBadRequest)
+		return
 	}
-	hashAlg, newHash, err := hashSpecForAlg(alg)
+	if nonceErr != nil || nonceCookie.Value == "" {
+		http.Error(w, "missing OIDC nonce cookie", http.StatusBadRequest)
+		return
+	}
+
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Error(w, "missing authorization code", http.StatusBadRequest)
+		return
+	}
+
+	_, tokenURL, _ := m.oidcFallbackEndpoints(issURL.String())
+	if doc, dErr := m.discoverOIDC(r.Context()); dErr == nil && doc.TokenEndpoint != "" {
+		tokenURL = doc.TokenEndpoint
+	}
+	if _, err := validateHTTPSURL(tokenURL); err != nil {
+		http.Error(w, "insecure OIDC token endpoint", http.StatusBadGateway)
+		return
+	}
+
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", code)
+	form.Set("client_id", m.cfg.OIDCClientID)
+	form.Set("client_secret", m.cfg.OIDCClientSecret)
+	form.Set("redirect_uri", m.cfg.RedirectURL)
+
+	resp, err := httputil.NoRedirectClient(m.httpClient, oidcHTTPTimeout).PostForm(tokenURL, form)
 	if err != nil {
-		return err
+		http.Error(w, fmt.Sprintf("OIDC token exchange failed: %v", err), http.StatusBadGateway)
+		return
 	}
-	h := newHash()
-	_, _ = h.Write(signingInput)
-	digest := h.Sum(nil)
-
-	switch {
-	case strings.HasPrefix(alg, "RS"):
-		if key.Kty != "RSA" {
-			return fmt.Errorf("key type %q mismatch for %s", key.Kty, alg)
-		}
-		nBytes, err1 := base64.RawURLEncoding.DecodeString(key.N)
-		eBytes, err2 := base64.RawURLEncoding.DecodeString(key.E)
-		if err1 != nil || err2 != nil || len(nBytes) == 0 || len(eBytes) == 0 {
-			return errors.New("malformed RSA JWK")
-		}
-		var eInt int
-		for _, b := range eBytes {
-			eInt = (eInt << 8) | int(b)
-		}
-		if eInt < 3 {
-			return errors.New("invalid RSA exponent")
-		}
-		pub := &rsa.PublicKey{
-			N: new(big.Int).SetBytes(nBytes),
-			E: eInt,
-		}
-		if pub.N.BitLen() < 2048 {
-			return errors.New("RSA JWK key size below 2048 bits")
-		}
-		return rsa.VerifyPKCS1v15(pub, hashAlg, digest, sig)
-
-	case strings.HasPrefix(alg, "ES"):
-		if key.Kty != "EC" {
-			return fmt.Errorf("key type %q mismatch for %s", key.Kty, alg)
-		}
-		var curve elliptic.Curve
-		var coordBytes int
-		switch alg {
-		case "ES256":
-			curve = elliptic.P256()
-			coordBytes = 32
-			if key.Crv != "P-256" {
-				return fmt.Errorf("JWK curve %q mismatch for ES256", key.Crv)
-			}
-		case "ES384":
-			curve = elliptic.P384()
-			coordBytes = 48
-			if key.Crv != "P-384" {
-				return fmt.Errorf("JWK curve %q mismatch for ES384", key.Crv)
-			}
-		case "ES512":
-			curve = elliptic.P521()
-			coordBytes = 66
-			if key.Crv != "P-521" {
-				return fmt.Errorf("JWK curve %q mismatch for ES512", key.Crv)
-			}
-		}
-		xBytes, err1 := base64.RawURLEncoding.DecodeString(key.X)
-		yBytes, err2 := base64.RawURLEncoding.DecodeString(key.Y)
-		if err1 != nil || err2 != nil || len(xBytes) == 0 || len(yBytes) == 0 {
-			return errors.New("malformed EC JWK")
-		}
-		if len(sig) != 2*coordBytes {
-			return errors.New("invalid ECDSA signature length")
-		}
-		pub := &ecdsa.PublicKey{
-			Curve: curve,
-			X:     new(big.Int).SetBytes(xBytes),
-			Y:     new(big.Int).SetBytes(yBytes),
-		}
-		r := new(big.Int).SetBytes(sig[:coordBytes])
-		s := new(big.Int).SetBytes(sig[coordBytes:])
-		if !ecdsa.Verify(pub, digest, r, s) {
-			return errors.New("ECDSA JWT signature verification failed")
-		}
-		return nil
-
-	default:
-		return fmt.Errorf("unsupported JWK algorithm %q", alg)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, fmt.Sprintf("OIDC token endpoint returned HTTP %d", resp.StatusCode), http.StatusBadGateway)
+		return
 	}
-}
 
-func (m *Manager) verifyJWTSignature(ctx context.Context, headerB64, payloadB64, sigB64 string) error {
-	hdrBytes, err := base64.RawURLEncoding.DecodeString(headerB64)
+	var tokResp struct {
+		IDToken string `json:"id_token"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&tokResp); err != nil || tokResp.IDToken == "" {
+		http.Error(w, "invalid OIDC token response", http.StatusBadGateway)
+		return
+	}
+
+	subject, err := m.verifyAndExtractIDToken(r.Context(), tokResp.IDToken, nonceCookie.Value)
 	if err != nil {
-		return fmt.Errorf("invalid JWT header encoding: %w", err)
+		http.Error(w, fmt.Sprintf("invalid OIDC ID token: %v", err), http.StatusUnauthorized)
+		return
 	}
-	var hdr jwtHeader
-	if err := json.Unmarshal(hdrBytes, &hdr); err != nil {
-		return fmt.Errorf("invalid JWT header JSON: %w", err)
+	if subject == "" {
+		subject = "nal-admin"
 	}
-	if hdr.Alg == "" || strings.EqualFold(hdr.Alg, "none") {
-		return errors.New("JWT alg 'none' or empty alg is rejected")
+	if err := m.IssueSessionCookie(w, subject, "sso"); err != nil {
+		http.Error(w, "failed to issue session cookie", http.StatusInternalServerError)
+		return
 	}
-
-	sigBytes, err := base64.RawURLEncoding.DecodeString(sigB64)
-	if err != nil || len(sigBytes) == 0 {
-		return errors.New("invalid or missing JWT signature")
-	}
-	signingInput := []byte(headerB64 + "." + payloadB64)
-
-	if strings.HasPrefix(hdr.Alg, "HS") {
-		if m.cfg.OIDCClientSecret == "" {
-			return errors.New("HS* ID token rejected without OIDC client secret")
-		}
-		_, newHash, err := hashSpecForAlg(hdr.Alg)
-		if err != nil {
-			return err
-		}
-		mac := hmac.New(newHash, []byte(m.cfg.OIDCClientSecret))
-		_, _ = mac.Write(signingInput)
-		if !hmac.Equal(mac.Sum(nil), sigBytes) {
-			return errors.New("HMAC ID token signature verification failed")
-		}
-		return nil
-	}
-
-	if !strings.HasPrefix(hdr.Alg, "RS") && !strings.HasPrefix(hdr.Alg, "ES") {
-		return fmt.Errorf("unsupported JWT algorithm %q", hdr.Alg)
-	}
-
-	jwksURI, err := m.resolveJWKSURI(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to resolve JWKS URI: %w", err)
-	}
-	keys, err := m.fetchJWKS(ctx, jwksURI, false)
-	if err != nil {
-		return fmt.Errorf("failed to fetch JWKS: %w", err)
-	}
-
-	tryMatch := func(candidateKeys []jwkKey) (matched bool, err error) {
-		var lastErr error
-		for _, k := range candidateKeys {
-			if hdr.Kid != "" && k.Kid != hdr.Kid {
-				continue
-			}
-			matched = true
-			if vErr := verifySignatureWithJWK(k, hdr.Alg, signingInput, sigBytes); vErr == nil {
-				return true, nil
-			} else {
-				lastErr = vErr
-			}
-		}
-		if !matched {
-			return false, fmt.Errorf("no matching JWK for kid %q", hdr.Kid)
-		}
-		if lastErr == nil {
-			lastErr = errors.New("JWT signature verification failed")
-		}
-		return true, lastErr
-	}
-
-	matched, err := tryMatch(keys)
-	if err == nil {
-		return nil
-	}
-	if !matched && hdr.Kid != "" {
-		// Key rotation: retry once with fresh JWKS fetch
-		refreshedKeys, rErr := m.fetchJWKS(ctx, jwksURI, true)
-		if rErr == nil {
-			if _, err2 := tryMatch(refreshedKeys); err2 == nil {
-				return nil
-			} else {
-				return err2
-			}
-		}
-	}
-	return err
+	http.Redirect(w, r, "/", http.StatusFound)
 }

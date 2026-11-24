@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaewoook/security-hub/internal/httputil"
 	"github.com/jaewoook/security-hub/internal/models"
 )
 
@@ -28,17 +29,7 @@ func (m *Manager) SetHTTPClient(c *http.Client) {
 }
 
 func (m *Manager) safeHTTPClient() *http.Client {
-	var c http.Client
-	if m.httpClient != nil {
-		c = *m.httpClient
-	}
-	if c.Timeout <= 0 {
-		c.Timeout = 5 * time.Minute
-	}
-	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-	return &c
+	return httputil.NoRedirectClient(m.httpClient, 5*time.Minute)
 }
 
 func (m *Manager) resolveAgentToken(nodeToken string) string {

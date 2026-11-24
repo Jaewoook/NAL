@@ -12,6 +12,7 @@ import (
 
 	"github.com/jaewoook/security-hub/internal/config"
 	"github.com/jaewoook/security-hub/internal/db"
+	"github.com/jaewoook/security-hub/internal/httputil"
 	"github.com/jaewoook/security-hub/internal/models"
 	"github.com/jaewoook/security-hub/internal/notifier"
 	"github.com/jaewoook/security-hub/internal/scanner"
@@ -49,16 +50,11 @@ func NewManager(cfg *config.Config, store db.Store, runner scanner.CommandRunner
 		runner = scanner.NewOSCommandRunner()
 	}
 	return &Manager{
-		cfg:     cfg,
-		store:   store,
-		runner:  runner,
-		alerter: alerter,
-		httpClient: &http.Client{
-			Timeout: 5 * time.Minute,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
+		cfg:           cfg,
+		store:         store,
+		runner:        runner,
+		alerter:       alerter,
+		httpClient:    httputil.NoRedirectClient(nil, 5*time.Minute),
 		pollInterval:  2 * time.Second,
 		activeTargets: make(map[string]struct{}),
 	}

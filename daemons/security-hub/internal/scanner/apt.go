@@ -24,6 +24,13 @@ type dpkgPackage struct {
 	Version string
 }
 
+type installedDpkgState struct {
+	pkgs      []dpkgPackage
+	pkgSet    map[string]bool
+	holdSet   map[string]bool
+	brokenMap map[string]string
+}
+
 func stripAptArch(name string) string {
 	s := strings.TrimSpace(name)
 	if idx := strings.IndexByte(s, ':'); idx > 0 {
@@ -66,87 +73,85 @@ func appendBrokenDetail(brokenMap map[string]string, pkgName, detail string) {
 	}
 }
 
-func queryAptUpgradable(ctx context.Context, runner CommandRunner, pkgSet map[string]bool) map[string]string {
+func parseAptListUpgradable(raw []byte, pkgSet map[string]bool) map[string]string {
 	upgradableMap := make(map[string]string)
-	if upgOut, err := runner.Run(ctx, "apt", "list", "--upgradable"); err == nil {
-		for _, line := range strings.Split(string(upgOut), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "Listing") ||
-				strings.HasPrefix(line, "WARNING:") || strings.HasPrefix(line, "W:") ||
-				strings.HasPrefix(line, "E:") || strings.HasPrefix(line, "N:") {
-				continue
-			}
-			fields := strings.Fields(line)
-			if len(fields) < 2 || !strings.Contains(fields[0], "/") || strings.Contains(fields[0], "://") || strings.HasPrefix(fields[0], "/") {
-				continue
-			}
-			if len(fields) >= 4 && !strings.Contains(line, "[upgradable") {
-				continue
-			}
-			namePart := fields[0]
-			if slash := strings.IndexByte(namePart, '/'); slash >= 0 {
-				namePart = namePart[:slash]
-			}
-			pkgKey := strings.TrimSpace(namePart)
-			if !strings.Contains(pkgKey, ":") && len(fields) >= 3 {
-				arch := strings.TrimSpace(fields[2])
-				if arch != "" && !strings.HasPrefix(arch, "[") && pkgSet[pkgKey+":"+arch] {
-					pkgKey = pkgKey + ":" + arch
-				}
-			}
-			candVer := strings.TrimSpace(fields[1])
-			if pkgKey != "" && candVer != "" {
-				upgradableMap[pkgKey] = candVer
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "Listing") ||
+			strings.HasPrefix(line, "WARNING:") || strings.HasPrefix(line, "W:") ||
+			strings.HasPrefix(line, "E:") || strings.HasPrefix(line, "N:") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.Contains(fields[0], "/") || strings.Contains(fields[0], "://") || strings.HasPrefix(fields[0], "/") {
+			continue
+		}
+		if len(fields) >= 4 && !strings.Contains(line, "[upgradable") {
+			continue
+		}
+		namePart := fields[0]
+		if slash := strings.IndexByte(namePart, '/'); slash >= 0 {
+			namePart = namePart[:slash]
+		}
+		pkgKey := strings.TrimSpace(namePart)
+		if !strings.Contains(pkgKey, ":") && len(fields) >= 3 {
+			arch := strings.TrimSpace(fields[2])
+			if arch != "" && !strings.HasPrefix(arch, "[") && pkgSet[pkgKey+":"+arch] {
+				pkgKey = pkgKey + ":" + arch
 			}
 		}
-		return upgradableMap
-	}
-
-	if simOut, simErr := runner.Run(ctx, "apt-get", "-s", "-o", "Debug::NoLocking=true", "upgrade"); simErr == nil {
-		for _, line := range strings.Split(string(simOut), "\n") {
-			line = strings.TrimSpace(line)
-			if !strings.HasPrefix(line, "Inst ") {
-				continue
-			}
-			fields := strings.Fields(line)
-			if len(fields) < 3 {
-				continue
-			}
-			pkgName := strings.TrimSpace(fields[1])
-			candIdx := 2
-			if strings.HasPrefix(fields[2], "[") {
-				if len(fields) < 4 {
-					continue
-				}
-				candIdx = 3
-			}
-			candVer := strings.Trim(fields[candIdx], "()")
-			if pkgName != "" && candVer != "" {
-				upgradableMap[pkgName] = candVer
-			}
+		candVer := strings.TrimSpace(fields[1])
+		if pkgKey != "" && candVer != "" {
+			upgradableMap[pkgKey] = candVer
 		}
 	}
 	return upgradableMap
 }
 
-// ScanApt queries local dpkg/apt tooling and returns ManagedItem records for APT packages.
-// Hosts without dpkg-query return nil, nil gracefully.
-func (a *AptScanner) ScanApt(ctx context.Context) ([]models.ManagedItem, error) {
-	if a.runner == nil {
-		return nil, nil
+func parseAptSimUpgrade(raw []byte) map[string]string {
+	upgradableMap := make(map[string]string)
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "Inst ") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		pkgName := strings.TrimSpace(fields[1])
+		candIdx := 2
+		if strings.HasPrefix(fields[2], "[") {
+			if len(fields) < 4 {
+				continue
+			}
+			candIdx = 3
+		}
+		candVer := strings.Trim(fields[candIdx], "()")
+		if pkgName != "" && candVer != "" {
+			upgradableMap[pkgName] = candVer
+		}
 	}
+	return upgradableMap
+}
 
-	dpkgOut, err := a.runner.Run(ctx, "dpkg-query", "-W", "-f=${binary:Package}\t${Version}\t${db:Status-Want}\t${db:Status-Status}\n")
-	if err != nil {
-		// Gracefully ignore APT if not installed or unavailable on this host
-		return nil, nil
+func queryAptUpgradable(ctx context.Context, runner CommandRunner, pkgSet map[string]bool) map[string]string {
+	if upgOut, err := runner.Run(ctx, "apt", "list", "--upgradable"); err == nil {
+		return parseAptListUpgradable(upgOut, pkgSet)
 	}
+	if simOut, simErr := runner.Run(ctx, "apt-get", "-s", "-o", "Debug::NoLocking=true", "upgrade"); simErr == nil {
+		return parseAptSimUpgrade(simOut)
+	}
+	return make(map[string]string)
+}
 
-	var pkgs []dpkgPackage
+func parseInstalledDpkgOutput(dpkgOut []byte) installedDpkgState {
+	state := installedDpkgState{
+		pkgSet:    make(map[string]bool),
+		holdSet:   make(map[string]bool),
+		brokenMap: make(map[string]string),
+	}
 	seen := make(map[string]bool)
-	pkgSet := make(map[string]bool)
-	holdSet := make(map[string]bool)
-	brokenMap := make(map[string]string)
 
 	for _, line := range strings.Split(string(dpkgOut), "\n") {
 		line = strings.TrimRight(line, "\r")
@@ -169,103 +174,116 @@ func (a *AptScanner) ScanApt(ctx context.Context) ([]models.ManagedItem, error) 
 			continue
 		}
 		if status != "installed" {
-			brokenMap[pkgName] = "dpkg status: " + status
+			state.brokenMap[pkgName] = "dpkg status: " + status
 		} else if ver == "" {
 			continue
 		}
 		if want == "hold" {
-			holdSet[pkgName] = true
+			state.holdSet[pkgName] = true
 		}
 		if !seen[pkgName] {
 			seen[pkgName] = true
-			pkgSet[pkgName] = true
-			pkgSet[stripAptArch(pkgName)] = true
-			pkgs = append(pkgs, dpkgPackage{Name: pkgName, Version: ver})
+			state.pkgSet[pkgName] = true
+			state.pkgSet[stripAptArch(pkgName)] = true
+			state.pkgs = append(state.pkgs, dpkgPackage{Name: pkgName, Version: ver})
 		}
 	}
+	return state
+}
 
-	if len(pkgs) == 0 {
-		return nil, nil
-	}
-
-	// Best-effort bounded index refresh; only elevate with sudo -n on permission errors.
+func (a *AptScanner) refreshAptCacheIfPossible(ctx context.Context) {
 	updCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	updOut, updErr := a.runner.Run(updCtx, "apt-get", "update", "-qq")
 	if updErr != nil && ctx.Err() == nil && updCtx.Err() == nil && isAptPermissionError(string(updOut)) {
 		_, _ = a.runner.Run(updCtx, "sudo", "-n", "apt-get", "update", "-qq")
 	}
-	cancel()
+}
 
-	upgradableMap := queryAptUpgradable(ctx, a.runner, pkgSet)
-
-	if holdOut, err := a.runner.Run(ctx, "apt-mark", "showhold"); err == nil {
-		for _, line := range strings.Split(string(holdOut), "\n") {
-			raw := strings.TrimSpace(line)
-			if raw != "" {
-				holdSet[raw] = true
-			}
+func parseAptPackageSet(raw []byte) map[string]bool {
+	set := make(map[string]bool)
+	for _, line := range strings.Split(string(raw), "\n") {
+		if pkg := strings.TrimSpace(line); pkg != "" {
+			set[pkg] = true
 		}
 	}
+	return set
+}
 
-	manualSet := make(map[string]bool)
+func (a *AptScanner) collectHoldPackages(ctx context.Context, holdSet map[string]bool) {
+	holdOut, err := a.runner.Run(ctx, "apt-mark", "showhold")
+	if err != nil {
+		return
+	}
+	for pkg := range parseAptPackageSet(holdOut) {
+		holdSet[pkg] = true
+	}
+}
+
+func (a *AptScanner) queryManualAptPackages(ctx context.Context, pkgSet map[string]bool) (map[string]bool, bool) {
+	manOut, err := a.runner.Run(ctx, "apt-mark", "showmanual")
+	if err != nil {
+		return make(map[string]bool), false
+	}
+	manualSet := parseAptPackageSet(manOut)
 	hasManualMatch := false
-	if manOut, err := a.runner.Run(ctx, "apt-mark", "showmanual"); err == nil {
-		for _, line := range strings.Split(string(manOut), "\n") {
-			raw := strings.TrimSpace(line)
-			base := stripAptArch(raw)
-			if raw != "" {
-				manualSet[raw] = true
-				if pkgSet[raw] || pkgSet[base] {
-					hasManualMatch = true
-				}
-			}
+	for raw := range manualSet {
+		if pkgSet[raw] || pkgSet[stripAptArch(raw)] {
+			hasManualMatch = true
+			break
 		}
 	}
+	return manualSet, hasManualMatch
+}
 
-	if auditOut, err := a.runner.Run(ctx, "dpkg", "--audit"); err == nil {
-		auditText := strings.TrimSpace(string(auditOut))
-		if auditText != "" {
-			for _, line := range strings.Split(string(auditOut), "\n") {
-				line = strings.TrimRight(line, "\r")
-				if len(line) == 0 || (line[0] != ' ' && line[0] != '\t') {
-					continue
-				}
-				if pkgName := firstTokenPackage(line, pkgSet); pkgName != "" {
-					appendBrokenDetail(brokenMap, pkgName, line)
-				}
+func isAptUnmetDependencyLine(line string) bool {
+	return strings.Contains(line, "Depends:") ||
+		strings.Contains(line, "PreDepends:") ||
+		strings.Contains(line, "Pre-Depends:") ||
+		strings.Contains(line, "Conflicts:") ||
+		strings.Contains(line, "Breaks:") ||
+		strings.Contains(line, "but it is not")
+}
+
+func (a *AptScanner) collectBrokenAptPackages(ctx context.Context, pkgSet map[string]bool, brokenMap map[string]string) {
+	if auditOut, err := a.runner.Run(ctx, "dpkg", "--audit"); err == nil && strings.TrimSpace(string(auditOut)) != "" {
+		for _, line := range strings.Split(string(auditOut), "\n") {
+			line = strings.TrimRight(line, "\r")
+			if len(line) == 0 || (line[0] != ' ' && line[0] != '\t') {
+				continue
+			}
+			if pkgName := firstTokenPackage(line, pkgSet); pkgName != "" {
+				appendBrokenDetail(brokenMap, pkgName, line)
 			}
 		}
 	}
 
 	if chkOut, chkErr := a.runner.Run(ctx, "apt-get", "-o", "Debug::NoLocking=true", "check"); chkErr != nil {
-		chkText := strings.TrimSpace(string(chkOut))
-		for _, line := range strings.Split(chkText, "\n") {
-			if strings.Contains(line, "Depends:") ||
-				strings.Contains(line, "PreDepends:") ||
-				strings.Contains(line, "Pre-Depends:") ||
-				strings.Contains(line, "Conflicts:") ||
-				strings.Contains(line, "Breaks:") ||
-				strings.Contains(line, "but it is not") {
-				if pkgName := firstTokenPackage(line, pkgSet); pkgName != "" {
-					appendBrokenDetail(brokenMap, pkgName, line)
-				}
+		for _, line := range strings.Split(strings.TrimSpace(string(chkOut)), "\n") {
+			if !isAptUnmetDependencyLine(line) {
+				continue
+			}
+			if pkgName := firstTokenPackage(line, pkgSet); pkgName != "" {
+				appendBrokenDetail(brokenMap, pkgName, line)
 			}
 		}
 	}
+}
 
+func buildAptManagedItems(state installedDpkgState, upgradableMap map[string]string, manualSet map[string]bool, hasManualMatch bool) []models.ManagedItem {
 	var items []models.ManagedItem
-	for _, p := range pkgs {
+	for _, p := range state.pkgs {
 		baseName := stripAptArch(p.Name)
 		isManual := manualSet[p.Name] || manualSet[baseName]
 		cand, hasUpgradable := upgradableMap[p.Name]
 		if !hasUpgradable && !strings.Contains(p.Name, ":") {
 			cand, hasUpgradable = upgradableMap[baseName]
 		}
-		brokenDetails := brokenMap[p.Name]
+		brokenDetails := state.brokenMap[p.Name]
 		if brokenDetails == "" && !strings.Contains(p.Name, ":") {
-			brokenDetails = brokenMap[baseName]
+			brokenDetails = state.brokenMap[baseName]
 		}
-		isHeld := holdSet[p.Name] || holdSet[baseName]
+		isHeld := state.holdSet[p.Name] || state.holdSet[baseName]
 
 		if hasManualMatch && !isManual && !hasUpgradable && brokenDetails == "" {
 			continue
@@ -302,5 +320,34 @@ func (a *AptScanner) ScanApt(ctx context.Context) ([]models.ManagedItem, error) 
 			LastCheckedAt:   time.Now().UTC(),
 		})
 	}
-	return items, nil
+	return items
+}
+
+// ScanApt queries local dpkg/apt tooling and returns ManagedItem records for APT packages.
+// Hosts without dpkg-query return nil, nil gracefully.
+func (a *AptScanner) ScanApt(ctx context.Context) ([]models.ManagedItem, error) {
+	if a.runner == nil {
+		return nil, nil
+	}
+
+	dpkgOut, err := a.runner.Run(ctx, "dpkg-query", "-W", "-f=${binary:Package}\t${Version}\t${db:Status-Want}\t${db:Status-Status}\n")
+	if err != nil {
+		// Gracefully ignore APT if not installed or unavailable on this host
+		return nil, nil
+	}
+
+	state := parseInstalledDpkgOutput(dpkgOut)
+	if len(state.pkgs) == 0 {
+		return nil, nil
+	}
+
+	// Best-effort bounded index refresh; only elevate with sudo -n on permission errors.
+	a.refreshAptCacheIfPossible(ctx)
+
+	upgradableMap := queryAptUpgradable(ctx, a.runner, state.pkgSet)
+	a.collectHoldPackages(ctx, state.holdSet)
+	manualSet, hasManualMatch := a.queryManualAptPackages(ctx, state.pkgSet)
+	a.collectBrokenAptPackages(ctx, state.pkgSet, state.brokenMap)
+
+	return buildAptManagedItems(state, upgradableMap, manualSet, hasManualMatch), nil
 }

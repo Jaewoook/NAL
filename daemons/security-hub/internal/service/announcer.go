@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jaewoook/security-hub/internal/config"
+	"github.com/jaewoook/security-hub/internal/httputil"
 )
 
 const DefaultHeartbeatInterval = 60 * time.Second
@@ -155,20 +156,6 @@ func getOutboundIP() string {
 	return ""
 }
 
-func safeAnnounceClient(base *http.Client) *http.Client {
-	var c http.Client
-	if base != nil {
-		c = *base
-	}
-	if c.Timeout <= 0 {
-		c.Timeout = 10 * time.Second
-	}
-	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-	return &c
-}
-
 func sendAnnouncement(ctx context.Context, client *http.Client, hubURL string, payload announcePayload) error {
 	hubURL = config.NormalizeURL(hubURL)
 	data, err := json.Marshal(payload)
@@ -183,7 +170,7 @@ func sendAnnouncement(ctx context.Context, client *http.Client, hubURL string, p
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := safeAnnounceClient(client).Do(req)
+	resp, err := httputil.NoRedirectClient(client, 10*time.Second).Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send announcement to hub %q: %w", endpoint, err)
 	}
