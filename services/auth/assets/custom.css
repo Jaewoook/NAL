@@ -7,18 +7,18 @@
      - Sign-In / Flow Pages: Always Obsidian Card & Wallpaper Backdrop
 
    Table of Contents:
-     1. Brand Palette & PatternFly / Authentik Variable Overrides
+     1. Brand Palette, Flow Tokens & PatternFly / Authentik Variable Mappings
      2. Semantic Theme Tokens (Light Defaults & Dark Overrides)
      3. Universal Components (Primary Buttons, Toolbars, Card Grids, Sidebar Version)
      4. Dashboard Layout & Navigation (Page, Navbar, Sidebar, Titles, Breadcrumbs)
-     5. Dashboard Surfaces & Data (Cards, Enterprise Cards, Tables, Modals, Tabs, Chips)
+     5. Dashboard Surfaces & Data (Cards, Enterprise Cards, Tables, Modals, Tabs, Chips, Alerts)
      6. Dashboard Forms & Secondary Controls (Inputs, Selects, Buttons, Dropdowns)
      7. Sign-In & Flow Interface (Wallpaper, Obsidian Card, Flow Inputs, Turnstile, Mobile)
      8. Status Badges, Labels & Scrollbars
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   1. Brand Palette & PatternFly / Authentik Variable Overrides
+   1. Brand Palette, Flow Tokens & PatternFly / Authentik Variable Mappings
    -------------------------------------------------------------------------- */
 :root {
     /* Brand Amber Palette */
@@ -33,6 +33,24 @@
     --nal-on-amber: #0a0d14;
     --nal-on-amber-hover: #05070a;
 
+    /* Theme-Invariant Accents & Neutrals */
+    --nal-text-subtle: #64748b;
+    --nal-accent-soft-hover: rgba(245, 158, 11, 0.08);
+    --nal-accent-soft-active: rgba(245, 158, 11, 0.12);
+
+    /* Sign-In / Flow Obsidian Palette (Always Dark) */
+    --nal-flow-bg-backdrop: #080a0f;
+    --nal-flow-bg-card: #0d1017;
+    --nal-flow-bg-input: #141822;
+    --nal-flow-bg-input-focus: #181d2a;
+    --nal-flow-bg-input-hover: #1c2230;
+    --nal-flow-border-input: #232b3c;
+    --nal-flow-text-heading: #f8fafc;
+    --nal-flow-text-body: #e2e8f0;
+    --nal-flow-text-label: #cbd5e1;
+    --nal-flow-text-muted: #94a3b8;
+    --nal-flow-text-placeholder: #64748b;
+
     /* Authentik Brand Accent */
     --ak-accent: var(--nal-amber-500) !important;
 
@@ -46,6 +64,33 @@
     --pf-global--active-color--100: var(--nal-amber-500) !important;
     --pf-global--active-color--200: var(--nal-amber-600) !important;
     --pf-global--active-color--300: var(--nal-amber-700) !important;
+
+    /* PatternFly Theme-Adaptive Mappings (Driven by Section 2 Tokens) */
+    --pf-global--link--Color: var(--nal-accent) !important;
+    --pf-global--link--Color--hover: var(--nal-accent-hover) !important;
+    --pf-global--link--Color--light: var(--nal-accent) !important;
+    --pf-global--link--Color--light--hover: var(--nal-accent-hover) !important;
+    --pf-global--link--Color--dark: var(--nal-link-dark) !important;
+    --pf-global--link--Color--dark--hover: var(--nal-link-dark-hover) !important;
+    --pf-v4-global--palette--blue-300: var(--nal-accent) !important;
+
+    --pf-global--Color--100: var(--nal-pf-color-100) !important;
+    --pf-global--Color--200: var(--nal-text-muted) !important;
+    --pf-global--Color--dark-100: var(--nal-pf-color-100) !important;
+    --pf-global--Color--light-100: var(--nal-pf-color-light-100) !important;
+    --pf-c-title--Color: var(--nal-text-heading) !important;
+
+    --pf-c-nav__link--m-current--Color: var(--nal-accent) !important;
+    --pf-c-nav__subnav__link--m-current--Color: var(--nal-accent) !important;
+    --pf-c-tabs__link--m-current--Color: var(--nal-accent) !important;
+
+    --pf-c-card--BackgroundColor: var(--nal-bg-card) !important;
+    --pf-c-card--BorderColor: var(--nal-border-card) !important;
+    --pf-c-card--BoxShadow: var(--nal-shadow-card) !important;
+    --pf-c-card--m-raised--BackgroundColor: var(--nal-bg-card) !important;
+    --pf-c-card--m-raised--BoxShadow: var(--nal-shadow-card-raised) !important;
+    --pf-c-card--m-non-selectable-raised--BackgroundColor: var(--nal-bg-card) !important;
+    --pf-c-card--m-non-selectable-raised--BoxShadow: var(--nal-shadow-card-raised) !important;
 
     /* Primary Button Variables */
     --pf-c-button--m-primary--BackgroundColor: var(--nal-amber-500) !important;
@@ -79,7 +124,7 @@
     /* Flow Sign-In Card Defaults */
     --pf-c-background-image--Filter: none !important;
     --pf-c-background-image--BackgroundColor: transparent !important;
-    --ak-c-login__main--BackgroundColor: #0d1017 !important;
+    --ak-c-login__main--BackgroundColor: var(--nal-flow-bg-card) !important;
     --ak-c-login--MaxWidth: 28rem !important;
 }
 
@@ -118,14 +163,16 @@ html[data-theme="light"],
     --nal-text-body: #1e293b;
     --nal-text-secondary: #334155;
     --nal-text-muted: #475569;
-    --nal-text-subtle: #64748b;
     --nal-text-placeholder: #94a3b8;
+    --nal-card-body: #475569;
+    --nal-pf-color-100: #0f172a;
+    --nal-pf-color-light-100: #ffffff;
 
     /* Interactive Accents */
     --nal-accent: var(--nal-amber-600);
     --nal-accent-hover: var(--nal-amber-700);
-    --nal-accent-soft-hover: rgba(245, 158, 11, 0.08);
-    --nal-accent-soft-active: rgba(245, 158, 11, 0.12);
+    --nal-link-dark: var(--nal-amber-700);
+    --nal-link-dark-hover: var(--nal-amber-800);
     --nal-accent-border-soft: rgba(245, 158, 11, 0.25);
     --nal-table-row-hover: rgba(245, 158, 11, 0.05);
     --nal-table-row-selected: rgba(245, 158, 11, 0.1);
@@ -135,7 +182,7 @@ html[data-theme="light"],
     /* Shadows */
     --nal-shadow-card: 0 2px 10px -2px rgba(0, 0, 0, 0.06);
     --nal-shadow-card-hover: 0 4px 16px -2px rgba(245, 158, 11, 0.14);
-    --nal-shadow-card-raised: 0 4px 14px -2px rgba(0, 0, 0, 0.08);
+    --nal-shadow-card-raised: 0 4px 16px -2px rgba(0, 0, 0, 0.08);
     --nal-shadow-menu: 0 10px 25px -5px rgba(0, 0, 0, 0.12);
     --nal-shadow-modal: 0 20px 40px -10px rgba(0, 0, 0, 0.15);
 
@@ -153,39 +200,23 @@ html[data-theme="light"],
     --nal-enterprise-badge-text: var(--nal-amber-700);
     --nal-enterprise-badge-border: var(--nal-amber-300);
 
+    /* Alerts (High-contrast text on light surfaces) */
+    --nal-alert-danger-bg: rgba(239, 68, 68, 0.08);
+    --nal-alert-danger-border: rgba(239, 68, 68, 0.28);
+    --nal-alert-danger-text: #991b1b;
+    --nal-alert-warning-bg: rgba(245, 158, 11, 0.1);
+    --nal-alert-warning-border: rgba(245, 158, 11, 0.32);
+    --nal-alert-warning-text: #92400e;
+    --nal-alert-success-bg: rgba(16, 185, 129, 0.08);
+    --nal-alert-success-border: rgba(16, 185, 129, 0.28);
+    --nal-alert-success-text: #065f46;
+
     /* Status Labels & Scrollbars */
     --nal-label-amber: var(--nal-amber-600);
     --nal-label-green: #059669;
     --nal-label-red: #dc2626;
     --nal-scrollbar-track: #f1f5f9;
     --nal-scrollbar-thumb: #cbd5e1;
-
-    /* PatternFly Light Variables */
-    --pf-global--link--Color: var(--nal-amber-600) !important;
-    --pf-global--link--Color--hover: var(--nal-amber-700) !important;
-    --pf-global--link--Color--light: var(--nal-amber-600) !important;
-    --pf-global--link--Color--light--hover: var(--nal-amber-700) !important;
-    --pf-global--link--Color--dark: var(--nal-amber-700) !important;
-    --pf-global--link--Color--dark--hover: var(--nal-amber-800) !important;
-    --pf-v4-global--palette--blue-300: var(--nal-amber-600) !important;
-
-    --pf-global--Color--100: #0f172a !important;
-    --pf-global--Color--200: #475569 !important;
-    --pf-global--Color--dark-100: #0f172a !important;
-    --pf-global--Color--light-100: #ffffff !important;
-    --pf-c-title--Color: #0f172a !important;
-
-    --pf-c-nav__link--m-current--Color: var(--nal-amber-600) !important;
-    --pf-c-nav__subnav__link--m-current--Color: var(--nal-amber-600) !important;
-    --pf-c-tabs__link--m-current--Color: var(--nal-amber-600) !important;
-
-    --pf-c-card--BackgroundColor: #ffffff !important;
-    --pf-c-card--BorderColor: #e2e8f0 !important;
-    --pf-c-card--BoxShadow: 0 2px 10px -2px rgba(0, 0, 0, 0.06) !important;
-    --pf-c-card--m-raised--BackgroundColor: #ffffff !important;
-    --pf-c-card--m-raised--BoxShadow: 0 4px 16px -2px rgba(0, 0, 0, 0.08) !important;
-    --pf-c-card--m-non-selectable-raised--BackgroundColor: #ffffff !important;
-    --pf-c-card--m-non-selectable-raised--BoxShadow: 0 4px 16px -2px rgba(0, 0, 0, 0.08) !important;
 }
 
 html.pf-theme-dark,
@@ -220,14 +251,16 @@ html[data-theme="dark"],
     --nal-text-body: #e2e8f0;
     --nal-text-secondary: #cbd5e1;
     --nal-text-muted: #94a3b8;
-    --nal-text-subtle: #64748b;
     --nal-text-placeholder: #475569;
+    --nal-card-body: #cbd5e1;
+    --nal-pf-color-100: #e2e8f0;
+    --nal-pf-color-light-100: #f8fafc;
 
     /* Interactive Accents */
     --nal-accent: var(--nal-amber-400);
     --nal-accent-hover: var(--nal-amber-200);
-    --nal-accent-soft-hover: rgba(245, 158, 11, 0.08);
-    --nal-accent-soft-active: rgba(245, 158, 11, 0.12);
+    --nal-link-dark: var(--nal-amber-400);
+    --nal-link-dark-hover: var(--nal-amber-200);
     --nal-accent-border-soft: rgba(245, 158, 11, 0.2);
     --nal-table-row-hover: rgba(245, 158, 11, 0.04);
     --nal-table-row-selected: rgba(245, 158, 11, 0.08);
@@ -255,39 +288,23 @@ html[data-theme="dark"],
     --nal-enterprise-badge-text: var(--nal-amber-400);
     --nal-enterprise-badge-border: rgba(245, 158, 11, 0.35);
 
+    /* Alerts (High-contrast text on dark surfaces) */
+    --nal-alert-danger-bg: rgba(239, 68, 68, 0.12);
+    --nal-alert-danger-border: rgba(239, 68, 68, 0.3);
+    --nal-alert-danger-text: #fca5a5;
+    --nal-alert-warning-bg: rgba(245, 158, 11, 0.12);
+    --nal-alert-warning-border: rgba(245, 158, 11, 0.3);
+    --nal-alert-warning-text: var(--nal-amber-200);
+    --nal-alert-success-bg: rgba(16, 185, 129, 0.12);
+    --nal-alert-success-border: rgba(16, 185, 129, 0.3);
+    --nal-alert-success-text: #86efac;
+
     /* Status Labels & Scrollbars */
     --nal-label-amber: var(--nal-amber-400);
     --nal-label-green: #34d399;
     --nal-label-red: #f87171;
     --nal-scrollbar-track: #080a0f;
     --nal-scrollbar-thumb: #1c2333;
-
-    /* PatternFly Dark Variables */
-    --pf-global--link--Color: var(--nal-amber-400) !important;
-    --pf-global--link--Color--hover: var(--nal-amber-200) !important;
-    --pf-global--link--Color--light: var(--nal-amber-400) !important;
-    --pf-global--link--Color--light--hover: var(--nal-amber-200) !important;
-    --pf-global--link--Color--dark: var(--nal-amber-400) !important;
-    --pf-global--link--Color--dark--hover: var(--nal-amber-200) !important;
-    --pf-v4-global--palette--blue-300: var(--nal-amber-400) !important;
-
-    --pf-global--Color--100: #e2e8f0 !important;
-    --pf-global--Color--200: #94a3b8 !important;
-    --pf-global--Color--dark-100: #e2e8f0 !important;
-    --pf-global--Color--light-100: #f8fafc !important;
-    --pf-c-title--Color: #f8fafc !important;
-
-    --pf-c-nav__link--m-current--Color: var(--nal-amber-400) !important;
-    --pf-c-nav__subnav__link--m-current--Color: var(--nal-amber-400) !important;
-    --pf-c-tabs__link--m-current--Color: var(--nal-amber-400) !important;
-
-    --pf-c-card--BackgroundColor: #0e121a !important;
-    --pf-c-card--BorderColor: #1c2333 !important;
-    --pf-c-card--BoxShadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5) !important;
-    --pf-c-card--m-raised--BackgroundColor: #0e121a !important;
-    --pf-c-card--m-raised--BoxShadow: 0 6px 24px -4px rgba(0, 0, 0, 0.7) !important;
-    --pf-c-card--m-non-selectable-raised--BackgroundColor: #0e121a !important;
-    --pf-c-card--m-non-selectable-raised--BoxShadow: 0 6px 24px -4px rgba(0, 0, 0, 0.7) !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -421,13 +438,10 @@ html[data-theme="dark"],
 }
 
 /* Sidebar Version ("authentik information") */
-:is(
-    ak-sidebar-version,
-    footer[aria-label="authentik information"],
-    [aria-label="authentik information"],
-    [aria-label*="authentik"] footer,
-    .pf-c-page__sidebar footer
-) {
+ak-sidebar-version,
+:host(ak-sidebar-version),
+footer[aria-label="authentik information"],
+.pf-c-page__sidebar footer {
     display: block !important;
     visibility: visible !important;
     height: auto !important;
@@ -438,13 +452,12 @@ html[data-theme="dark"],
     background-color: var(--nal-bg-chrome) !important;
 }
 
-:is(ak-sidebar-version footer, footer[aria-label="authentik information"]) {
+footer[aria-label="authentik information"] {
     width: 100% !important;
     padding: 0 !important;
 }
 
-:is(ak-sidebar-version, footer[aria-label="authentik information"], [aria-label="authentik information"])
-    :is(button, .pf-c-button) {
+footer[aria-label="authentik information"] :is(button, .pf-c-button) {
     display: flex !important;
     flex-direction: column !important;
     align-items: flex-start !important;
@@ -461,13 +474,12 @@ html[data-theme="dark"],
     transition: background-color 0.15s ease, border-color 0.15s ease !important;
 }
 
-:is(ak-sidebar-version, footer[aria-label="authentik information"]) button:hover {
+footer[aria-label="authentik information"] button:hover {
     background-color: var(--nal-accent-soft-hover) !important;
     border-color: var(--nal-accent-border-soft) !important;
 }
 
-:is(ak-sidebar-version, footer[aria-label="authentik information"], [aria-label="authentik information"])
-    :is(.pf-c-title, p) {
+footer[aria-label="authentik information"] :is(.pf-c-title, p) {
     margin: 0 !important;
     padding: 0 !important;
     line-height: 1.35 !important;
@@ -475,7 +487,7 @@ html[data-theme="dark"],
     letter-spacing: normal !important;
 }
 
-:is(ak-sidebar-version, footer[aria-label="authentik information"], [aria-label="authentik information"])
+footer[aria-label="authentik information"]
     :is([part~="product-name"], #sidebar-version-product:first-of-type, p:first-child) {
     font-size: 0.8rem !important;
     font-weight: 600 !important;
@@ -484,7 +496,7 @@ html[data-theme="dark"],
     color: var(--nal-text-secondary) !important;
 }
 
-:is(ak-sidebar-version, footer[aria-label="authentik information"], [aria-label="authentik information"])
+footer[aria-label="authentik information"]
     :is([part~="product-version"], #sidebar-version-product:last-of-type, p:last-child) {
     font-size: 0.7rem !important;
     font-weight: 500 !important;
@@ -492,13 +504,11 @@ html[data-theme="dark"],
     color: var(--nal-text-subtle) !important;
 }
 
-:is(ak-sidebar-version, footer[aria-label="authentik information"]) button:hover
-    :is([part~="product-name"], p:first-child) {
+footer[aria-label="authentik information"] button:hover :is([part~="product-name"], p:first-child) {
     color: var(--nal-accent) !important;
 }
 
-:is(ak-sidebar-version, footer[aria-label="authentik information"]) button:hover
-    :is([part~="product-version"], p:last-child) {
+footer[aria-label="authentik information"] button:hover :is([part~="product-version"], p:last-child) {
     color: var(--nal-accent-hover) !important;
 }
 
@@ -591,7 +601,7 @@ html[data-theme="dark"],
 }
 
 /* --------------------------------------------------------------------------
-   5. Dashboard Surfaces & Data (Cards, Enterprise, Tables, Modals, Tabs, Chips)
+   5. Dashboard Surfaces & Data (Cards, Enterprise, Tables, Modals, Tabs, Chips, Alerts)
    -------------------------------------------------------------------------- */
 
 /* Standard Cards */
@@ -618,13 +628,10 @@ html[data-theme="dark"],
 }
 
 .pf-c-card:not(.pf-c-login__main) .pf-c-card__body {
-    color: var(--nal-text-muted) !important;
+    color: var(--nal-card-body) !important;
 }
 
 .pf-c-card.pf-m-non-selectable-raised {
-    background-color: var(--nal-bg-card) !important;
-    border: 1px solid var(--nal-border-card) !important;
-    border-top: 1px solid var(--nal-border-card-top) !important;
     box-shadow: var(--nal-shadow-card-raised) !important;
     cursor: default !important;
 }
@@ -809,6 +816,34 @@ html[data-theme="dark"],
     color: var(--nal-text-secondary) !important;
 }
 
+/* Alerts (Theme-Adaptive) */
+.pf-c-alert {
+    border-radius: 8px !important;
+    margin-bottom: 1rem !important;
+    border: 1px solid transparent !important;
+}
+
+.pf-c-alert.pf-m-danger {
+    background-color: var(--nal-alert-danger-bg) !important;
+    border-color: var(--nal-alert-danger-border) !important;
+    border-left: 4px solid #ef4444 !important;
+    color: var(--nal-alert-danger-text) !important;
+}
+
+.pf-c-alert.pf-m-warning {
+    background-color: var(--nal-alert-warning-bg) !important;
+    border-color: var(--nal-alert-warning-border) !important;
+    border-left: 4px solid var(--nal-amber-500) !important;
+    color: var(--nal-alert-warning-text) !important;
+}
+
+.pf-c-alert.pf-m-success {
+    background-color: var(--nal-alert-success-bg) !important;
+    border-color: var(--nal-alert-success-border) !important;
+    border-left: 4px solid #10b981 !important;
+    color: var(--nal-alert-success-text) !important;
+}
+
 /* --------------------------------------------------------------------------
    6. Dashboard Forms & Secondary Controls
    -------------------------------------------------------------------------- */
@@ -860,22 +895,14 @@ html[data-theme="dark"],
 }
 
 /* Secondary & Plain Buttons / Toggles */
-:is(
-    .pf-c-button.pf-m-secondary,
-    .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
-    .pf-c-dropdown__toggle.pf-m-secondary
-) {
+:is(.pf-c-button.pf-m-secondary, .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain)) {
     background-color: var(--nal-bg-control) !important;
     color: var(--nal-text-secondary) !important;
     border: 1px solid var(--nal-border-control) !important;
     border-radius: 8px !important;
 }
 
-:is(
-    .pf-c-button.pf-m-secondary,
-    .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain),
-    .pf-c-dropdown__toggle.pf-m-secondary
-):hover {
+:is(.pf-c-button.pf-m-secondary, .pf-c-dropdown__toggle:not(.pf-m-primary):not(.pf-m-plain)):hover {
     background-color: var(--nal-bg-control-hover) !important;
     border-color: var(--nal-amber-500) !important;
     color: var(--nal-text-heading) !important;
@@ -923,9 +950,9 @@ html[data-theme="dark"],
 }
 
 body.pf-c-background-image {
-    background-color: #080a0f !important;
+    background-color: var(--nal-flow-bg-backdrop) !important;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-    color: #e2e8f0 !important;
+    color: var(--nal-flow-text-body) !important;
 }
 
 .pf-c-background-image::before {
@@ -936,7 +963,7 @@ body.pf-c-background-image {
     height: 100% !important;
     min-height: 100dvh !important;
     z-index: -1 !important;
-    background-color: #080a0f !important;
+    background-color: var(--nal-flow-bg-backdrop) !important;
     background-image:
         radial-gradient(ellipse 70% 45% at 50% 0%, rgba(245, 158, 11, 0.12) 0%, transparent 70%),
         linear-gradient(rgba(8, 10, 15, 0.72), rgba(8, 10, 15, 0.82)),
@@ -953,15 +980,9 @@ body.pf-c-background-image {
     --ak-c-login--BackgroundColorOverlay: transparent !important;
 }
 
-@media (max-width: 35rem), (max-height: 17.5rem) {
-    .pf-c-login {
-        --ak-c-login--BackgroundColorOverlay: transparent !important;
-    }
-}
-
 /* Obsidian Authentication Card */
 :is(.pf-c-login__main, .pf-c-login .pf-c-card, ak-flow-executor .pf-c-card) {
-    background: #0d1017 !important;
+    background: var(--nal-flow-bg-card) !important;
     border-radius: 16px !important;
     border: 1px solid rgba(255, 255, 255, 0.08) !important;
     border-top: 1px solid rgba(245, 158, 11, 0.4) !important;
@@ -974,7 +995,7 @@ body.pf-c-background-image {
     width: 100% !important;
     box-sizing: border-box !important;
     margin: 0 auto !important;
-    color: #e2e8f0 !important;
+    color: var(--nal-flow-text-body) !important;
     --pf-c-login__main-body--PaddingLeft: 0 !important;
     --pf-c-login__main-body--PaddingRight: 0 !important;
     --pf-c-login__main-body--md--PaddingLeft: 0 !important;
@@ -983,7 +1004,7 @@ body.pf-c-background-image {
 }
 
 /* Remove duplicate PatternFly body padding so Turnstile (min 300px) never clips */
-:is(.pf-c-login__main-body, ak-flow-card .pf-c-login__main-body) {
+.pf-c-login__main-body {
     padding-left: 0 !important;
     padding-right: 0 !important;
     padding-bottom: 0 !important;
@@ -1014,7 +1035,7 @@ body.pf-c-background-image {
     .pf-c-login__main-body h1,
     .pf-c-login__main-body h2
 ) {
-    color: #f8fafc !important;
+    color: var(--nal-flow-text-heading) !important;
     font-size: 1.35rem !important;
     font-weight: 600 !important;
     letter-spacing: -0.015em !important;
@@ -1023,11 +1044,11 @@ body.pf-c-background-image {
 }
 
 .pf-c-login__main-body p {
-    color: #94a3b8 !important;
+    color: var(--nal-flow-text-muted) !important;
     font-size: 0.875rem !important;
 }
 
-/* Flow Form Custom Properties (Cascade into Web Components & Shadow Roots) */
+/* Flow Custom Properties (Cascade into Web Components & Shadow Roots, forcing Obsidian palette) */
 :is(
     .pf-c-login,
     .pf-c-login__main,
@@ -1036,26 +1057,39 @@ body.pf-c-background-image {
     ak-stage-password,
     body.pf-c-background-image
 ) {
-    --pf-global--Color--100: #f8fafc !important;
-    --pf-global--Color--200: #cbd5e1 !important;
-    --pf-global--Color--dark-100: #f8fafc !important;
-    --pf-global--Color--light-100: #f8fafc !important;
-    --pf-c-title--Color: #f8fafc !important;
-    --pf-c-form-control--Color: #f8fafc !important;
-    --pf-c-form-control--BackgroundColor: #141822 !important;
-    --pf-c-form-control--BorderColor: #232b3c !important;
+    --pf-global--Color--100: var(--nal-flow-text-heading) !important;
+    --pf-global--Color--200: var(--nal-flow-text-label) !important;
+    --pf-global--Color--dark-100: var(--nal-flow-text-heading) !important;
+    --pf-global--Color--light-100: var(--nal-flow-text-heading) !important;
+    --pf-c-title--Color: var(--nal-flow-text-heading) !important;
+    --pf-c-form-control--Color: var(--nal-flow-text-heading) !important;
+    --pf-c-form-control--BackgroundColor: var(--nal-flow-bg-input) !important;
+    --pf-c-form-control--BorderColor: var(--nal-flow-border-input) !important;
     --pf-c-form-control--focus--BorderColor: var(--nal-amber-500) !important;
-    --pf-c-form-control--placeholder--Color: #64748b !important;
+    --pf-c-form-control--placeholder--Color: var(--nal-flow-text-placeholder) !important;
+
+    /* Always use dark-surface alert contrast inside the Obsidian flow card */
+    --nal-alert-danger-bg: rgba(239, 68, 68, 0.12);
+    --nal-alert-danger-border: rgba(239, 68, 68, 0.3);
+    --nal-alert-danger-text: #fca5a5;
+    --nal-alert-warning-bg: rgba(245, 158, 11, 0.12);
+    --nal-alert-warning-border: rgba(245, 158, 11, 0.3);
+    --nal-alert-warning-text: var(--nal-amber-200);
+    --nal-alert-success-bg: rgba(16, 185, 129, 0.12);
+    --nal-alert-success-border: rgba(16, 185, 129, 0.3);
+    --nal-alert-success-text: #86efac;
 }
 
 /* Flow Form Inputs */
-:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element, ak-flow-input-password)
-    :is(input, textarea, select, .pf-c-form-control) {
-    background: #141822 !important;
-    color: #f8fafc !important;
-    -webkit-text-fill-color: #f8fafc !important;
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) :is(input, textarea, select, .pf-c-form-control),
+:host(ak-flow-executor) :is(input, textarea, select, .pf-c-form-control),
+:host(ak-form-element) :is(input, textarea, select, .pf-c-form-control),
+:host(ak-flow-input-password) :is(input, textarea, select, .pf-c-form-control) {
+    background: var(--nal-flow-bg-input) !important;
+    color: var(--nal-flow-text-heading) !important;
+    -webkit-text-fill-color: var(--nal-flow-text-heading) !important;
     caret-color: var(--nal-amber-500) !important;
-    border: 1px solid #232b3c !important;
+    border: 1px solid var(--nal-flow-border-input) !important;
     border-radius: 8px !important;
     min-height: 2.75rem !important;
     padding: 0.6rem 0.85rem !important;
@@ -1065,9 +1099,11 @@ body.pf-c-background-image {
     transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease !important;
 }
 
-:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element, ak-flow-input-password)
-    :is(input, textarea, select, .pf-c-form-control):focus {
-    background: #181d2a !important;
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) :is(input, textarea, select, .pf-c-form-control):focus,
+:host(ak-flow-executor) :is(input, textarea, select, .pf-c-form-control):focus,
+:host(ak-form-element) :is(input, textarea, select, .pf-c-form-control):focus,
+:host(ak-flow-input-password) :is(input, textarea, select, .pf-c-form-control):focus {
+    background: var(--nal-flow-bg-input-focus) !important;
     border-color: var(--nal-amber-500) !important;
     color: #ffffff !important;
     -webkit-text-fill-color: #ffffff !important;
@@ -1075,44 +1111,52 @@ body.pf-c-background-image {
     box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22) !important;
 }
 
-:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element, ak-flow-input-password)
-    :is(input, textarea, .pf-c-form-control)::placeholder {
-    color: #64748b !important;
-    -webkit-text-fill-color: #64748b !important;
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) :is(input, textarea, .pf-c-form-control)::placeholder,
+:host(ak-flow-executor) :is(input, textarea, .pf-c-form-control)::placeholder,
+:host(ak-form-element) :is(input, textarea, .pf-c-form-control)::placeholder,
+:host(ak-flow-input-password) :is(input, textarea, .pf-c-form-control)::placeholder {
+    color: var(--nal-flow-text-placeholder) !important;
+    -webkit-text-fill-color: var(--nal-flow-text-placeholder) !important;
     opacity: 1 !important;
 }
 
 /* Browser Autofill Override (Prevents white bg / dark text in Chrome, Safari, Edge) */
-:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element, ak-flow-input-password)
-    input:-webkit-autofill,
-:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element, ak-flow-input-password)
-    input:-webkit-autofill:hover,
-:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element, ak-flow-input-password)
-    input:-webkit-autofill:focus {
-    -webkit-text-fill-color: #f8fafc !important;
-    -webkit-box-shadow: 0 0 0 1000px #141822 inset !important;
-    box-shadow: 0 0 0 1000px #141822 inset !important;
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) input:-webkit-autofill,
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) input:-webkit-autofill:hover,
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) input:-webkit-autofill:focus,
+:host(ak-form-element) input:-webkit-autofill,
+:host(ak-form-element) input:-webkit-autofill:hover,
+:host(ak-form-element) input:-webkit-autofill:focus,
+:host(ak-flow-input-password) input:-webkit-autofill,
+:host(ak-flow-input-password) input:-webkit-autofill:hover,
+:host(ak-flow-input-password) input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--nal-flow-text-heading) !important;
+    -webkit-box-shadow: 0 0 0 1000px var(--nal-flow-bg-input) inset !important;
+    box-shadow: 0 0 0 1000px var(--nal-flow-bg-input) inset !important;
     caret-color: var(--nal-amber-500) !important;
     transition: background-color 5000s ease-in-out 0s !important;
 }
 
 /* Password Input Group & Visibility Toggle */
-:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-flow-input-password) .pf-c-input-group {
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) .pf-c-input-group,
+:host(ak-flow-input-password) .pf-c-input-group {
     display: flex !important;
     width: 100% !important;
     position: relative !important;
 }
 
-:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-flow-input-password) .pf-c-input-group input {
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) .pf-c-input-group input,
+:host(ak-flow-input-password) .pf-c-input-group input {
     border-top-right-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
     flex: 1 1 auto !important;
 }
 
-:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-flow-input-password) .pf-c-input-group .pf-c-button {
-    background-color: #141822 !important;
-    color: #94a3b8 !important;
-    border: 1px solid #232b3c !important;
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) .pf-c-input-group .pf-c-button,
+:host(ak-flow-input-password) .pf-c-input-group .pf-c-button {
+    background-color: var(--nal-flow-bg-input) !important;
+    color: var(--nal-flow-text-muted) !important;
+    border: 1px solid var(--nal-flow-border-input) !important;
     border-left: none !important;
     border-radius: 0 8px 8px 0 !important;
     min-height: 2.75rem !important;
@@ -1123,15 +1167,16 @@ body.pf-c-background-image {
     cursor: pointer !important;
 }
 
-:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-flow-input-password) .pf-c-input-group .pf-c-button:hover {
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) .pf-c-input-group .pf-c-button:hover,
+:host(ak-flow-input-password) .pf-c-input-group .pf-c-button:hover {
     color: var(--nal-amber-400) !important;
-    background-color: #1c2230 !important;
+    background-color: var(--nal-flow-bg-input-hover) !important;
 }
 
 /* Flow Labels, Helper Text & Checkboxes */
-:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element)
-    :is(.pf-c-form__label-text, label.pf-c-form__label) {
-    color: #cbd5e1 !important;
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) :is(.pf-c-form__label-text, label.pf-c-form__label),
+:host(ak-form-element) :is(.pf-c-form__label-text, label.pf-c-form__label) {
+    color: var(--nal-flow-text-label) !important;
     font-size: 0.825rem !important;
     font-weight: 500 !important;
     letter-spacing: 0.01em !important;
@@ -1139,8 +1184,9 @@ body.pf-c-background-image {
     display: inline-block !important;
 }
 
-:is(.pf-c-login, .pf-c-login__main, ak-flow-executor, ak-form-element) .pf-c-form__helper-text {
-    color: #94a3b8 !important;
+:is(.pf-c-login, .pf-c-login__main, ak-flow-executor) .pf-c-form__helper-text,
+:host(ak-form-element) .pf-c-form__helper-text {
+    color: var(--nal-flow-text-muted) !important;
     font-size: 0.8rem !important;
     margin-top: 0.25rem !important;
 }
@@ -1150,19 +1196,20 @@ body.pf-c-background-image {
 }
 
 :is(.pf-c-login, .pf-c-login__main, ak-flow-executor) .pf-c-check__label {
-    color: #cbd5e1 !important;
+    color: var(--nal-flow-text-label) !important;
     font-size: 0.875rem !important;
 }
 
 /* Cloudflare Turnstile / CAPTCHA Stage Container */
-ak-stage-captcha {
+ak-stage-captcha,
+:host(ak-stage-captcha) {
     display: block !important;
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
 }
 
-:is(ak-stage-captcha .ak-interactive-challenge, iframe.ak-interactive-challenge, iframe#ak-captcha) {
+:is(iframe.ak-interactive-challenge, iframe#ak-captcha) {
     display: block !important;
     width: 100% !important;
     min-height: 68px !important;
@@ -1170,34 +1217,6 @@ ak-stage-captcha {
     margin: 0 auto !important;
     border-radius: 8px !important;
     box-sizing: border-box !important;
-}
-
-/* Flow Alerts */
-.pf-c-alert {
-    border-radius: 8px !important;
-    margin-bottom: 1rem !important;
-    border: 1px solid transparent !important;
-}
-
-.pf-c-alert.pf-m-danger {
-    background-color: rgba(239, 68, 68, 0.12) !important;
-    border-color: rgba(239, 68, 68, 0.3) !important;
-    border-left: 4px solid #ef4444 !important;
-    color: #fca5a5 !important;
-}
-
-.pf-c-alert.pf-m-warning {
-    background-color: rgba(245, 158, 11, 0.12) !important;
-    border-color: rgba(245, 158, 11, 0.3) !important;
-    border-left: 4px solid var(--nal-amber-500) !important;
-    color: var(--nal-amber-200) !important;
-}
-
-.pf-c-alert.pf-m-success {
-    background-color: rgba(16, 185, 129, 0.12) !important;
-    border-color: rgba(16, 185, 129, 0.3) !important;
-    border-left: 4px solid #10b981 !important;
-    color: #86efac !important;
 }
 
 /* Hide Flow Footers & "Powered by authentik" */
@@ -1215,22 +1234,27 @@ ak-stage-captcha {
     padding: 0 !important;
 }
 
-/* Sign-In Language Selector */
-:is(ak-locale-select, .pf-c-login__header) {
-    color: #64748b !important;
+/* Sign-In Language Selector (Supports both Light DOM ::part and Shadow DOM :host) */
+ak-locale-select,
+:host(ak-locale-select),
+.pf-c-login__header {
+    color: var(--nal-text-subtle) !important;
 }
 
-ak-locale-select {
+ak-locale-select,
+:host(ak-locale-select) {
     overflow: visible !important;
     height: auto !important;
     display: inline-flex !important;
     align-items: center !important;
 }
 
-ak-locale-select :is(select, [part="select"]) {
-    background-color: #141822 !important;
-    color: #94a3b8 !important;
-    border: 1px solid #232b3c !important;
+ak-locale-select::part(select),
+:host(ak-locale-select) select,
+:host(ak-locale-select) [part="select"] {
+    background-color: var(--nal-flow-bg-input) !important;
+    color: var(--nal-flow-text-muted) !important;
+    border: 1px solid var(--nal-flow-border-input) !important;
     border-radius: 6px !important;
     height: auto !important;
     min-height: 2.25rem !important;
@@ -1241,9 +1265,9 @@ ak-locale-select :is(select, [part="select"]) {
     cursor: pointer !important;
 }
 
-ak-locale-select select option {
-    background-color: #141822 !important;
-    color: #f8fafc !important;
+:host(ak-locale-select) select option {
+    background-color: var(--nal-flow-bg-input) !important;
+    color: var(--nal-flow-text-heading) !important;
 }
 
 /* Mobile Sign-In Card Spacing (>= 300px inner width for Turnstile on 360px+ viewports) */
@@ -1290,7 +1314,12 @@ ak-locale-select select option {
     border: 1px solid rgba(239, 68, 68, 0.3) !important;
 }
 
-/* Scrollbars */
+/* Scrollbars (Standard + WebKit) */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--nal-scrollbar-thumb) var(--nal-scrollbar-track);
+}
+
 *::-webkit-scrollbar {
     width: 8px;
     height: 8px;
