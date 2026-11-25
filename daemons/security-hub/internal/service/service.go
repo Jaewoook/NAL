@@ -33,9 +33,44 @@ const (
 	AgentSystemdUnit  = "security-hub-agent.service"
 )
 
+var systemPlistPath = filepath.Join("/Library", "LaunchDaemons", LaunchdLabel+".plist")
+
 func DefaultPlistPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "Library", "LaunchAgents", LaunchdLabel+".plist")
+}
+
+func DefaultSystemPlistPath() string {
+	return systemPlistPath
+}
+
+// SetSystemPlistPath overrides the LaunchDaemon plist path for tests and returns a restore function.
+func SetSystemPlistPath(p string) func() {
+	prev := systemPlistPath
+	systemPlistPath = p
+	return func() {
+		systemPlistPath = prev
+	}
+}
+
+// IsSystemHubInstalled reports whether the Hub LaunchDaemon plist is installed in /Library/LaunchDaemons.
+func IsSystemHubInstalled() bool {
+	return hasSystemHubPlist()
+}
+
+// RemoveLegacyUserHubAgent stops and removes a legacy user LaunchAgent plist if present.
+func RemoveLegacyUserHubAgent() error {
+	plist := DefaultPlistPath()
+	if _, err := os.Stat(plist); os.IsNotExist(err) {
+		return nil
+	}
+	if err := stopLaunchdService(plist, LaunchdLabel); err != nil {
+		return err
+	}
+	if err := os.Remove(plist); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func DefaultAgentPlistPath() string {
@@ -81,15 +116,29 @@ func stripControlChars(val string) string {
 }
 
 func GenerateLaunchdPlist(binaryPath, workingDir string) string {
+	return GenerateLaunchdPlistWithUser(binaryPath, workingDir, "", "")
+}
+
+func GenerateLaunchdPlistWithUser(binaryPath, workingDir, userName, homeDir string) string {
 	escapedBin := escapeXML(stripControlChars(binaryPath))
 	escapedDir := escapeXML(stripControlChars(workingDir))
+
+	userBlock := ""
+	if strings.TrimSpace(userName) != "" {
+		userBlock = fmt.Sprintf("    <key>UserName</key>\n    <string>%s</string>\n", escapeXML(stripControlChars(strings.TrimSpace(userName))))
+	}
+	homeEnvBlock := ""
+	if strings.TrimSpace(homeDir) != "" {
+		homeEnvBlock = fmt.Sprintf("        <key>HOME</key>\n        <string>%s</string>\n", escapeXML(stripControlChars(strings.TrimSpace(homeDir))))
+	}
+
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>%s</string>
-    <key>ProgramArguments</key>
+%s    <key>ProgramArguments</key>
     <array>
         <string>%s</string>
         <string>hub</string>
@@ -107,15 +156,19 @@ func GenerateLaunchdPlist(binaryPath, workingDir string) string {
     <string>%s/security-hub.stderr.log</string>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>PATH</key>
+%s        <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 </dict>
 </plist>
-`, LaunchdLabel, escapedBin, escapedDir, escapedDir, escapedDir)
+`, LaunchdLabel, userBlock, escapedBin, escapedDir, escapedDir, escapedDir, homeEnvBlock)
 }
 
 func InstallPlist(destPath, binaryPath, workingDir string) error {
+	return InstallHubPlist(destPath, binaryPath, workingDir, "", "")
+}
+
+func InstallHubPlist(destPath, binaryPath, workingDir, userName, homeDir string) error {
 	binaryPath = strings.TrimSpace(binaryPath)
 	if binaryPath == "" {
 		exe, err := os.Executable()
@@ -147,15 +200,29 @@ func InstallPlist(destPath, binaryPath, workingDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve workingDir %q: %w", workingDir, err)
 	}
+	if err := validateNoControlChars("userName", userName); err != nil {
+		return err
+	}
+	if err := validateNoControlChars("homeDir", homeDir); err != nil {
+		return err
+	}
 
 	if destPath == "" {
-		destPath = DefaultPlistPath()
+		if os.Geteuid() == 0 {
+			destPath = DefaultSystemPlistPath()
+		} else {
+			destPath = DefaultPlistPath()
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return err
 	}
-	content := GenerateLaunchdPlist(absBin, absWD)
-	return fsutil.WriteFileAtomic(destPath, []byte(content), 0600)
+	perm := os.FileMode(0600)
+	if strings.HasPrefix(destPath, "/Library/LaunchDaemons/") {
+		perm = 0644
+	}
+	content := GenerateLaunchdPlistWithUser(absBin, absWD, userName, homeDir)
+	return fsutil.WriteFileAtomic(destPath, []byte(content), perm)
 }
 
 func startLaunchdService(plist, label, installCmd string) error {
@@ -174,7 +241,66 @@ func startLaunchdService(plist, label, installCmd string) error {
 	return nil
 }
 
+func hasSystemHubPlist() bool {
+	_, err := os.Stat(DefaultSystemPlistPath())
+	return err == nil
+}
+
+func startSystemLaunchdService(plist, label string) error {
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("hub LaunchDaemon at %s requires root privileges; run with sudo", plist)
+	}
+	_ = stopSystemLaunchdService(label)
+	if out, err := cmdRunner("launchctl", "bootstrap", "system", plist); err != nil {
+		return fmt.Errorf("failed to bootstrap LaunchDaemon %s: %w (%s)", plist, err, strings.TrimSpace(string(out)))
+	}
+	if out, err := cmdRunner("launchctl", "kickstart", "-k", "system/"+label); err != nil {
+		return fmt.Errorf("failed to kickstart LaunchDaemon %s: %w (%s)", label, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func stopSystemLaunchdService(label string) error {
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("hub LaunchDaemon requires root privileges; run with sudo")
+	}
+	if out, err := cmdRunner("launchctl", "bootout", "system/"+label); err != nil && !isLaunchctlNotLoaded(err, string(out)) {
+		return fmt.Errorf("launchctl bootout system/%s failed: %w (%s)", label, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func systemLaunchdStatus(label string) (string, error) {
+	out, err := cmdRunner("launchctl", "print", "system/"+label)
+	if err != nil {
+		if isLaunchctlNotLoaded(err, string(out)) {
+			return "not running / not loaded (LaunchDaemon)", nil
+		}
+		return "", fmt.Errorf("launchctl print system/%s failed: %w (%s)", label, err, strings.TrimSpace(string(out)))
+	}
+	pid := ""
+	state := ""
+	for _, line := range strings.Split(string(out), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "pid = ") {
+			pid = strings.TrimPrefix(trimmed, "pid = ")
+		} else if strings.HasPrefix(trimmed, "state = ") {
+			state = strings.TrimPrefix(trimmed, "state = ")
+		}
+	}
+	if pid != "" {
+		return fmt.Sprintf("running (LaunchDaemon, pid=%s, state=%s)", pid, state), nil
+	}
+	if state != "" {
+		return fmt.Sprintf("loaded (LaunchDaemon, state=%s)", state), nil
+	}
+	return "loaded (LaunchDaemon)", nil
+}
+
 func Start() error {
+	if hasSystemHubPlist() {
+		return startSystemLaunchdService(DefaultSystemPlistPath(), LaunchdLabel)
+	}
 	return startLaunchdService(DefaultPlistPath(), LaunchdLabel, "security-hub hub service install")
 }
 
@@ -213,6 +339,9 @@ func stopLaunchdService(plist, label string) error {
 }
 
 func Stop() error {
+	if hasSystemHubPlist() {
+		return stopSystemLaunchdService(LaunchdLabel)
+	}
 	return stopLaunchdService(DefaultPlistPath(), LaunchdLabel)
 }
 
@@ -238,5 +367,8 @@ func launchdStatus(label string) (string, error) {
 }
 
 func Status() (string, error) {
+	if hasSystemHubPlist() {
+		return systemLaunchdStatus(LaunchdLabel)
+	}
 	return launchdStatus(LaunchdLabel)
 }

@@ -7,6 +7,8 @@
 config.json
 config.yml
 config.yaml
+config.hub.yml
+config.agent.yml
 
 # dependencies and build cache
 node_modules

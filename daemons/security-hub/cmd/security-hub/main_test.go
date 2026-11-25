@@ -72,6 +72,9 @@ func TestCLI_StrictModeConfigsAndRejectedTopLevelCommands(t *testing.T) {
 }
 
 func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
+	restoreSysPlist := service.SetSystemPlistPath(filepath.Join(t.TempDir(), "nonexistent-system.plist"))
+	defer restoreSysPlist()
+
 	plist := service.GenerateLaunchdPlist("/Users/jaewookahn/repos/NAL/daemons/security-hub/security-hub", "/Users/jaewookahn/repos/NAL/daemons/security-hub")
 	if !strings.Contains(plist, "me.jaewook.nal.security-hub") || !strings.Contains(plist, "<string>hub</string>") || !strings.Contains(plist, "<string>run</string>") {
 		t.Fatalf("unexpected launchd plist: %s", plist)

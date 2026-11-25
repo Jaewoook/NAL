@@ -255,10 +255,12 @@ Start, stop, or restart one or more services with:
 ./daemons/omlx/service.sh restart    # Restart background daemon
 ./daemons/omlx/service.sh logs       # Tail daemon logs
 
-# Run a one-off Security Hub scan or start Hub / remote LAN Agent
-./daemons/security-hub/security-hub scan
-./daemons/security-hub/security-hub run
-./daemons/security-hub/security-hub agent -name <node-name> -token "<shared-lan-secret>"
+# Manage Security Hub (requires config.hub.yml) or remote LAN Agent (requires config.agent.yml)
+./daemons/security-hub/security-hub hub scan
+./daemons/security-hub/security-hub hub run
+./daemons/security-hub/security-hub hub service status
+./daemons/security-hub/security-hub agent run -name <node-name> -token "<shared-lan-secret>"
+./daemons/security-hub/security-hub agent scan
 
 # One-off system health inspection
 ./daemons/server-monitor/server-monitor check

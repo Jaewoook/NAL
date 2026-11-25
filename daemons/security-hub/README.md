@@ -148,9 +148,14 @@ go build -o security-hub ./cmd/security-hub
 # 6. Start the web dashboard & background scanner (default port 10311)
 ./security-hub hub run
 
-# Or install & start as a persistent macOS launchd service:
-./security-hub hub service install
-./security-hub hub service start
+# Or install & manage as a persistent macOS LaunchDaemon (prompts for sudo password
+# automatically on macOS, migrates any legacy user LaunchAgent, and avoids macOS 15+
+# Local Network Privacy blocking outbound LAN scans to remote agents):
+./security-hub hub service install   # Installs /Library/LaunchDaemons/me.jaewook.nal.security-hub.plist
+./security-hub hub service start     # Starts Hub LaunchDaemon (hub mode)
+./security-hub hub service restart   # Restarts Hub LaunchDaemon (hub mode)
+./security-hub hub service stop      # Stops Hub LaunchDaemon (hub mode)
+./security-hub hub service status    # Checks status without sudo
 ```
 
 ## Multi-Node Setup (Adding Remote Agents)
@@ -190,7 +195,7 @@ You can also manually register compute nodes through the Web UI or CLI:
 - **Web UI with Connection Testing:**
   1. Open the Web Console and click **⚙ Manage Nodes**.
   2. Enter the remote agent LAN URL (`http://<agent-lan-ip>:10247`) and shared `agent_token`.
-  3. Click **⚡ Test Connection**: The Hub securely probes `/api/info` on the agent, reporting round-trip latency (e.g. `12ms`), remote OS version (e.g. `macOS 15.3 (arm64)` or `Linux 6.6.0 (amd64)`), and automatically populates the device name field if left blank.
+  3. Click **⚡ Test Connection**: The Hub securely probes `/api/agent/info` on the agent, reporting round-trip latency (e.g. `12ms`), remote OS version (e.g. `darwin/arm64` or `linux/arm64`), and automatically populates the device name field if left blank.
   4. Click **+ Add / Save Node** to persist the node.
 
 - **CLI Management:**
@@ -209,15 +214,14 @@ You can also manually register compute nodes through the Web UI or CLI:
 
 ### 3. Background Agent Daemon Service CLI (`agent service`)
 
-To run the remote agent as a persistent system service across reboots, use the built-in cross-platform `agent service` command:
+To run the remote agent as a persistent system service across reboots (requires `config.agent.yml`), use the built-in cross-platform `agent service` command:
 
 ```bash
-# Install the background service:
+# Install the background service (omit -advertise-url to auto-detect & refresh LAN IP on every heartbeat):
 ./security-hub agent service install \
   -name "<node-name>" \
   -token "<shared-lan-secret>" \
   -hub "http://<hub-lan-ip>:10311" \
-  -advertise-url "http://<agent-lan-ip>:10247" \
   -port 10247
 
 # Manage service lifecycle:

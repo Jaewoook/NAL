@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -43,6 +45,26 @@ func runAuthCommand(rest []string, cfg *config.Config, out io.Writer) int {
 	return 0
 }
 
+func execWithSudo(args []string, out io.Writer) int {
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(out, "Failed to resolve executable path for sudo: %v\n", err)
+		return 1
+	}
+	cmd := exec.Command("sudo", append([]string{exe}, args...)...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = out
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return exitErr.ExitCode()
+		}
+		fmt.Fprintf(out, "sudo execution failed: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
 func runServiceCommand(rest []string, out io.Writer) int {
 	if len(rest) == 0 {
 		fmt.Fprintln(out, "Usage: security-hub hub service <status|start|stop|restart|install>")
@@ -53,9 +75,25 @@ func runServiceCommand(rest []string, out io.Writer) int {
 	case "install":
 		fs := flag.NewFlagSet("hub service install", flag.ContinueOnError)
 		fs.SetOutput(out)
-		pathFlag := fs.String("path", "", "Path to write launchd plist")
+		pathFlag := fs.String("path", "", "Path to write launchd plist (defaults to /Library/LaunchDaemons on macOS)")
+		userFlag := fs.String("user", "", "UserName for LaunchDaemon execution (defaults to current user)")
 		if err := fs.Parse(rest[1:]); err != nil {
 			return 1
+		}
+		if runtime.GOOS == "darwin" && *pathFlag == "" && os.Geteuid() != 0 {
+			_ = service.RemoveLegacyUserHubAgent()
+			runUser := strings.TrimSpace(*userFlag)
+			if runUser == "" {
+				if u, uErr := user.Current(); uErr == nil {
+					runUser = u.Username
+				}
+			}
+			fmt.Fprintln(out, "Installing Hub as a macOS LaunchDaemon requires administrator privileges (sudo)...")
+			sudoArgs := []string{"hub", "service", "install"}
+			if runUser != "" {
+				sudoArgs = append(sudoArgs, "-user", runUser)
+			}
+			return execWithSudo(sudoArgs, out)
 		}
 		exe, err := os.Executable()
 		if err != nil {
@@ -67,11 +105,25 @@ func runServiceCommand(rest []string, out io.Writer) int {
 			fmt.Fprintf(out, "Failed to resolve working directory: %v\n", err)
 			return 1
 		}
-		if err := service.InstallPlist(*pathFlag, exe, wd); err != nil {
+		runUser := strings.TrimSpace(*userFlag)
+		runHome := ""
+		if runUser == "" && os.Geteuid() == 0 {
+			runUser = strings.TrimSpace(os.Getenv("SUDO_USER"))
+		}
+		if runUser != "" {
+			if u, uErr := user.Lookup(runUser); uErr == nil {
+				runHome = u.HomeDir
+			}
+		}
+		if err := service.InstallHubPlist(*pathFlag, exe, wd, runUser, runHome); err != nil {
 			fmt.Fprintf(out, "Failed to install plist: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(out, "Installed hub launchd service plist (%s) (hub mode)\n", service.LaunchdLabel)
+		if os.Geteuid() == 0 && *pathFlag == "" {
+			fmt.Fprintf(out, "Installed hub LaunchDaemon plist (%s) for user %q (hub mode)\n", service.DefaultSystemPlistPath(), runUser)
+		} else {
+			fmt.Fprintf(out, "Installed hub launchd service plist (%s) (hub mode)\n", service.LaunchdLabel)
+		}
 		return 0
 	case "status":
 		st, err := service.Status()
@@ -82,6 +134,9 @@ func runServiceCommand(rest []string, out io.Writer) int {
 		fmt.Fprintf(out, "Hub service %s (hub mode): %s\n", service.LaunchdLabel, st)
 		return 0
 	case "start":
+		if runtime.GOOS == "darwin" && service.IsSystemHubInstalled() && os.Geteuid() != 0 {
+			return execWithSudo([]string{"hub", "service", "start"}, out)
+		}
 		if err := service.Start(); err != nil {
 			fmt.Fprintf(out, "Failed to start hub service: %v\n", err)
 			return 1
@@ -89,6 +144,9 @@ func runServiceCommand(rest []string, out io.Writer) int {
 		fmt.Fprintln(out, "Service started as hub mode.")
 		return 0
 	case "stop":
+		if runtime.GOOS == "darwin" && service.IsSystemHubInstalled() && os.Geteuid() != 0 {
+			return execWithSudo([]string{"hub", "service", "stop"}, out)
+		}
 		if err := service.Stop(); err != nil {
 			fmt.Fprintf(out, "Failed to stop hub service: %v\n", err)
 			return 1
@@ -96,6 +154,9 @@ func runServiceCommand(rest []string, out io.Writer) int {
 		fmt.Fprintln(out, "Hub service stopped (hub mode).")
 		return 0
 	case "restart":
+		if runtime.GOOS == "darwin" && service.IsSystemHubInstalled() && os.Geteuid() != 0 {
+			return execWithSudo([]string{"hub", "service", "restart"}, out)
+		}
 		if err := service.Restart(); err != nil {
 			fmt.Fprintf(out, "Failed to restart hub service: %v\n", err)
 			return 1
