@@ -3,7 +3,7 @@
 echo "Setting up NAL docker environment..."
 
 # Check if docker command is available
-if ![ command -v docker &>/dev/null ]; then
+if ! command -v docker &>/dev/null; then
     echo "Error: docker command is not available. Please install Docker first."
     exit 1
 fi
