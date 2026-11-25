@@ -128,20 +128,20 @@ func buildEmailMessage(from, to string, alert *models.Alert) []byte {
 	dateStr := alert.Timestamp.UTC().Format(time.RFC1123Z)
 
 	var body strings.Builder
-	body.WriteString(fmt.Sprintf("Server Monitor Alert: %s\n", alert.Title))
+	fmt.Fprintf(&body, "Server Monitor Alert: %s\n", alert.Title)
 	body.WriteString(strings.Repeat("=", 40) + "\n")
-	body.WriteString(fmt.Sprintf("Level:           %s\n", alert.Level))
-	body.WriteString(fmt.Sprintf("Hostname:        %s\n", alert.Hostname))
-	body.WriteString(fmt.Sprintf("Metric:          %s\n", alert.MetricName))
-	body.WriteString(fmt.Sprintf("Current Value:   %s\n", alert.FormatValue(alert.CurrentValue)))
+	fmt.Fprintf(&body, "Level:           %s\n", alert.Level)
+	fmt.Fprintf(&body, "Hostname:        %s\n", alert.Hostname)
+	fmt.Fprintf(&body, "Metric:          %s\n", alert.MetricName)
+	fmt.Fprintf(&body, "Current Value:   %s\n", alert.FormatValue(alert.CurrentValue))
 	if alert.ThresholdValue > 0 {
-		body.WriteString(fmt.Sprintf("Threshold Value: %s\n", alert.FormatValue(alert.ThresholdValue)))
+		fmt.Fprintf(&body, "Threshold Value: %s\n", alert.FormatValue(alert.ThresholdValue))
 	}
 	if tempSummary := alert.FormatTemperatures(); tempSummary != "" {
-		body.WriteString(fmt.Sprintf("Temperature:     %s\n", tempSummary))
+		fmt.Fprintf(&body, "Temperature:     %s\n", tempSummary)
 	}
-	body.WriteString(fmt.Sprintf("Timestamp:       %s\n", dateStr))
-	body.WriteString(fmt.Sprintf("Message:         %s\n", alert.Message))
+	fmt.Fprintf(&body, "Timestamp:       %s\n", dateStr)
+	fmt.Fprintf(&body, "Message:         %s\n", alert.Message)
 
 	if table := models.FormatProcessesTable(alert.TopProcesses); table != "" {
 		body.WriteString("\nTop Processes:\n")

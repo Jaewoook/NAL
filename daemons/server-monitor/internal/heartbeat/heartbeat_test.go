@@ -126,7 +126,7 @@ func TestHeartbeatUserAgentAndMethod(t *testing.T) {
 	}))
 
 	// Ping with nil context should default to 5s timeout internally
-	if err := sender.Ping(nil); err != nil {
+	if err := sender.Ping(nil); err != nil { //nolint:staticcheck // intentionally testing nil context fallback
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -312,4 +312,3 @@ func TestHeartbeatFailedTickRetriesSoonerThanInterval(t *testing.T) {
 		t.Fatalf("expected normal 60s interval after successful ping")
 	}
 }
-

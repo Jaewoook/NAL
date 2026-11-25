@@ -157,11 +157,11 @@ func TestParseTemperatures(t *testing.T) {
 		{SensorKey: "NAND CH0", Temperature: 30.0},   // ignored
 		{SensorKey: "gpu_core", Temperature: 55.0},
 		{SensorKey: "gpu_mem", Temperature: 65.0},
-		{SensorKey: "glitch_hot", Temperature: 200.0},               // invalid: > 150
-		{SensorKey: "glitch_zero", Temperature: 0.0},                // invalid: zero
-		{SensorKey: "cpu_nan", Temperature: math.NaN()},             // invalid: NaN
-		{SensorKey: "gpu_inf", Temperature: math.Inf(1)},            // invalid: +Inf
-		{SensorKey: "gpu_neg_inf", Temperature: math.Inf(-1)},       // invalid: -Inf
+		{SensorKey: "glitch_hot", Temperature: 200.0},         // invalid: > 150
+		{SensorKey: "glitch_zero", Temperature: 0.0},          // invalid: zero
+		{SensorKey: "cpu_nan", Temperature: math.NaN()},       // invalid: NaN
+		{SensorKey: "gpu_inf", Temperature: math.Inf(1)},      // invalid: +Inf
+		{SensorKey: "gpu_neg_inf", Temperature: math.Inf(-1)}, // invalid: -Inf
 	}
 
 	cpuTemp, hasCPU, gpuTemp, hasGPU := parseTemperatures(stats)
@@ -214,4 +214,3 @@ func TestParseTemperatures(t *testing.T) {
 		t.Errorf("expected M1 GPU temp 36.5, got hasGPU=%v temp=%f", hasGPUM1, gpuTempM1)
 	}
 }
-

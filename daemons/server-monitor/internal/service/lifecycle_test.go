@@ -219,4 +219,3 @@ func TestQueryLaunchd_HeadlessUserFallback(t *testing.T) {
 		t.Errorf("expected PID 54321 from user/<uid> fallback, got: %s", res)
 	}
 }
-

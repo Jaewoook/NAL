@@ -30,7 +30,7 @@ func FormatProcessesTable(processes []ProcessInfo) string {
 		return ""
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-7s %-16s %-8s %-8s\n", "PID", "NAME", "CPU%", "MEM%"))
+	fmt.Fprintf(&sb, "%-7s %-16s %-8s %-8s\n", "PID", "NAME", "CPU%", "MEM%")
 	for _, p := range processes {
 		name := p.Name
 		runes := []rune(name)
@@ -39,7 +39,7 @@ func FormatProcessesTable(processes []ProcessInfo) string {
 		}
 		cpuStr := fmt.Sprintf("%.1f%%", p.CPUPercent)
 		memStr := fmt.Sprintf("%.1f%%", p.MemoryPercent)
-		sb.WriteString(fmt.Sprintf("%-7d %-16s %-8s %-8s\n", p.PID, name, cpuStr, memStr))
+		fmt.Fprintf(&sb, "%-7d %-16s %-8s %-8s\n", p.PID, name, cpuStr, memStr)
 	}
 	return strings.TrimRight(sb.String(), "\n")
 }

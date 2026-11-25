@@ -105,7 +105,7 @@ func (rf *RotatingFile) Write(p []byte) (n int, err error) {
 			if rf.file == nil {
 				return 0, fmt.Errorf("log rotation failed: %w", err)
 			}
-			_, _ = rf.file.Write([]byte(fmt.Sprintf("[logger] rotation error: %v\n", err)))
+			_, _ = fmt.Fprintf(rf.file, "[logger] rotation error: %v\n", err)
 		} else {
 			rf.lastRotateErr = time.Time{}
 		}

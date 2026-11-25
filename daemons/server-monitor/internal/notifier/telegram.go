@@ -109,31 +109,31 @@ func telegramLevelIcon(level models.AlertLevel) string {
 
 func formatTelegramMessage(alert *models.Alert) string {
 	var buf bytes.Buffer
-	buf.WriteString(fmt.Sprintf("%s <b>[%s] %s</b>\n",
+	fmt.Fprintf(&buf, "%s <b>[%s] %s</b>\n",
 		telegramLevelIcon(alert.Level),
 		html.EscapeString(string(alert.Level)),
-		html.EscapeString(alert.Title)))
+		html.EscapeString(alert.Title))
 
 	if alert.Hostname != "" {
-		buf.WriteString(fmt.Sprintf("<b>Host:</b> <code>%s</code>\n", html.EscapeString(alert.Hostname)))
+		fmt.Fprintf(&buf, "<b>Host:</b> <code>%s</code>\n", html.EscapeString(alert.Hostname))
 	}
 	if alert.MetricName != "" {
 		if alert.ThresholdValue > 0 {
-			buf.WriteString(fmt.Sprintf("<b>Metric:</b> %s (Current: %s, Threshold: %s)\n",
-				html.EscapeString(alert.MetricName), alert.FormatValue(alert.CurrentValue), alert.FormatValue(alert.ThresholdValue)))
+			fmt.Fprintf(&buf, "<b>Metric:</b> %s (Current: %s, Threshold: %s)\n",
+				html.EscapeString(alert.MetricName), alert.FormatValue(alert.CurrentValue), alert.FormatValue(alert.ThresholdValue))
 		} else {
-			buf.WriteString(fmt.Sprintf("<b>Metric:</b> %s (Current: %s)\n",
-				html.EscapeString(alert.MetricName), alert.FormatValue(alert.CurrentValue)))
+			fmt.Fprintf(&buf, "<b>Metric:</b> %s (Current: %s)\n",
+				html.EscapeString(alert.MetricName), alert.FormatValue(alert.CurrentValue))
 		}
 	}
 	if tempSummary := alert.FormatTemperatures(); tempSummary != "" {
-		buf.WriteString(fmt.Sprintf("<b>Temperature:</b> %s\n", html.EscapeString(tempSummary)))
+		fmt.Fprintf(&buf, "<b>Temperature:</b> %s\n", html.EscapeString(tempSummary))
 	}
 	if !alert.Timestamp.IsZero() {
-		buf.WriteString(fmt.Sprintf("<b>Time:</b> %s\n", alert.Timestamp.UTC().Format("2006-01-02 15:04:05 UTC")))
+		fmt.Fprintf(&buf, "<b>Time:</b> %s\n", alert.Timestamp.UTC().Format("2006-01-02 15:04:05 UTC"))
 	}
 	if alert.Message != "" {
-		buf.WriteString(fmt.Sprintf("<b>Message:</b> %s\n", html.EscapeString(alert.Message)))
+		fmt.Fprintf(&buf, "<b>Message:</b> %s\n", html.EscapeString(alert.Message))
 	}
 
 	if table := models.FormatProcessesTable(alert.TopProcesses); table != "" {

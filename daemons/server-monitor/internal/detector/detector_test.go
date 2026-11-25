@@ -636,4 +636,3 @@ func TestPlungeDropPrunesFutureTimestampsOnClockJump(t *testing.T) {
 		t.Fatalf("expected no plunge after backward clock jump, got %+v", evs)
 	}
 }
-

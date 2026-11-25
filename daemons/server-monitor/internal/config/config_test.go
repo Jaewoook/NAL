@@ -441,6 +441,3 @@ func TestTemperatureConfigValidation(t *testing.T) {
 		t.Errorf("expected fallback 30, got %d", cfg.Health.Temperature.CooldownMinutes)
 	}
 }
-
-
-

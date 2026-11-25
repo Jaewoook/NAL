@@ -21,7 +21,7 @@ func TestRotatingFile_BasicWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error creating RotatingFile: %v", err)
 	}
-	defer rf.Close()
+	defer func() { _ = rf.Close() }()
 
 	msg := "hello server-monitor log\n"
 	n, err := rf.Write([]byte(msg))
@@ -49,7 +49,7 @@ func TestRotatingFile_CreateNestedDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error creating RotatingFile with nested dir: %v", err)
 	}
-	defer rf.Close()
+	defer func() { _ = rf.Close() }()
 
 	if _, err := rf.Write([]byte("nested log\n")); err != nil {
 		t.Fatalf("write failed: %v", err)
@@ -69,7 +69,7 @@ func TestRotatingFile_RotationAndMaxBackups(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer rf.Close()
+	defer func() { _ = rf.Close() }()
 
 	// Write 1: 30 bytes
 	chunk1 := "111111111122222222223333333333" // 30 bytes
@@ -149,7 +149,7 @@ func TestRotatingFile_ResumeExistingSize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer rf.Close()
+	defer func() { _ = rf.Close() }()
 
 	// Writing 20 bytes should trigger rotation because 40 + 20 > 50
 	newData := strings.Repeat("B", 20)
@@ -182,7 +182,7 @@ func TestRotatingFile_ConcurrentWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rf.Close()
+	defer func() { _ = rf.Close() }()
 
 	var wg sync.WaitGroup
 	workers := 10
@@ -298,7 +298,7 @@ func TestRotatingFile_RotationFailureDoesNotPanic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create RotatingFile: %v", err)
 	}
-	defer rf.Close()
+	defer func() { _ = rf.Close() }()
 
 	// Initial write under threshold (10 bytes)
 	if _, err := rf.Write([]byte("1234567890")); err != nil {
@@ -309,11 +309,11 @@ func TestRotatingFile_RotationFailureDoesNotPanic(t *testing.T) {
 	if err := os.Chmod(logPath, 0444); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(logPath, 0644)
+	defer func() { _ = os.Chmod(logPath, 0644) }()
 	if err := os.Chmod(logDir, 0555); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(logDir, 0755)
+	defer func() { _ = os.Chmod(logDir, 0755) }()
 
 	// Write exceeding 20 bytes - triggers rotation attempt which fails.
 	// Must not panic with a nil pointer dereference.
@@ -351,4 +351,3 @@ func TestRotatingFile_WriteAfterCloseReturnsErrClosed(t *testing.T) {
 		t.Errorf("expected no backup rotation after Close()")
 	}
 }
-

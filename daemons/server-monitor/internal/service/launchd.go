@@ -306,13 +306,13 @@ func (b *launchdBackend) Status(serviceName, targetPath string) (string, error) 
 	info := b.query(serviceName, targetPath)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("● %s (macOS launchd)\n", serviceName))
-	sb.WriteString(fmt.Sprintf("   Label:       %s\n", serviceName))
+	fmt.Fprintf(&sb, "● %s (macOS launchd)\n", serviceName)
+	fmt.Fprintf(&sb, "   Label:       %s\n", serviceName)
 
 	if !info.Loaded {
 		if _, err := os.Stat(plistPath); err == nil {
 			sb.WriteString("   State:       Installed (stopped / not loaded)\n")
-			sb.WriteString(fmt.Sprintf("   Plist:       %s\n", plistPath))
+			fmt.Fprintf(&sb, "   Plist:       %s\n", plistPath)
 			sb.WriteString("   Tip:         Run 'server-monitor service start' to start the service.\n")
 		} else {
 			sb.WriteString("   State:       Not installed\n")
@@ -323,24 +323,24 @@ func (b *launchdBackend) Status(serviceName, targetPath string) (string, error) 
 
 	if info.State == "running" && info.PID > 0 {
 		sb.WriteString("   State:       Active (running)\n")
-		sb.WriteString(fmt.Sprintf("   PID:         %d\n", info.PID))
+		fmt.Fprintf(&sb, "   PID:         %d\n", info.PID)
 		if stats, ok := b.queryProcessStats(info.PID); ok {
-			sb.WriteString(fmt.Sprintf("   Uptime:      %s\n", stats.uptime))
-			sb.WriteString(fmt.Sprintf("   Memory:      %s\n", stats.memory))
-			sb.WriteString(fmt.Sprintf("   CPU:         %s\n", stats.cpu))
+			fmt.Fprintf(&sb, "   Uptime:      %s\n", stats.uptime)
+			fmt.Fprintf(&sb, "   Memory:      %s\n", stats.memory)
+			fmt.Fprintf(&sb, "   CPU:         %s\n", stats.cpu)
 		}
 	} else {
-		sb.WriteString(fmt.Sprintf("   State:       Inactive (%s)\n", info.State))
+		fmt.Fprintf(&sb, "   State:       Inactive (%s)\n", info.State)
 	}
 
 	if info.PlistPath != "" {
-		sb.WriteString(fmt.Sprintf("   Plist:       %s\n", info.PlistPath))
+		fmt.Fprintf(&sb, "   Plist:       %s\n", info.PlistPath)
 	}
 	if info.StdoutPath != "" {
-		sb.WriteString(fmt.Sprintf("   Stdout Log:  %s\n", info.StdoutPath))
+		fmt.Fprintf(&sb, "   Stdout Log:  %s\n", info.StdoutPath)
 	}
 	if info.StderrPath != "" {
-		sb.WriteString(fmt.Sprintf("   Stderr Log:  %s\n", info.StderrPath))
+		fmt.Fprintf(&sb, "   Stderr Log:  %s\n", info.StderrPath)
 	}
 
 	return sb.String(), nil

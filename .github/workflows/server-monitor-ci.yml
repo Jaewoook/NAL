@@ -1,0 +1,71 @@
+name: Server Monitor CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'daemons/server-monitor/**'
+      - '.github/workflows/server-monitor-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'daemons/server-monitor/**'
+      - '.github/workflows/server-monitor-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go Verify & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: daemons/server-monitor
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: daemons/server-monitor/go.mod
+          cache-dependency-path: daemons/server-monitor/go.sum
+
+      - name: Verify Go formatting (gofmt)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following Go files are not formatted with gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Verify Go modules
+        run: go mod verify
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.15.0
+          working-directory: daemons/server-monitor
+
+      - name: Run Go tests with race detector
+        run: go test -v -race -count=1 ./...
+
+      - name: Build server-monitor static binary (CGO_ENABLED=0)
+        env:
+          CGO_ENABLED: '0'
+        run: go build -o /tmp/server-monitor ./cmd/server-monitor

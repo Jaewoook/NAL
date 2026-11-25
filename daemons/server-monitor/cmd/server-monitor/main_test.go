@@ -354,5 +354,3 @@ logging:
 		t.Errorf("expected stdout to contain daemon output, got:\n%s", stdout.String())
 	}
 }
-
-
