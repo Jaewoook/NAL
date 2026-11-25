@@ -9,6 +9,13 @@ import (
 	"github.com/jaewoook/server-monitor/internal/models"
 )
 
+const (
+	discordColorInfo     = 0x3498DB
+	discordColorCritical = 0xFF0000
+	discordColorWarning  = 0xFFFF00
+	discordColorResolved = 0x00FF00
+)
+
 // DiscordChannel dispatches alerts to Discord channels via webhooks.
 type DiscordChannel struct {
 	httpPoster
@@ -60,16 +67,31 @@ func (d *DiscordChannel) SendContext(ctx context.Context, alert *models.Alert) e
 		return errors.New("discord webhook URL is not configured")
 	}
 
-	color := 3447003 // 0x3498DB (Blue/Info)
-	switch alert.Level {
-	case models.AlertLevelCritical:
-		color = 16711680 // 0xFF0000 (Red)
-	case models.AlertLevelWarning:
-		color = 16776960 // 0xFFFF00 (Yellow)
-	case models.AlertLevelResolved:
-		color = 65280 // 0x00FF00 (Green)
+	status, respBody, err := d.postJSON(ctx, d.webhookURL, buildDiscordPayload(alert), nil)
+	if err != nil {
+		return fmt.Errorf("discord request failed: %w", err)
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("discord api error (status %d): %s", status, string(respBody))
 	}
 
+	return nil
+}
+
+func discordLevelColor(level models.AlertLevel) int {
+	switch level {
+	case models.AlertLevelCritical:
+		return discordColorCritical
+	case models.AlertLevelWarning:
+		return discordColorWarning
+	case models.AlertLevelResolved:
+		return discordColorResolved
+	default:
+		return discordColorInfo
+	}
+}
+
+func buildDiscordPayload(alert *models.Alert) discordPayload {
 	var fields []discordField
 	if alert.Hostname != "" {
 		fields = append(fields, discordField{Name: "Host", Value: alert.Hostname, Inline: true})
@@ -82,19 +104,15 @@ func (d *DiscordChannel) SendContext(ctx context.Context, alert *models.Alert) e
 		fields = append(fields, discordField{Name: "Threshold", Value: alert.FormatValue(alert.ThresholdValue), Inline: true})
 	}
 
-	if len(alert.TopProcesses) > 0 {
-		table := models.FormatProcessesTable(alert.TopProcesses)
-		if table != "" {
-			runes := []rune(table)
-			if len(runes) > 1000 {
-				table = string(runes[:997]) + "..."
-			}
-			fields = append(fields, discordField{
-				Name:   "Top Processes",
-				Value:  "```\n" + table + "\n```",
-				Inline: false,
-			})
+	if table := models.FormatProcessesTable(alert.TopProcesses); table != "" {
+		if runes := []rune(table); len(runes) > 1000 {
+			table = string(runes[:997]) + "..."
 		}
+		fields = append(fields, discordField{
+			Name:   "Top Processes",
+			Value:  "```\n" + table + "\n```",
+			Inline: false,
+		})
 	}
 
 	ts := ""
@@ -102,23 +120,13 @@ func (d *DiscordChannel) SendContext(ctx context.Context, alert *models.Alert) e
 		ts = alert.Timestamp.UTC().Format(time.RFC3339)
 	}
 
-	payload := discordPayload{
+	return discordPayload{
 		Embeds: []discordEmbed{{
 			Title:       fmt.Sprintf("[%s] %s", alert.Level, alert.Title),
 			Description: alert.Message,
-			Color:       color,
+			Color:       discordLevelColor(alert.Level),
 			Fields:      fields,
 			Timestamp:   ts,
 		}},
 	}
-
-	status, respBody, err := d.postJSON(ctx, d.webhookURL, payload, nil)
-	if err != nil {
-		return fmt.Errorf("discord request failed: %w", err)
-	}
-	if status < 200 || status >= 300 {
-		return fmt.Errorf("discord api error (status %d): %s", status, string(respBody))
-	}
-
-	return nil
 }

@@ -75,7 +75,15 @@ func NewDispatcherFromConfig(cfg *config.NotificationsConfig, opts ...Dispatcher
 		registerHTTP(NewSlackChannel(cfg.Slack.WebhookURL))
 	}
 	if cfg.Email.Enabled {
-		d.Register(NewEmailChannel(cfg.Email))
+		d.Register(NewEmailChannel(EmailOptions{
+			SMTPHost:  cfg.Email.SMTPHost,
+			SMTPPort:  cfg.Email.SMTPPort,
+			UseTLS:    cfg.Email.UseTLS,
+			Username:  cfg.Email.Username,
+			Password:  cfg.Email.Password,
+			FromEmail: cfg.Email.FromEmail,
+			ToEmail:   cfg.Email.ToEmail,
+		}))
 	}
 	if cfg.Webhook.Enabled {
 		registerHTTP(NewWebhookChannel(cfg.Webhook.URL))

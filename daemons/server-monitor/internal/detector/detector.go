@@ -34,42 +34,68 @@ const (
 	stateRecovered
 )
 
-// sustainedTracker implements the shared breach/recovery counter state machine
+// sustainedTracker implements the shared breach/recovery state machine
 // used by sustained threshold rules (CPU spike, CPU floor, memory, temperatures).
+// Elapsed duration uses wall timestamps when monotonic/advancing, falling back
+// to tick count so slow or delayed ticks still trigger accurately.
 type sustainedTracker struct {
 	active        bool
 	breachCount   int
 	recoveryCount int
+	breachSince   time.Time
+	recoverySince time.Time
 }
 
-func (s *sustainedTracker) evaluate(breached bool, interval, sustainedSec int) (state sustainedState, elapsedSec int) {
+func sustainedElapsed(count, interval int, since, now time.Time) int {
+	tickElapsed := count * interval
+	if !since.IsZero() && !now.IsZero() && now.After(since) {
+		wallElapsed := int(now.Sub(since).Seconds()) + interval
+		if wallElapsed > tickElapsed {
+			return wallElapsed
+		}
+	}
+	return tickElapsed
+}
+
+func (s *sustainedTracker) evaluate(breached bool, interval, sustainedSec int, now time.Time) (state sustainedState, elapsedSec int) {
 	if sustainedSec <= 0 {
 		sustainedSec = interval
 	}
 
 	if breached {
 		s.recoveryCount = 0
+		s.recoverySince = time.Time{}
+		if s.breachCount == 0 {
+			s.breachSince = now
+		}
 		s.breachCount++
+		elapsed := sustainedElapsed(s.breachCount, interval, s.breachSince, now)
 		if !s.active {
-			if s.breachCount*interval >= sustainedSec {
+			if elapsed >= sustainedSec {
 				s.active = true
-				return stateInitialBreach, s.breachCount * interval
+				return stateInitialBreach, elapsed
 			}
 			return stateNoEvent, 0
 		}
-		return stateOngoingBreach, s.breachCount * interval
+		return stateOngoingBreach, elapsed
 	}
 
 	s.breachCount = 0
+	s.breachSince = time.Time{}
 	if s.active {
+		if s.recoveryCount == 0 {
+			s.recoverySince = now
+		}
 		s.recoveryCount++
-		if s.recoveryCount*interval >= sustainedSec {
+		if sustainedElapsed(s.recoveryCount, interval, s.recoverySince, now) >= sustainedSec {
 			s.active = false
 			s.recoveryCount = 0
+			s.recoverySince = time.Time{}
 			return stateRecovered, 0
 		}
 	} else {
 		s.recoveryCount = 0
+		s.recoverySince = time.Time{}
 	}
 	return stateNoEvent, 0
 }
@@ -83,6 +109,7 @@ type sustainedRuleParams struct {
 	breached     bool
 	sustainedSec int
 	interval     int
+	timestamp    time.Time
 	topProcesses []models.ProcessInfo
 	initialMsg   func(val, threshold float64, elapsedSec int) string
 	ongoingMsg   func(val, threshold float64) string
@@ -90,7 +117,7 @@ type sustainedRuleParams struct {
 }
 
 func evaluateSustainedRule(tracker *sustainedTracker, p sustainedRuleParams) *models.RawConditionEvent {
-	state, elapsed := tracker.evaluate(p.breached, p.interval, p.sustainedSec)
+	state, elapsed := tracker.evaluate(p.breached, p.interval, p.sustainedSec, p.timestamp)
 	switch state {
 	case stateInitialBreach:
 		return &models.RawConditionEvent{
@@ -201,7 +228,7 @@ func (d *Detector) Evaluate(m *models.SystemMetrics) []models.RawConditionEvent 
 }
 
 func (d *Detector) checkCPUSpike(m *models.SystemMetrics, interval int) *models.RawConditionEvent {
-	if !d.cfg.CPU.Spike.Enabled {
+	if !d.cfg.CPU.Spike.Enabled || m.CPUFailed {
 		return nil
 	}
 	threshold := d.cfg.CPU.Spike.ThresholdPercent
@@ -214,6 +241,7 @@ func (d *Detector) checkCPUSpike(m *models.SystemMetrics, interval int) *models.
 		breached:     m.CPUPercent >= threshold,
 		sustainedSec: d.cfg.CPU.Spike.SustainedSeconds,
 		interval:     interval,
+		timestamp:    m.Timestamp,
 		topProcesses: m.TopProcesses,
 		initialMsg: func(v, t float64, sec int) string {
 			return fmt.Sprintf("CPU usage sustained high: %.1f%% >= %.1f%% for %ds", v, t, sec)
@@ -228,7 +256,7 @@ func (d *Detector) checkCPUSpike(m *models.SystemMetrics, interval int) *models.
 }
 
 func (d *Detector) checkCPUPlunge(m *models.SystemMetrics) *models.RawConditionEvent {
-	if !d.cfg.CPU.PlungeDrop.Enabled {
+	if !d.cfg.CPU.PlungeDrop.Enabled || m.CPUFailed {
 		return nil
 	}
 
@@ -283,7 +311,7 @@ func (d *Detector) checkCPUPlunge(m *models.SystemMetrics) *models.RawConditionE
 }
 
 func (d *Detector) checkCPUFloor(m *models.SystemMetrics, interval int) *models.RawConditionEvent {
-	if !d.cfg.CPU.FloorDrop.Enabled {
+	if !d.cfg.CPU.FloorDrop.Enabled || m.CPUFailed {
 		return nil
 	}
 	threshold := d.cfg.CPU.FloorDrop.ThresholdPercent
@@ -296,6 +324,7 @@ func (d *Detector) checkCPUFloor(m *models.SystemMetrics, interval int) *models.
 		breached:     m.CPUPercent <= threshold,
 		sustainedSec: d.cfg.CPU.FloorDrop.SustainedSeconds,
 		interval:     interval,
+		timestamp:    m.Timestamp,
 		topProcesses: m.TopProcesses,
 		initialMsg: func(v, t float64, _ int) string {
 			return fmt.Sprintf("CPU floor drop detected: usage at %.1f%% <= %.1f%% for sustained period", v, t)
@@ -310,7 +339,7 @@ func (d *Detector) checkCPUFloor(m *models.SystemMetrics, interval int) *models.
 }
 
 func (d *Detector) checkMemory(m *models.SystemMetrics, interval int) *models.RawConditionEvent {
-	if !d.cfg.Health.Memory.Enabled {
+	if !d.cfg.Health.Memory.Enabled || m.MemoryFailed {
 		return nil
 	}
 	threshold := d.cfg.Health.Memory.ThresholdPercent
@@ -323,6 +352,7 @@ func (d *Detector) checkMemory(m *models.SystemMetrics, interval int) *models.Ra
 		breached:     m.MemoryPercent >= threshold,
 		sustainedSec: d.cfg.Health.Memory.SustainedSeconds,
 		interval:     interval,
+		timestamp:    m.Timestamp,
 		topProcesses: m.TopProcesses,
 		initialMsg: func(v, t float64, sec int) string {
 			return fmt.Sprintf("Memory usage high: %.1f%% >= %.1f%% for %ds", v, t, sec)
@@ -337,7 +367,7 @@ func (d *Detector) checkMemory(m *models.SystemMetrics, interval int) *models.Ra
 }
 
 func (d *Detector) checkDisk(m *models.SystemMetrics) *models.RawConditionEvent {
-	if !d.cfg.Health.Disk.Enabled {
+	if !d.cfg.Health.Disk.Enabled || m.DiskFailed {
 		return nil
 	}
 
@@ -392,6 +422,7 @@ func (d *Detector) checkCPUTemp(m *models.SystemMetrics, interval int) *models.R
 		breached:     m.CPUTempCelsius >= threshold,
 		sustainedSec: d.cfg.Health.Temperature.SustainedSeconds,
 		interval:     interval,
+		timestamp:    m.Timestamp,
 		topProcesses: m.TopProcesses,
 		initialMsg: func(v, t float64, sec int) string {
 			return fmt.Sprintf("CPU temperature sustained high: %.1f°C >= %.1f°C for %ds", v, t, sec)
@@ -419,6 +450,7 @@ func (d *Detector) checkGPUTemp(m *models.SystemMetrics, interval int) *models.R
 		breached:     m.GPUTempCelsius >= threshold,
 		sustainedSec: d.cfg.Health.Temperature.SustainedSeconds,
 		interval:     interval,
+		timestamp:    m.Timestamp,
 		topProcesses: m.TopProcesses,
 		initialMsg: func(v, t float64, sec int) string {
 			return fmt.Sprintf("GPU temperature sustained high: %.1f°C >= %.1f°C for %ds", v, t, sec)

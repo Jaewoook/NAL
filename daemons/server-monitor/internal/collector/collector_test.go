@@ -74,9 +74,13 @@ func TestCollectZeroTopProcesses(t *testing.T) {
 
 func TestCollectInvalidDiskMount(t *testing.T) {
 	c := New(0, "/nonexistent_path_xyz_12345")
-	_, err := c.Collect()
+	m, err := c.Collect()
 	if err == nil {
 		t.Errorf("expected error for nonexistent disk mount, got nil")
+	}
+	// Partial metrics from healthy subsystems (e.g. memory, uptime) should still be populated
+	if m == nil || m.MemoryPercent <= 0 || m.UptimeSeconds == 0 {
+		t.Errorf("expected partial metrics despite disk error, got %+v", m)
 	}
 }
 
@@ -117,8 +121,8 @@ func TestSortAndLimitProcesses(t *testing.T) {
 
 func TestCollector_LazyTopProcesses(t *testing.T) {
 	c := New(3, "/")
-	// Threshold higher than any idle system CPU usage
-	c.SetLazyTopProcessesThreshold(99.9)
+	// Threshold above 100% so host CPU spikes during parallel test runs never make this test flaky
+	c.SetLazyTopProcessesThreshold(101.0)
 
 	m, err := c.Collect()
 	if err != nil {

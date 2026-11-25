@@ -7,9 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/jaewoook/server-monitor/internal/config"
 )
+
+const defaultRotateRetryDelay = 30 * time.Second
 
 // Options configures a dedicated logger instance without coupling callers to config.
 type Options struct {
@@ -23,12 +26,14 @@ type Options struct {
 // RotatingFile is an io.WriteCloser that automatically rotates the log file
 // when its size exceeds maxBytes, keeping up to maxBackups old log files.
 type RotatingFile struct {
-	mu          sync.Mutex
-	filePath    string
-	maxBytes    int64
-	maxBackups  int
-	file        *os.File
-	currentSize int64
+	mu               sync.Mutex
+	filePath         string
+	maxBytes         int64
+	maxBackups       int
+	file             *os.File
+	currentSize      int64
+	lastRotateErr    time.Time
+	rotateRetryDelay time.Duration
 }
 
 // NewRotatingFile creates or opens a rotating log file.
@@ -60,27 +65,44 @@ func NewRotatingFile(filePath string, maxBytes int64, maxBackups int) (*Rotating
 	}
 
 	return &RotatingFile{
-		filePath:    filePath,
-		maxBytes:    maxBytes,
-		maxBackups:  maxBackups,
-		file:        f,
-		currentSize: info.Size(),
+		filePath:         filePath,
+		maxBytes:         maxBytes,
+		maxBackups:       maxBackups,
+		file:             f,
+		currentSize:      info.Size(),
+		rotateRetryDelay: defaultRotateRetryDelay,
 	}, nil
 }
 
 // Write writes log bytes to the active log file, triggering rotation if needed.
+// If a prior rotation failed (e.g. disk full), retries are throttled by rotateRetryDelay
+// to avoid stderr spam while still self-healing when space/permissions recover.
 func (rf *RotatingFile) Write(p []byte) (n int, err error) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	if rf.file == nil {
+		if !rf.lastRotateErr.IsZero() && time.Since(rf.lastRotateErr) < rf.rotateRetryDelay {
+			return 0, fmt.Errorf("log file unavailable (rotation retry throttled)")
+		}
+		if err := rf.rotate(); err != nil {
+			rf.lastRotateErr = time.Now()
+			return 0, fmt.Errorf("log rotation failed: %w", err)
+		}
+		rf.lastRotateErr = time.Time{}
+	}
+
 	writeLen := int64(len(p))
 	if rf.currentSize+writeLen > rf.maxBytes {
 		if err := rf.rotate(); err != nil {
+			rf.lastRotateErr = time.Now()
 			fmt.Fprintf(os.Stderr, "[logger] rotation error for %q: %v\n", rf.filePath, err)
 			if rf.file == nil {
 				return 0, fmt.Errorf("log rotation failed: %w", err)
 			}
 			_, _ = rf.file.Write([]byte(fmt.Sprintf("[logger] rotation error: %v\n", err)))
+		} else {
+			rf.lastRotateErr = time.Time{}
 		}
 	}
 

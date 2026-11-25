@@ -9,18 +9,27 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/jaewoook/server-monitor/internal/models"
+)
+
+const (
+	defaultMaxRetries     = 2
+	defaultRetryBaseDelay = 250 * time.Millisecond
 )
 
 // Sender manages periodic dead-man's-switch aliveness pings to an external uptime service.
 type Sender struct {
-	mu       sync.Mutex
-	url      string
-	interval time.Duration
-	lastTick time.Time
-	lastErr  error
-	method   string
-	client   *http.Client
-	logger   *log.Logger
+	mu             sync.Mutex
+	url            string
+	interval       time.Duration
+	lastTick       time.Time
+	lastErr        error
+	method         string
+	client         *http.Client
+	logger         *log.Logger
+	maxRetries     int
+	retryBaseDelay time.Duration
 }
 
 // New creates a new Sender with the specified heartbeat ping URL and interval.
@@ -41,10 +50,12 @@ func NewWithClient(url string, interval time.Duration, client *http.Client) *Sen
 		}
 	}
 	return &Sender{
-		url:      url,
-		interval: interval,
-		client:   client,
-		method:   http.MethodGet,
+		url:            url,
+		interval:       interval,
+		client:         client,
+		method:         http.MethodGet,
+		maxRetries:     defaultMaxRetries,
+		retryBaseDelay: defaultRetryBaseDelay,
 	}
 }
 
@@ -127,13 +138,16 @@ func (s *Sender) Reset() {
 	s.lastErr = nil
 }
 
-// Ping sends an HTTP request to the configured heartbeat URL.
+// Ping sends an HTTP request to the configured heartbeat URL with bounded retries
+// on transient network errors, HTTP 429, and 5xx responses.
 // It enforces a 5-second timeout if the provided context lacks a deadline.
 func (s *Sender) Ping(ctx context.Context) error {
 	s.mu.Lock()
 	url := s.url
 	method := s.method
 	client := s.client
+	maxRetries := s.maxRetries
+	retryBaseDelay := s.retryBaseDelay
 	s.mu.Unlock()
 
 	if url == "" {
@@ -153,26 +167,53 @@ func (s *Sender) Ping(ctx context.Context) error {
 		defer cancel()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create heartbeat request: %w", err)
-	}
-	req.Header.Set("User-Agent", "server-monitor/1.0")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("heartbeat ping failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Drain up to 64KB to allow connection reuse
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("heartbeat endpoint returned status %d", resp.StatusCode)
+	maxAttempts := 1 + maxRetries
+	if maxAttempts < 1 {
+		maxAttempts = 1
 	}
 
-	return nil
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			delay := retryBaseDelay << (attempt - 1)
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return lastErr
+			case <-timer.C:
+			}
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, url, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create heartbeat request: %w", err)
+		}
+		req.Header.Set("User-Agent", models.UserAgent)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("heartbeat ping failed: %w", err)
+			if ctx.Err() != nil {
+				return lastErr
+			}
+			continue
+		}
+
+		// Drain up to 64KB to allow connection reuse
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+		_ = resp.Body.Close()
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return nil
+		}
+		lastErr = fmt.Errorf("heartbeat endpoint returned status %d", resp.StatusCode)
+		if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
+			return lastErr
+		}
+	}
+
+	return lastErr
 }
 
 // Tick checks whether the interval has elapsed and sends a ping if due.

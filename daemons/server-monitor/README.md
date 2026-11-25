@@ -25,7 +25,7 @@ Alerts are dispatched across multiple channels including **Telegram**, **Discord
   - If your physical server suffers a total power outage, kernel panic, or ISP loss, the external service notifies you immediately.
   - Optional scheduled **Health Digest** (e.g. daily "All systems operational" summary) sent directly to your chat.
 - **Multi-Track Alerting & Noise Prevention:**
-  - Independent track state machines per subsystem (`cpu_spike`, `cpu_plunge`, `memory`, `disk`). A disk warning will never silence or corrupt an ongoing CPU spike alert.
+  - Independent track state machines per subsystem (`cpu_spike`, `cpu_plunge`, `cpu_floor`, `memory`, `disk`, `cpu_temperature`, `gpu_temperature`). A disk warning will never silence or corrupt an ongoing CPU spike alert.
   - Configurable cooldown timers (e.g., 30m) prevent alert storms on long-running incidents.
 - **Direct Telegram Bot Integration:**
   - Uses your bot token (`BOT_TOKEN`) and chat ID (`DEFAULT_CHAT_ID`) to send messages directly via the Telegram Bot API.
@@ -278,9 +278,18 @@ Any configuration value can be set via environment variables. Setting a channel 
 | `DEFAULT_CHAT_ID` / `TELEGRAM_CHAT_ID` | Telegram Chat ID |
 | `TELEGRAM_ENABLED` | Explicitly enable/disable Telegram (`true`/`false`) |
 | `DISCORD_WEBHOOK_URL` | Discord webhook URL |
+| `DISCORD_ENABLED` | Explicitly enable/disable Discord (`true`/`false`) |
 | `SLACK_WEBHOOK_URL` | Slack incoming webhook URL |
+| `SLACK_ENABLED` | Explicitly enable/disable Slack (`true`/`false`) |
+| `EMAIL_USERNAME` | SMTP username |
+| `EMAIL_PASSWORD` | SMTP password |
+| `EMAIL_FROM` | Sender email address (defaults to `EMAIL_USERNAME`) |
+| `EMAIL_TO` | Recipient email address |
+| `EMAIL_ENABLED` | Explicitly enable/disable Email (`true`/`false`) |
 | `WEBHOOK_URL` | Generic HTTP JSON webhook URL |
+| `WEBHOOK_ENABLED` | Explicitly enable/disable generic webhook (`true`/`false`) |
 | `HEARTBEAT_URL` | Outbound dead-man's-switch ping URL |
+| `HEARTBEAT_ENABLED` | Explicitly enable/disable heartbeat (`true`/`false`) |
 | `HEARTBEAT_INTERVAL_SECONDS` | Heartbeat interval in seconds (default: `60`) |
 | `CPU_SPIKE_THRESHOLD` | CPU Spike threshold percentage (default: `85.0`) |
 | `CPU_SPIKE_SUSTAINED_SECONDS`| Spike sustained duration in seconds (default: `15`) |

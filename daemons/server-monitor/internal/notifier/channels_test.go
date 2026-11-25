@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jaewoook/server-monitor/internal/config"
 	"github.com/jaewoook/server-monitor/internal/models"
 )
 
@@ -394,8 +393,7 @@ func TestEmailChannel(t *testing.T) {
 		return nil
 	}
 
-	cfg := config.EmailConfig{
-		Enabled:  true,
+	cfg := EmailOptions{
 		SMTPHost: "smtp.example.com",
 		SMTPPort: 587,
 		UseTLS:   true,
@@ -456,25 +454,25 @@ func TestEmailChannel(t *testing.T) {
 
 func TestEmailChannelErrors(t *testing.T) {
 	// Nil alert
-	ch := NewEmailChannel(config.EmailConfig{})
+	ch := NewEmailChannel(EmailOptions{})
 	if err := ch.Send(nil); err == nil {
 		t.Error("expected error for nil alert")
 	}
 
 	// Missing SMTP host
-	chNoHost := NewEmailChannel(config.EmailConfig{ToEmail: "test@example.com"})
+	chNoHost := NewEmailChannel(EmailOptions{ToEmail: "test@example.com"})
 	if err := chNoHost.Send(&models.Alert{Title: "Test"}); err == nil {
 		t.Error("expected error for missing SMTP host")
 	}
 
 	// Missing ToEmail
-	chNoTo := NewEmailChannel(config.EmailConfig{SMTPHost: "smtp.example.com"})
+	chNoTo := NewEmailChannel(EmailOptions{SMTPHost: "smtp.example.com"})
 	if err := chNoTo.Send(&models.Alert{Title: "Test"}); err == nil {
 		t.Error("expected error for missing ToEmail")
 	}
 
 	// Send failure
-	chFail := NewEmailChannel(config.EmailConfig{
+	chFail := NewEmailChannel(EmailOptions{
 		SMTPHost: "smtp.example.com",
 		SMTPPort: 25,
 		ToEmail:  "test@example.com",
@@ -493,7 +491,7 @@ func TestEmailChannelErrors(t *testing.T) {
 }
 
 func TestEmailChannelTimeout(t *testing.T) {
-	ch := NewEmailChannel(config.EmailConfig{
+	ch := NewEmailChannel(EmailOptions{
 		SMTPHost: "smtp.example.com",
 		SMTPPort: 587,
 		ToEmail:  "test@example.com",
@@ -569,7 +567,7 @@ func TestChannelsFormatTemperatureUnitCelsius(t *testing.T) {
 
 	// Email + FromEmail
 	var emailFrom, emailBody string
-	eCh := NewEmailChannel(config.EmailConfig{
+	eCh := NewEmailChannel(EmailOptions{
 		SMTPHost:  "smtp.example.com",
 		SMTPPort:  587,
 		Username:  "smtp-user@example.com",
@@ -589,5 +587,41 @@ func TestChannelsFormatTemperatureUnitCelsius(t *testing.T) {
 	}
 	if !strings.Contains(emailBody, "82.50°C") || !strings.Contains(emailBody, "75.00°C") {
 		t.Errorf("expected Celsius units in email body, got: %s", emailBody)
+	}
+}
+
+func TestHTTPPosterRetriesTransientFailures(t *testing.T) {
+	var attempts int
+	ch := NewWebhookChannel("http://localhost/webhook")
+	ch.retryBaseDelay = 1 * time.Millisecond
+	ch.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		attempts++
+		if attempts == 1 {
+			return &http.Response{StatusCode: http.StatusTooManyRequests, Body: io.NopCloser(strings.NewReader("rate limited")), Header: make(http.Header)}, nil
+		}
+		if attempts == 2 {
+			return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader("unavailable")), Header: make(http.Header)}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
+	}))
+
+	if err := ch.Send(&models.Alert{Title: "Retry Test"}); err != nil {
+		t.Fatalf("expected retry to succeed on attempt 3, got: %v", err)
+	}
+	if attempts != 3 {
+		t.Errorf("expected 3 attempts, got %d", attempts)
+	}
+
+	// Non-retryable 400 must fail on first attempt
+	attempts = 0
+	ch.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		attempts++
+		return &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader("bad request")), Header: make(http.Header)}, nil
+	}))
+	if err := ch.Send(&models.Alert{Title: "No Retry"}); err == nil {
+		t.Fatal("expected error on HTTP 400")
+	}
+	if attempts != 1 {
+		t.Errorf("expected 1 attempt for non-retryable 400, got %d", attempts)
 	}
 }

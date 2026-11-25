@@ -427,3 +427,22 @@ func TestDaemonStartupReusesInitialMetrics(t *testing.T) {
 		t.Errorf("expected startup notification with reused metrics, got %+v", ch.alerts)
 	}
 }
+
+type panickingCollector struct{}
+
+func (panickingCollector) Collect() (*models.SystemMetrics, error) {
+	panic("simulated collector panic")
+}
+
+func TestDaemonStepPanicRecovery(t *testing.T) {
+	cfg := config.DefaultConfig()
+	d, err := New(cfg, WithCollector(panickingCollector{}))
+	if err != nil {
+		t.Fatalf("failed to create daemon: %v", err)
+	}
+
+	// Must recover cleanly instead of crashing the process
+	if err := d.Step(context.Background()); err != nil {
+		t.Fatalf("unexpected error after panic recovery: %v", err)
+	}
+}

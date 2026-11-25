@@ -61,16 +61,31 @@ func (s *SlackChannel) SendContext(ctx context.Context, alert *models.Alert) err
 		return errors.New("slack webhook URL is not configured")
 	}
 
-	color := "#3498DB"
-	switch alert.Level {
-	case models.AlertLevelCritical:
-		color = "danger"
-	case models.AlertLevelWarning:
-		color = "warning"
-	case models.AlertLevelResolved:
-		color = "good"
+	status, respBody, err := s.postJSON(ctx, s.webhookURL, buildSlackPayload(alert), nil)
+	if err != nil {
+		return fmt.Errorf("slack request failed: %w", err)
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("slack api error (status %d): %s", status, string(respBody))
 	}
 
+	return nil
+}
+
+func slackLevelColor(level models.AlertLevel) string {
+	switch level {
+	case models.AlertLevelCritical:
+		return "danger"
+	case models.AlertLevelWarning:
+		return "warning"
+	case models.AlertLevelResolved:
+		return "good"
+	default:
+		return "#3498DB"
+	}
+}
+
+func buildSlackPayload(alert *models.Alert) slackPayload {
 	var fields []slackField
 	if alert.Hostname != "" {
 		fields = append(fields, slackField{Title: "Host", Value: alert.Hostname, Short: true})
@@ -84,31 +99,18 @@ func (s *SlackChannel) SendContext(ctx context.Context, alert *models.Alert) err
 	}
 
 	desc := alert.Message
-	if len(alert.TopProcesses) > 0 {
-		table := models.FormatProcessesTable(alert.TopProcesses)
-		if table != "" {
-			desc += "\n\n*Top Processes:*\n```\n" + table + "\n```"
-		}
+	if table := models.FormatProcessesTable(alert.TopProcesses); table != "" {
+		desc += "\n\n*Top Processes:*\n```\n" + table + "\n```"
 	}
 
-	payload := slackPayload{
+	return slackPayload{
 		Text: fmt.Sprintf("*[%s] %s* on `%s`", alert.Level, alert.Title, alert.Hostname),
 		Attachments: []slackAttachment{{
-			Color:     color,
+			Color:     slackLevelColor(alert.Level),
 			Title:     fmt.Sprintf("[%s] %s", alert.Level, alert.Title),
 			Text:      desc,
 			Fields:    fields,
 			Timestamp: alert.Timestamp.Unix(),
 		}},
 	}
-
-	status, respBody, err := s.postJSON(ctx, s.webhookURL, payload, nil)
-	if err != nil {
-		return fmt.Errorf("slack request failed: %w", err)
-	}
-	if status != http.StatusOK {
-		return fmt.Errorf("slack api error (status %d): %s", status, string(respBody))
-	}
-
-	return nil
 }

@@ -1,6 +1,8 @@
 package collector
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -18,11 +20,27 @@ import (
 	"github.com/jaewoook/server-monitor/internal/models"
 )
 
+const (
+	minValidSensorTempCelsius = 10.0
+	maxValidSensorTempCelsius = 150.0
+)
+
+var (
+	gpuSensorSubstrings = []string{"gpu", "vga", "nvidia", "amdgpu", "radeon", " tg", "_tg"}
+	gpuSensorPrefixes   = []string{"tg"}
+
+	cpuSensorSubstrings = []string{"cpu", "die", "core", "package", "soc", "k10temp", "acpitz", "pacc", "eacc", " tc", "_tc"}
+	cpuSensorPrefixes   = []string{"tc"}
+
+	fallbackSensorSubstrings = []string{"thermal_zone", "thermal"}
+)
+
 // Collector handles gathering point-in-time system telemetry and resource utilization.
 type Collector struct {
-	topProcCount          int
-	diskMount             string
-	lazyTopProcThreshold  float64
+	topProcCount         int
+	diskMount            string
+	lazyTopProcThreshold float64
+	cpuSampleInterval    time.Duration
 }
 
 // New creates a new Collector instance.
@@ -43,65 +61,94 @@ func (c *Collector) SetLazyTopProcessesThreshold(threshold float64) {
 	c.lazyTopProcThreshold = threshold
 }
 
+// SetCPUSampleInterval configures the duration passed to gopsutil's cpu.Percent.
+// 0 (default) computes the delta since the previous call (ideal for daemon loops);
+// a short positive duration (e.g. 200ms) is recommended for one-off CLI checks.
+func (c *Collector) SetCPUSampleInterval(d time.Duration) {
+	c.cpuSampleInterval = d
+}
+
 // PopulateTopProcesses scans top processes on-demand and attaches them to m
 // if not already present.
 func (c *Collector) PopulateTopProcesses(m *models.SystemMetrics) {
 	if m == nil || c.topProcCount <= 0 || len(m.TopProcesses) > 0 {
 		return
 	}
-	m.TopProcesses = c.collectTopProcesses()
+	m.TopProcesses = c.collectTopProcesses(context.Background())
 }
 
-// Collect gathers current system metrics including CPU, memory, disk, load averages,
-// uptime, and top CPU consuming processes.
+// Collect gathers current system metrics using a background context.
 func (c *Collector) Collect() (*models.SystemMetrics, error) {
+	return c.CollectContext(context.Background())
+}
+
+// CollectContext gathers current system metrics including CPU, memory, disk, load averages,
+// uptime, temperatures, and top CPU-consuming processes, honoring ctx for cancellation.
+// If an individual subsystem fails (e.g. disk mount unavailable), partial metrics are still
+// returned alongside a joined error so healthy subsystems can continue being evaluated.
+func (c *Collector) CollectContext(ctx context.Context) (*models.SystemMetrics, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	metrics := &models.SystemMetrics{
 		Timestamp: time.Now(),
 	}
+	var errs []error
 
 	// 1. CPU Percent (aggregate across all cores)
-	cpuPercents, err := cpu.Percent(0, false)
-	if err == nil && len(cpuPercents) > 0 {
+	if cpuPercents, err := cpu.PercentWithContext(ctx, c.cpuSampleInterval, false); err != nil {
+		metrics.CPUFailed = true
+		errs = append(errs, fmt.Errorf("failed to collect cpu percent: %w", err))
+	} else if len(cpuPercents) == 0 {
+		metrics.CPUFailed = true
+	} else {
 		metrics.CPUPercent = cpuPercents[0]
 	}
 
 	// 2. Virtual Memory
-	vmem, err := mem.VirtualMemory()
-	if err != nil {
-		return nil, fmt.Errorf("failed to collect virtual memory: %w", err)
+	if vmem, err := mem.VirtualMemoryWithContext(ctx); err != nil {
+		metrics.MemoryFailed = true
+		errs = append(errs, fmt.Errorf("failed to collect virtual memory: %w", err))
+	} else {
+		metrics.MemoryPercent = vmem.UsedPercent
 	}
-	metrics.MemoryPercent = vmem.UsedPercent
 
 	// 3. Disk Usage
-	diskUsage, err := disk.Usage(c.diskMount)
-	if err != nil {
-		return nil, fmt.Errorf("failed to collect disk usage for %q: %w", c.diskMount, err)
+	if diskUsage, err := disk.UsageWithContext(ctx, c.diskMount); err != nil {
+		metrics.DiskFailed = true
+		errs = append(errs, fmt.Errorf("failed to collect disk usage for %q: %w", c.diskMount, err))
+	} else {
+		metrics.DiskPercent = diskUsage.UsedPercent
 	}
-	metrics.DiskPercent = diskUsage.UsedPercent
 
 	// 4. Load Averages (defensively handled if unsupported on platform)
-	loadStat, err := load.Avg()
-	if err == nil && loadStat != nil {
+	if loadStat, err := load.AvgWithContext(ctx); err == nil && loadStat != nil {
 		metrics.Load1 = loadStat.Load1
 		metrics.Load5 = loadStat.Load5
 		metrics.Load15 = loadStat.Load15
 	}
 
 	// 5. Host Uptime
-	uptime, err := host.Uptime()
-	if err != nil {
-		return nil, fmt.Errorf("failed to collect host uptime: %w", err)
+	if uptime, err := host.UptimeWithContext(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("failed to collect host uptime: %w", err))
+	} else {
+		metrics.UptimeSeconds = uptime
 	}
-	metrics.UptimeSeconds = uptime
 
 	// 6. Top Processes (by CPU utilization)
-	// If lazyTopProcThreshold > 0, skip process table scan unless CPU exceeds threshold.
 	if c.topProcCount > 0 && (c.lazyTopProcThreshold <= 0 || metrics.CPUPercent >= c.lazyTopProcThreshold) {
-		metrics.TopProcesses = c.collectTopProcesses()
+		metrics.TopProcesses = c.collectTopProcesses(ctx)
 	}
 
 	// 7. Thermal sensors (CPU / GPU temperature)
-	// On Darwin platforms (including Apple Silicon), query hardware SMC keys (Tg* for GPU, Tp*/Te* for CPU)
+	c.collectTemperatures(ctx, metrics)
+
+	return metrics, errors.Join(errs...)
+}
+
+func (c *Collector) collectTemperatures(ctx context.Context, metrics *models.SystemMetrics) {
+	// On Darwin platforms (including Apple Silicon), query hardware SMC keys first.
 	smcCPUTemp, smcHasCPU, smcGPUTemp, smcHasGPU := readDarwinSMCTemperatures()
 	if smcHasCPU {
 		metrics.CPUTempCelsius = smcCPUTemp
@@ -112,9 +159,9 @@ func (c *Collector) Collect() (*models.SystemMetrics, error) {
 		metrics.HasGPUTemp = true
 	}
 
-	// If either CPU or GPU temperature is not populated from SMC, query standard system sensors
+	// If either CPU or GPU temperature is not populated from SMC, query standard system sensors.
 	if !metrics.HasCPUTemp || !metrics.HasGPUTemp {
-		temps, err := sensors.SensorsTemperatures()
+		temps, err := sensors.TemperaturesWithContext(ctx)
 		if err == nil && len(temps) > 0 {
 			cpuTemp, hasCPU, gpuTemp, hasGPU := parseTemperatures(temps)
 			if !metrics.HasCPUTemp && hasCPU {
@@ -127,13 +174,11 @@ func (c *Collector) Collect() (*models.SystemMetrics, error) {
 			}
 		}
 	}
-
-	return metrics, nil
 }
 
 // collectTopProcesses scans running processes defensively and returns the top N by CPU percent.
-func (c *Collector) collectTopProcesses() []models.ProcessInfo {
-	procs, err := process.Processes()
+func (c *Collector) collectTopProcesses(ctx context.Context) []models.ProcessInfo {
+	procs, err := process.ProcessesWithContext(ctx)
 	if err != nil {
 		return nil
 	}
@@ -141,15 +186,15 @@ func (c *Collector) collectTopProcesses() []models.ProcessInfo {
 	var procList []models.ProcessInfo
 	for _, p := range procs {
 		// Processes may terminate or deny access at any point; handle defensively.
-		name, err := p.Name()
+		name, err := p.NameWithContext(ctx)
 		if err != nil {
 			continue
 		}
-		cpuPct, err := p.CPUPercent()
+		cpuPct, err := p.CPUPercentWithContext(ctx)
 		if err != nil {
 			continue
 		}
-		memPct, err := p.MemoryPercent()
+		memPct, err := p.MemoryPercentWithContext(ctx)
 		if err != nil {
 			continue
 		}
@@ -181,43 +226,51 @@ func sortAndLimitProcesses(procs []models.ProcessInfo, count int) []models.Proce
 	return procs
 }
 
+func matchesSensor(name string, prefixes, substrings []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	for _, sub := range substrings {
+		if strings.Contains(name, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+func meanFloat64(vals []float64) (float64, bool) {
+	if len(vals) == 0 {
+		return 0, false
+	}
+	var sum float64
+	for _, v := range vals {
+		sum += v
+	}
+	return sum / float64(len(vals)), true
+}
+
 // parseTemperatures categorizes temperature sensor readings into CPU and GPU groups,
-// filtering out invalid readings (<= 0 or > 150 C), and returns their averages.
+// filtering out invalid readings (< 10°C or > 150°C, NaN, Inf), and returns their averages.
 // If no explicit CPU sensor is found, generic thermal zones are used as a fallback.
 func parseTemperatures(stats []sensors.TemperatureStat) (cpuTemp float64, hasCPU bool, gpuTemp float64, hasGPU bool) {
-	var cpuTemps []float64
-	var gpuTemps []float64
-	var fallbackTemps []float64
+	var cpuTemps, gpuTemps, fallbackTemps []float64
 
 	for _, stat := range stats {
 		if math.IsNaN(stat.Temperature) || math.IsInf(stat.Temperature, 0) ||
-			stat.Temperature < 10 || stat.Temperature > 150 {
+			stat.Temperature < minValidSensorTempCelsius || stat.Temperature > maxValidSensorTempCelsius {
 			continue
 		}
 		name := strings.ToLower(stat.SensorKey)
 
+		switch {
 		// GPU sensors (check first so "gpu_core" is attributed to GPU)
-		if strings.Contains(name, "gpu") || strings.Contains(name, "vga") ||
-			strings.Contains(name, "nvidia") || strings.Contains(name, "amdgpu") ||
-			strings.Contains(name, "radeon") || strings.HasPrefix(name, "tg") ||
-			strings.Contains(name, " tg") || strings.Contains(name, "_tg") {
+		case matchesSensor(name, gpuSensorPrefixes, gpuSensorSubstrings):
 			gpuTemps = append(gpuTemps, stat.Temperature)
-			continue
-		}
-
-		// CPU sensors (including Apple Silicon IOHID pACC / eACC MTR sensors)
-		if strings.Contains(name, "cpu") || strings.Contains(name, "die") ||
-			strings.Contains(name, "core") || strings.Contains(name, "package") ||
-			strings.Contains(name, "soc") || strings.Contains(name, "k10temp") ||
-			strings.Contains(name, "acpitz") || strings.Contains(name, "pacc") ||
-			strings.Contains(name, "eacc") || strings.HasPrefix(name, "tc") ||
-			strings.Contains(name, " tc") || strings.Contains(name, "_tc") {
+		case matchesSensor(name, cpuSensorPrefixes, cpuSensorSubstrings):
 			cpuTemps = append(cpuTemps, stat.Temperature)
-			continue
-		}
-
-		// Fallback for general thermal zones
-		if strings.Contains(name, "thermal_zone") || strings.Contains(name, "thermal") {
+		case matchesSensor(name, nil, fallbackSensorSubstrings):
 			fallbackTemps = append(fallbackTemps, stat.Temperature)
 		}
 	}
@@ -226,23 +279,7 @@ func parseTemperatures(stats []sensors.TemperatureStat) (cpuTemp float64, hasCPU
 		cpuTemps = fallbackTemps
 	}
 
-	if len(cpuTemps) > 0 {
-		var sum float64
-		for _, t := range cpuTemps {
-			sum += t
-		}
-		cpuTemp = sum / float64(len(cpuTemps))
-		hasCPU = true
-	}
-
-	if len(gpuTemps) > 0 {
-		var sum float64
-		for _, t := range gpuTemps {
-			sum += t
-		}
-		gpuTemp = sum / float64(len(gpuTemps))
-		hasGPU = true
-	}
-
+	cpuTemp, hasCPU = meanFloat64(cpuTemps)
+	gpuTemp, hasGPU = meanFloat64(gpuTemps)
 	return cpuTemp, hasCPU, gpuTemp, hasGPU
 }

@@ -559,3 +559,61 @@ func TestTemperatureDetection_NoSensorsOrDisabled(t *testing.T) {
 	}
 }
 
+func TestFailedMetricsDoNotEmitFalseAlertsOrRecoveries(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.CPU.PlungeDrop.Enabled = true
+	cfg.CPU.PlungeDrop.FromMinPercent = 50.0
+	cfg.CPU.PlungeDrop.DeltaPercent = 40.0
+	cfg.CPU.FloorDrop.Enabled = true
+	cfg.CPU.FloorDrop.ThresholdPercent = 5.0
+	cfg.CPU.FloorDrop.SustainedSeconds = 5
+	cfg.Health.Disk.Enabled = true
+	cfg.Health.Disk.ThresholdPercent = 85.0
+	cfg.Server.CheckIntervalSeconds = 5
+
+	d := New(cfg)
+	t0 := time.Now()
+
+	// Establish active disk breach and high CPU baseline
+	evs1 := d.Evaluate(makeMetrics(80.0, 20.0, 92.0, t0))
+	if len(evs1) != 1 || evs1[0].RuleName != RuleDisk || !evs1[0].IsActive {
+		t.Fatalf("expected initial active disk event, got %+v", evs1)
+	}
+
+	// Next tick: CPU and Disk fail to collect (values are 0.0, Failed flags true)
+	failedMetrics := &models.SystemMetrics{
+		Timestamp:     t0.Add(5 * time.Second),
+		CPUPercent:    0.0,
+		MemoryPercent: 20.0,
+		DiskPercent:   0.0,
+		CPUFailed:     true,
+		DiskFailed:    true,
+	}
+	evs2 := d.Evaluate(failedMetrics)
+	if len(evs2) != 0 {
+		t.Fatalf("expected 0 events when CPU and Disk failed to collect, got %+v", evs2)
+	}
+}
+
+func TestSustainedDurationWallClockUnderSlowTicks(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.CPU.Spike.Enabled = true
+	cfg.CPU.Spike.ThresholdPercent = 85.0
+	cfg.CPU.Spike.SustainedSeconds = 15
+	cfg.Server.CheckIntervalSeconds = 5
+
+	d := New(cfg)
+	t0 := time.Now()
+
+	// Tick 1 at t0 -> 5s elapsed (< 15s)
+	if evs := d.Evaluate(makeMetrics(92.0, 20.0, 30.0, t0)); len(evs) != 0 {
+		t.Fatalf("expected no event on first tick, got %+v", evs)
+	}
+
+	// Tick 2 delayed by 12s (wall elapsed = 12 + 5 = 17s >= 15s) -> should trigger immediately
+	evs := d.Evaluate(makeMetrics(93.0, 20.0, 30.0, t0.Add(12*time.Second)))
+	if len(evs) != 1 || evs[0].RuleName != RuleCPUSpike || !evs[0].IsActive {
+		t.Fatalf("expected cpu_spike to trigger on delayed tick via wall clock, got %+v", evs)
+	}
+}
+

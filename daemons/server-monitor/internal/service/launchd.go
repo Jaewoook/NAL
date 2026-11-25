@@ -149,6 +149,28 @@ func (b *launchdBackend) waitUntil(attempts int, check func() bool) bool {
 	return false
 }
 
+func (b *launchdBackend) bootstrap(serviceName, domain, target, plistPath string) (string, error) {
+	out, err := b.run("launchctl", "bootstrap", domain, plistPath)
+	if err == nil {
+		return target, nil
+	}
+
+	// If gui/<uid> bootstrap failed on headless SSH, try user/<uid>.
+	altDomain := "user/" + strconv.Itoa(os.Getuid())
+	if domain != altDomain && os.Geteuid() != 0 {
+		if altOut, altErr := b.run("launchctl", "bootstrap", altDomain, plistPath); altErr == nil {
+			return altDomain + "/" + serviceName, nil
+		} else {
+			out = altOut
+		}
+	}
+
+	if _, loadErr := b.run("launchctl", "load", plistPath); loadErr == nil {
+		return target, nil
+	}
+	return "", fmt.Errorf("failed to load service into launchd: %s (%v)", strings.TrimSpace(string(out)), err)
+}
+
 func (b *launchdBackend) Start(serviceName, targetPath string) (string, error) {
 	info := b.query(serviceName, targetPath)
 	if info.Loaded && info.State == "running" && info.PID > 0 {
@@ -162,23 +184,10 @@ func (b *launchdBackend) Start(serviceName, targetPath string) (string, error) {
 	}
 
 	if !info.Loaded {
-		if out, err := b.run("launchctl", "bootstrap", domain, plistPath); err != nil {
-			// If gui/<uid> bootstrap failed on headless SSH, try user/<uid>
-			altDomain := "user/" + strconv.Itoa(os.Getuid())
-			if domain != altDomain && os.Geteuid() != 0 {
-				if altOut, altErr := b.run("launchctl", "bootstrap", altDomain, plistPath); altErr == nil {
-					domain = altDomain
-					target = altDomain + "/" + serviceName
-					err = nil
-				} else {
-					out = altOut
-				}
-			}
-			if err != nil {
-				if _, loadErr := b.run("launchctl", "load", plistPath); loadErr != nil {
-					return "", fmt.Errorf("failed to load service into launchd: %s (%v)", strings.TrimSpace(string(out)), err)
-				}
-			}
+		var err error
+		target, err = b.bootstrap(serviceName, domain, target, plistPath)
+		if err != nil {
+			return "", err
 		}
 	}
 
@@ -265,6 +274,33 @@ func (b *launchdBackend) Uninstall(serviceName, targetPath string) (string, erro
 	return fmt.Sprintf("Service %s uninstalled from launchd.", serviceName), nil
 }
 
+type processStats struct {
+	uptime string
+	memory string
+	cpu    string
+}
+
+func (b *launchdBackend) queryProcessStats(pid int) (processStats, bool) {
+	procOut, err := b.run("ps", "-p", strconv.Itoa(pid), "-o", "%cpu,%mem,rss,etime")
+	if err != nil {
+		return processStats{}, false
+	}
+	lines := strings.Split(strings.TrimSpace(string(procOut)), "\n")
+	if len(lines) < 2 {
+		return processStats{}, false
+	}
+	fields := strings.Fields(lines[1])
+	if len(fields) < 4 {
+		return processStats{}, false
+	}
+	rssKB, _ := strconv.Atoi(fields[2])
+	return processStats{
+		uptime: fields[3],
+		memory: fmt.Sprintf("%.1f MB RSS (%s%%)", float64(rssKB)/1024.0, fields[1]),
+		cpu:    fields[0] + "%",
+	}, true
+}
+
 func (b *launchdBackend) Status(serviceName, targetPath string) (string, error) {
 	plistPath := findLaunchdPlist(serviceName, targetPath)
 	info := b.query(serviceName, targetPath)
@@ -288,21 +324,10 @@ func (b *launchdBackend) Status(serviceName, targetPath string) (string, error) 
 	if info.State == "running" && info.PID > 0 {
 		sb.WriteString("   State:       Active (running)\n")
 		sb.WriteString(fmt.Sprintf("   PID:         %d\n", info.PID))
-
-		if procOut, err := b.run("ps", "-p", strconv.Itoa(info.PID), "-o", "%cpu,%mem,rss,etime"); err == nil {
-			lines := strings.Split(strings.TrimSpace(string(procOut)), "\n")
-			if len(lines) >= 2 {
-				fields := strings.Fields(lines[1])
-				if len(fields) >= 4 {
-					cpu := fields[0] + "%"
-					rssKB, _ := strconv.Atoi(fields[2])
-					memMB := fmt.Sprintf("%.1f MB RSS (%s%%)", float64(rssKB)/1024.0, fields[1])
-					uptime := fields[3]
-					sb.WriteString(fmt.Sprintf("   Uptime:      %s\n", uptime))
-					sb.WriteString(fmt.Sprintf("   Memory:      %s\n", memMB))
-					sb.WriteString(fmt.Sprintf("   CPU:         %s\n", cpu))
-				}
-			}
+		if stats, ok := b.queryProcessStats(info.PID); ok {
+			sb.WriteString(fmt.Sprintf("   Uptime:      %s\n", stats.uptime))
+			sb.WriteString(fmt.Sprintf("   Memory:      %s\n", stats.memory))
+			sb.WriteString(fmt.Sprintf("   CPU:         %s\n", stats.cpu))
 		}
 	} else {
 		sb.WriteString(fmt.Sprintf("   State:       Inactive (%s)\n", info.State))

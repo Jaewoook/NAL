@@ -244,3 +244,30 @@ func TestHeartbeatContextDeadlineEnforced(t *testing.T) {
 	}
 }
 
+func TestHeartbeatPingRetriesTransient5xx(t *testing.T) {
+	var attempts int32
+	sender := New("http://example.com/ping", 60*time.Second)
+	sender.retryBaseDelay = 1 * time.Millisecond
+	sender.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if atomic.AddInt32(&attempts, 1) == 1 {
+			return &http.Response{
+				StatusCode: http.StatusServiceUnavailable,
+				Body:       io.NopCloser(strings.NewReader("busy")),
+				Header:     make(http.Header),
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("ok")),
+			Header:     make(http.Header),
+		}, nil
+	}))
+
+	if err := sender.Ping(context.Background()); err != nil {
+		t.Fatalf("expected heartbeat retry to succeed, got: %v", err)
+	}
+	if atomic.LoadInt32(&attempts) != 2 {
+		t.Errorf("expected 2 attempts, got %d", atomic.LoadInt32(&attempts))
+	}
+}
+

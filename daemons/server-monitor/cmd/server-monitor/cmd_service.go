@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"runtime"
 
 	"github.com/jaewoook/server-monitor/internal/service"
 )
@@ -74,14 +73,7 @@ func runServiceInstall(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	resolvedType := *serviceType
-	if resolvedType == "" {
-		if runtime.GOOS == "darwin" {
-			resolvedType = "launchd"
-		} else {
-			resolvedType = "systemd"
-		}
-	}
+	resolvedType := service.ResolveServiceType(*serviceType)
 
 	opts := service.ServiceOptions{
 		BinaryPath: *binPath,

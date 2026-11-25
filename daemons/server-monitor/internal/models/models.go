@@ -4,6 +4,9 @@ import (
 	"time"
 )
 
+// UserAgent is the HTTP User-Agent string sent by outbound requests.
+const UserAgent = "server-monitor/1.0"
+
 // AlertLevel represents the severity or state of an alert.
 type AlertLevel string
 
@@ -28,6 +31,9 @@ type SystemMetrics struct {
 	CPUPercent     float64       `json:"cpu_percent" yaml:"cpu_percent"`
 	MemoryPercent  float64       `json:"memory_percent" yaml:"memory_percent"`
 	DiskPercent    float64       `json:"disk_percent" yaml:"disk_percent"`
+	CPUFailed      bool          `json:"cpu_failed,omitempty" yaml:"cpu_failed,omitempty"`
+	MemoryFailed   bool          `json:"memory_failed,omitempty" yaml:"memory_failed,omitempty"`
+	DiskFailed     bool          `json:"disk_failed,omitempty" yaml:"disk_failed,omitempty"`
 	CPUTempCelsius float64       `json:"cpu_temp_celsius" yaml:"cpu_temp_celsius"`
 	GPUTempCelsius float64       `json:"gpu_temp_celsius" yaml:"gpu_temp_celsius"`
 	HasCPUTemp     bool          `json:"has_cpu_temp" yaml:"has_cpu_temp"`

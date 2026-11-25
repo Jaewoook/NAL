@@ -5,9 +5,15 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/jaewoook/server-monitor/internal/models"
 )
+
+// DefaultConfigFilenames defines the canonical config file search order.
+var DefaultConfigFilenames = []string{"config.yml", "config.yaml"}
 
 // ServerConfig defines basic server identification and sampling rate.
 type ServerConfig struct {
@@ -471,5 +477,21 @@ func ValidateAndApplyDefaults(cfg *Config) {
 	defaultInt(&cfg.Logging.MaxSizeMB, def.Logging.MaxSizeMB)
 	if cfg.Logging.MaxBackups < 0 {
 		cfg.Logging.MaxBackups = def.Logging.MaxBackups
+	}
+}
+
+// RuleCooldowns returns the configured per-rule cooldown durations keyed by canonical rule ID.
+func (c *Config) RuleCooldowns() map[string]time.Duration {
+	if c == nil {
+		return nil
+	}
+	return map[string]time.Duration{
+		models.RuleCPUSpike:  time.Duration(c.CPU.Spike.CooldownMinutes) * time.Minute,
+		models.RuleCPUPlunge: time.Duration(c.CPU.PlungeDrop.CooldownMinutes) * time.Minute,
+		models.RuleCPUFloor:  time.Duration(c.CPU.FloorDrop.CooldownMinutes) * time.Minute,
+		models.RuleMemory:    time.Duration(c.Health.Memory.CooldownMinutes) * time.Minute,
+		models.RuleDisk:      time.Duration(c.Health.Disk.CooldownMinutes) * time.Minute,
+		models.RuleCPUTemp:   time.Duration(c.Health.Temperature.CooldownMinutes) * time.Minute,
+		models.RuleGPUTemp:   time.Duration(c.Health.Temperature.CooldownMinutes) * time.Minute,
 	}
 }

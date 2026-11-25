@@ -117,69 +117,80 @@ func (m *Manager) ProcessEvents(events []models.RawConditionEvent, metrics *mode
 			ruleName = "unknown"
 		}
 
-		track, exists := m.tracks[ruleName]
-		if !exists {
-			track = &alertTrack{
-				ruleName: ruleName,
-				cooldown: m.getCooldown(ruleName),
-			}
-			m.tracks[ruleName] = track
-		}
+		track := m.getOrCreateTrack(ruleName)
 
+		var emitted *models.Alert
 		if m.isEventRule(ruleName) {
-			// Event-based rules (e.g. cpu_plunge)
-			if !ev.IsActive || ev.Level == models.AlertLevelResolved {
-				continue
-			}
-
-			if track.cooldown > 0 && !track.lastAlertTime.IsZero() && now.Sub(track.lastAlertTime) < track.cooldown {
-				continue
-			}
-
-			track.lastAlertTime = now
-			track.active = false
-
-			level := ev.Level
-			if level == "" {
-				level = models.AlertLevelWarning
-			}
-
-			alerts = append(alerts, m.createAlert(ev, now, level, metrics))
-			continue
+			emitted = m.processEventTrack(track, ev, now, metrics)
+		} else {
+			emitted = m.processStatefulTrack(track, ev, now, metrics)
 		}
-
-		// Stateful rules (e.g. cpu_spike, memory, disk, cpu_floor, temperatures)
-		if !ev.IsActive || ev.Level == models.AlertLevelResolved {
-			if track.active {
-				track.active = false
-				if m.notifyOnRecovery {
-					alerts = append(alerts, m.createAlert(ev, now, models.AlertLevelResolved, metrics))
-				}
-			}
-			continue
-		}
-
-		if !track.active {
-			track.active = true
-			track.lastAlertTime = now
-
-			level := ev.Level
-			if level == "" {
-				level = models.AlertLevelCritical
-			}
-			alerts = append(alerts, m.createAlert(ev, now, level, metrics))
-		} else if track.cooldown > 0 && !now.Before(track.lastAlertTime.Add(track.cooldown)) {
-			track.lastAlertTime = now
-
-			level := ev.Level
-			if level == "" {
-				level = models.AlertLevelCritical
-			}
-			alerts = append(alerts, m.createAlert(ev, now, level, metrics))
+		if emitted != nil {
+			alerts = append(alerts, *emitted)
 		}
 	}
 
 	return alerts
+}
+
+func (m *Manager) getOrCreateTrack(ruleName string) *alertTrack {
+	if track, exists := m.tracks[ruleName]; exists {
+		return track
+	}
+	track := &alertTrack{
+		ruleName: ruleName,
+		cooldown: m.getCooldown(ruleName),
+	}
+	m.tracks[ruleName] = track
+	return track
+}
+
+func (m *Manager) processEventTrack(track *alertTrack, ev models.RawConditionEvent, now time.Time, metrics *models.SystemMetrics) *models.Alert {
+	if !ev.IsActive || ev.Level == models.AlertLevelResolved {
+		return nil
+	}
+	if track.cooldown > 0 && !track.lastAlertTime.IsZero() && now.Sub(track.lastAlertTime) < track.cooldown {
+		return nil
+	}
+
+	track.lastAlertTime = now
+	track.active = false
+
+	level := ev.Level
+	if level == "" {
+		level = models.AlertLevelWarning
+	}
+	alert := m.createAlert(ev, now, level, metrics)
+	return &alert
+}
+
+func (m *Manager) processStatefulTrack(track *alertTrack, ev models.RawConditionEvent, now time.Time, metrics *models.SystemMetrics) *models.Alert {
+	if !ev.IsActive || ev.Level == models.AlertLevelResolved {
+		if !track.active {
+			return nil
+		}
+		track.active = false
+		if !m.notifyOnRecovery {
+			return nil
+		}
+		alert := m.createAlert(ev, now, models.AlertLevelResolved, metrics)
+		return &alert
+	}
+
+	shouldAlert := !track.active || (track.cooldown > 0 && !now.Before(track.lastAlertTime.Add(track.cooldown)))
+	if !shouldAlert {
+		return nil
+	}
+
+	track.active = true
+	track.lastAlertTime = now
+
+	level := ev.Level
+	if level == "" {
+		level = models.AlertLevelCritical
+	}
+	alert := m.createAlert(ev, now, level, metrics)
+	return &alert
 }
 
 func (m *Manager) getCooldown(ruleName string) time.Duration {

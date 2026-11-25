@@ -50,7 +50,7 @@ func resolveConfig(configPath string) (*config.Config, error) {
 	if configPath != "" {
 		return config.LoadConfig(configPath)
 	}
-	for _, candidate := range []string{"config.yaml", "config.yml"} {
+	for _, candidate := range config.DefaultConfigFilenames {
 		if _, err := os.Stat(candidate); err == nil {
 			return config.LoadConfig(candidate)
 		}

@@ -42,7 +42,7 @@ func (w *WebhookChannel) SendContext(ctx context.Context, alert *models.Alert) e
 	}
 
 	headers := map[string]string{
-		"User-Agent": "server-monitor/1.0",
+		"User-Agent": models.UserAgent,
 	}
 
 	status, respBody, err := w.postJSON(ctx, w.url, alert, headers)

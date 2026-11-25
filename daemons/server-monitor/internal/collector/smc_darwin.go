@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -118,12 +119,15 @@ func (lib *iokitSMC) callStruct(conn uint32, inp *smcParamStruct, out *smcParamS
 	return lib.ioConnectCallStructMethod(conn, kSMCHandleYPCEvent, unsafe.Pointer(inp), inSize, unsafe.Pointer(out), &outSize) == 0 && out.result == 0
 }
 
+const smcDiscoveryRetryInterval = 30 * time.Second
+
 // smcReader encapsulates Apple SMC key discovery, caching, and temperature sampling.
 type smcReader struct {
 	lib iokitSMC
 
 	mu               sync.Mutex
 	discovered       bool
+	lastDiscoveryTry time.Time
 	gpuKeys          []smcKeyDescriptor
 	cpuKeys          []smcKeyDescriptor
 	sleepSubDesc     *smcKeyDescriptor
@@ -313,18 +317,13 @@ func (r *smcReader) readActiveTemperature(conn uint32, desc smcKeyDescriptor) (f
 	return val, true
 }
 
-func meanFloat64(vals []float64) (float64, bool) {
-	if len(vals) == 0 {
-		return 0, false
-	}
-	var sum float64
-	for _, v := range vals {
-		sum += v
-	}
-	return sum / float64(len(vals)), true
-}
-
 func (r *smcReader) readTemperatures() (cpuTemp float64, hasCPU bool, gpuTemp float64, hasGPU bool) {
+	defer func() {
+		if recover() != nil {
+			cpuTemp, hasCPU, gpuTemp, hasGPU = 0, false, 0, false
+		}
+	}()
+
 	conn, err := r.lib.open()
 	if err != nil || conn == 0 {
 		return 0, false, 0, false
@@ -332,9 +331,14 @@ func (r *smcReader) readTemperatures() (cpuTemp float64, hasCPU bool, gpuTemp fl
 	defer r.lib.ioServiceClose(conn)
 
 	r.mu.Lock()
-	if !r.discovered {
+	if !r.discovered && (r.lastDiscoveryTry.IsZero() || time.Since(r.lastDiscoveryTry) >= smcDiscoveryRetryInterval) {
+		r.lastDiscoveryTry = time.Now()
 		r.gpuKeys, r.cpuKeys, r.sleepSubDesc = r.discoverKeys(conn)
-		r.discovered = true
+		// Only latch discovered=true once at least one key is found so a transient
+		// early-boot IOKit failure does not permanently disable SMC sensing.
+		if len(r.gpuKeys) > 0 || len(r.cpuKeys) > 0 || r.sleepSubDesc != nil {
+			r.discovered = true
+		}
 	}
 	gpuKeys := append([]smcKeyDescriptor(nil), r.gpuKeys...)
 	cpuKeys := append([]smcKeyDescriptor(nil), r.cpuKeys...)

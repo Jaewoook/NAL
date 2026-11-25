@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"text/template"
+
+	"github.com/jaewoook/server-monitor/internal/config"
 )
 
 // ServiceOptions defines metadata used to render service unit files or plists.
@@ -22,107 +24,8 @@ type ServiceOptions struct {
 	LogDir      string
 }
 
-func applyDefaults(opts ServiceOptions) ServiceOptions {
-	if opts.ServiceName == "" {
-		opts.ServiceName = "server-monitor"
-	}
-	if opts.Description == "" {
-		opts.Description = "Physical Server Monitor Daemon"
-	}
-	if opts.BinaryPath == "" {
-		if exe, err := os.Executable(); err == nil {
-			if absExe, err := filepath.Abs(exe); err == nil {
-				opts.BinaryPath = absExe
-			} else {
-				opts.BinaryPath = exe
-			}
-		} else {
-			opts.BinaryPath = "/usr/local/bin/server-monitor"
-		}
-	} else {
-		if absExe, err := filepath.Abs(opts.BinaryPath); err == nil {
-			opts.BinaryPath = absExe
-		}
-	}
-
-	// 1. Resolve ConfigPath if not specified
-	if opts.ConfigPath == "" {
-		// Look for config.yml or config.yaml in current working directory
-		for _, name := range []string{"config.yml", "config.yaml"} {
-			if _, err := os.Stat(name); err == nil {
-				if abs, err := filepath.Abs(name); err == nil {
-					opts.ConfigPath = abs
-					break
-				}
-			}
-		}
-		// If still not found, look adjacent to the binary
-		if opts.ConfigPath == "" && opts.BinaryPath != "" {
-			binDir := filepath.Dir(opts.BinaryPath)
-			for _, name := range []string{"config.yml", "config.yaml"} {
-				cand := filepath.Join(binDir, name)
-				if _, err := os.Stat(cand); err == nil {
-					opts.ConfigPath = cand
-					break
-				}
-			}
-		}
-		// OS-specific fallbacks
-		if opts.ConfigPath == "" {
-			if runtime.GOOS == "darwin" {
-				if home, err := os.UserHomeDir(); err == nil && home != "" {
-					opts.ConfigPath = filepath.Join(home, ".config", opts.ServiceName, "config.yml")
-				} else {
-					opts.ConfigPath = "/etc/server-monitor/config.yml"
-				}
-			} else {
-				opts.ConfigPath = "/etc/server-monitor/config.yml"
-			}
-		}
-	} else {
-		if abs, err := filepath.Abs(opts.ConfigPath); err == nil {
-			opts.ConfigPath = abs
-		}
-	}
-
-	// 2. Resolve WorkingDir
-	if opts.WorkingDir == "" {
-		if opts.ConfigPath != "" && filepath.IsAbs(opts.ConfigPath) {
-			opts.WorkingDir = filepath.Dir(opts.ConfigPath)
-		} else if opts.BinaryPath != "" && filepath.IsAbs(opts.BinaryPath) {
-			opts.WorkingDir = filepath.Dir(opts.BinaryPath)
-		}
-	}
-
-	// 3. Resolve User
-	if opts.User == "" {
-		if u, err := user.Current(); err == nil && u.Username != "" {
-			opts.User = u.Username
-		} else {
-			opts.User = "root"
-		}
-	}
-
-	// 4. Resolve LogDir
-	if opts.LogDir == "" {
-		if runtime.GOOS == "darwin" {
-			isRoot := os.Geteuid() == 0
-			if isRoot {
-				opts.LogDir = "/var/log"
-			} else if home, err := os.UserHomeDir(); err == nil && home != "" {
-				opts.LogDir = filepath.Join(home, "Library", "Logs")
-			} else {
-				opts.LogDir = "/tmp"
-			}
-		} else {
-			opts.LogDir = "/var/log"
-		}
-	}
-
-	return opts
-}
-
-const systemdTemplate = `[Unit]
+var (
+	systemdTmpl = template.Must(template.New("systemd").Parse(`[Unit]
 Description={{ .Description }}
 After=network.target
 
@@ -138,9 +41,9 @@ RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target
-`
+`))
 
-const launchdTemplate = `<?xml version="1.0" encoding="UTF-8"?>
+	launchdTmpl = template.Must(template.New("launchd").Parse(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -167,30 +70,144 @@ const launchdTemplate = `<?xml version="1.0" encoding="UTF-8"?>
     <string>{{ .LogDir }}/{{ .ServiceName }}.log</string>
 </dict>
 </plist>
-`
+`))
+)
+
+func applyDefaults(opts ServiceOptions) ServiceOptions {
+	if opts.ServiceName == "" {
+		opts.ServiceName = "server-monitor"
+	}
+	if opts.Description == "" {
+		opts.Description = "Physical Server Monitor Daemon"
+	}
+	opts.BinaryPath = resolveBinaryPath(opts.BinaryPath)
+	opts.ConfigPath = resolveConfigPath(opts.ConfigPath, opts.BinaryPath, opts.ServiceName)
+	opts.WorkingDir = resolveWorkingDir(opts.WorkingDir, opts.ConfigPath, opts.BinaryPath)
+	opts.User = resolveUser(opts.User)
+	opts.LogDir = resolveLogDir(opts.LogDir)
+	return opts
+}
+
+func resolveBinaryPath(binPath string) string {
+	if binPath == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return "/usr/local/bin/server-monitor"
+		}
+		if abs, err := filepath.Abs(exe); err == nil {
+			return abs
+		}
+		return exe
+	}
+	if abs, err := filepath.Abs(binPath); err == nil {
+		return abs
+	}
+	return binPath
+}
+
+func findExistingConfig(dir string) string {
+	for _, name := range config.DefaultConfigFilenames {
+		cand := name
+		if dir != "" {
+			cand = filepath.Join(dir, name)
+		}
+		if _, err := os.Stat(cand); err == nil {
+			if abs, err := filepath.Abs(cand); err == nil {
+				return abs
+			}
+			return cand
+		}
+	}
+	return ""
+}
+
+func resolveConfigPath(cfgPath, binPath, serviceName string) string {
+	if cfgPath != "" {
+		if abs, err := filepath.Abs(cfgPath); err == nil {
+			return abs
+		}
+		return cfgPath
+	}
+	if found := findExistingConfig(""); found != "" {
+		return found
+	}
+	if binPath != "" {
+		if found := findExistingConfig(filepath.Dir(binPath)); found != "" {
+			return found
+		}
+	}
+	if runtime.GOOS == "darwin" {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return filepath.Join(home, ".config", serviceName, "config.yml")
+		}
+	}
+	return "/etc/server-monitor/config.yml"
+}
+
+func resolveWorkingDir(workDir, cfgPath, binPath string) string {
+	if workDir != "" {
+		return workDir
+	}
+	if cfgPath != "" && filepath.IsAbs(cfgPath) {
+		return filepath.Dir(cfgPath)
+	}
+	if binPath != "" && filepath.IsAbs(binPath) {
+		return filepath.Dir(binPath)
+	}
+	return ""
+}
+
+func resolveUser(u string) string {
+	if u != "" {
+		return u
+	}
+	if cur, err := user.Current(); err == nil && cur.Username != "" {
+		return cur.Username
+	}
+	return "root"
+}
+
+func resolveLogDir(logDir string) string {
+	if logDir != "" {
+		return logDir
+	}
+	if runtime.GOOS == "darwin" {
+		if os.Geteuid() == 0 {
+			return "/var/log"
+		}
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return filepath.Join(home, "Library", "Logs")
+		}
+		return "/tmp"
+	}
+	return "/var/log"
+}
 
 // GenerateSystemdUnit generates a systemd service unit string.
 func GenerateSystemdUnit(opts ServiceOptions) string {
 	opts = applyDefaults(opts)
-	tmpl := template.Must(template.New("systemd").Parse(systemdTemplate))
 	var buf bytes.Buffer
-	_ = tmpl.Execute(&buf, opts)
+	_ = systemdTmpl.Execute(&buf, opts)
 	return buf.String()
 }
 
 // GenerateLaunchdPlist generates a macOS launchd plist XML string.
 func GenerateLaunchdPlist(opts ServiceOptions) string {
 	opts = applyDefaults(opts)
-	tmpl := template.Must(template.New("launchd").Parse(launchdTemplate))
 	var buf bytes.Buffer
-	_ = tmpl.Execute(&buf, opts)
+	_ = launchdTmpl.Execute(&buf, opts)
 	return buf.String()
 }
 
+// ResolveServiceType normalizes a service type or returns the OS-native default.
+func ResolveServiceType(serviceType string) string {
+	return resolveServiceType(serviceType)
+}
+
 // Generate generates a service configuration string based on the service type.
-// Supported types: "systemd", "launchd".
+// Supported types: "systemd", "launchd" (empty defaults to OS native).
 func Generate(serviceType string, opts ServiceOptions) (string, error) {
-	switch strings.ToLower(serviceType) {
+	switch resolveServiceType(serviceType) {
 	case "systemd":
 		return GenerateSystemdUnit(opts), nil
 	case "launchd":
