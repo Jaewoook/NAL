@@ -337,3 +337,65 @@ func TestStartAnnouncer_NilConfigAndRedirectSafety(t *testing.T) {
 	for range errCh2 {
 	}
 }
+
+func TestStartAnnouncer_RefreshesAutoDetectedIPOnHeartbeat(t *testing.T) {
+	var mu sync.Mutex
+	var received []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var p announcePayload
+		_ = json.NewDecoder(r.Body).Decode(&p)
+		mu.Lock()
+		received = append(received, p.URL)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "approved"})
+	}))
+	defer srv.Close()
+
+	calls := 0
+	restore := service.SetResolveAdvertiseURLForTest(func(cfg *config.Config) string {
+		calls++
+		if calls == 1 {
+			return "http://192.168.0.49:10247"
+		}
+		return "http://192.168.0.4:10247"
+	})
+	defer restore()
+
+	cfg := &config.Config{
+		NodeName:   "NAL Atlas",
+		AgentToken: "tok",
+		HubURL:     srv.URL,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := service.StartAnnouncer(ctx, cfg, srv.Client(), 15*time.Millisecond)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		n := len(received)
+		mu.Unlock()
+		if n >= 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	for range errCh {
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(received) < 2 {
+		t.Fatalf("expected at least 2 announcements, got %d", len(received))
+	}
+	if received[0] != "http://192.168.0.49:10247" {
+		t.Fatalf("expected initial URL http://192.168.0.49:10247, got %q", received[0])
+	}
+	if received[1] != "http://192.168.0.4:10247" {
+		t.Fatalf("expected refreshed heartbeat URL http://192.168.0.4:10247, got %q", received[1])
+	}
+}

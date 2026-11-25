@@ -17,9 +17,63 @@ import (
 	"github.com/jaewoook/security-hub/internal/service"
 )
 
+func TestCLI_StrictModeConfigsAndRejectedTopLevelCommands(t *testing.T) {
+	// Top-level legacy commands must be rejected
+	for _, legacy := range [][]string{
+		{"run"},
+		{"service", "status"},
+		{"auth", "login-link"},
+		{"db", "init"},
+		{"node", "list"},
+		{"scan"},
+		{"rollback", "auth"},
+		{"test-alert"},
+	} {
+		var out bytes.Buffer
+		if code := runCLI(legacy, &out); code != 1 {
+			t.Fatalf("expected legacy top-level command %v to exit 1, got %d (%s)", legacy, code, out.String())
+		}
+	}
+
+	// Directory with only config.yml (and no config.hub.yml / config.agent.yml) must fail for both modes (no fallback)
+	legacyDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(legacyDir, "config.yml"), []byte("node_name: Legacy\n"), 0600)
+	origWD, _ := os.Getwd()
+	_ = os.Chdir(legacyDir)
+	defer func() { _ = os.Chdir(origWD) }()
+
+	var out bytes.Buffer
+	if code := runCLI([]string{"hub", "node", "list"}, &out); code != 1 || !strings.Contains(out.String(), config.HubConfigFile) {
+		t.Fatalf("expected hub mode to fail without %s (no fallback), got code=%d out=%s", config.HubConfigFile, code, out.String())
+	}
+
+	out.Reset()
+	if code := runCLI([]string{"agent", "scan"}, &out); code != 1 || !strings.Contains(out.String(), config.AgentConfigFile) {
+		t.Fatalf("expected agent mode to fail without %s (no fallback), got code=%d out=%s", config.AgentConfigFile, code, out.String())
+	}
+
+	// Directory with only config.agent.yml must reject hub commands
+	agentOnlyDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(agentOnlyDir, config.AgentConfigFile), []byte("node_name: Atlas\n"), 0600)
+	_ = os.Chdir(agentOnlyDir)
+	out.Reset()
+	if code := runCLI([]string{"hub", "service", "start"}, &out); code != 1 || !strings.Contains(out.String(), config.HubConfigFile) {
+		t.Fatalf("expected hub service start to fail on agent-only host, got code=%d out=%s", code, out.String())
+	}
+
+	// Directory with only config.hub.yml must reject agent commands
+	hubOnlyDir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(hubOnlyDir, config.HubConfigFile), []byte("node_name: Axis\n"), 0600)
+	_ = os.Chdir(hubOnlyDir)
+	out.Reset()
+	if code := runCLI([]string{"agent", "service", "start"}, &out); code != 1 || !strings.Contains(out.String(), config.AgentConfigFile) {
+		t.Fatalf("expected agent service start to fail on hub-only host, got code=%d out=%s", code, out.String())
+	}
+}
+
 func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	plist := service.GenerateLaunchdPlist("/Users/jaewookahn/repos/NAL/daemons/security-hub/security-hub", "/Users/jaewookahn/repos/NAL/daemons/security-hub")
-	if !strings.Contains(plist, "me.jaewook.nal.security-hub") || !strings.Contains(plist, "<string>run</string>") {
+	if !strings.Contains(plist, "me.jaewook.nal.security-hub") || !strings.Contains(plist, "<string>hub</string>") || !strings.Contains(plist, "<string>run</string>") {
 		t.Fatalf("unexpected launchd plist: %s", plist)
 	}
 
@@ -27,15 +81,16 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	t.Setenv("SECURITY_HUB_DATA_DIR", tmpDir)
 	t.Setenv("SECURITY_HUB_PUBLIC_URL", "http://localhost:10311")
 	isoCfgDir := t.TempDir()
-	_ = os.WriteFile(filepath.Join(isoCfgDir, "config.yml"), []byte("database:\n  container_name: nonexistent-unit-test-pg\n"), 0600)
+	_ = os.WriteFile(filepath.Join(isoCfgDir, config.HubConfigFile), []byte("database:\n  container_name: nonexistent-unit-test-pg\n"), 0600)
+	_ = os.WriteFile(filepath.Join(isoCfgDir, config.AgentConfigFile), []byte("node_name: TestAgent\n"), 0600)
 	startWD, _ := os.Getwd()
 	_ = os.Chdir(isoCfgDir)
 	defer func() { _ = os.Chdir(startWD) }()
 
 	var out bytes.Buffer
-	code := runCLI([]string{"auth", "login-link"}, &out)
+	code := runCLI([]string{"hub", "auth", "login-link"}, &out)
 	if code != 0 {
-		t.Fatalf("expected exit code 0 for auth login-link, got %d (%s)", code, out.String())
+		t.Fatalf("expected exit code 0 for hub auth login-link, got %d (%s)", code, out.String())
 	}
 	if !strings.Contains(out.String(), "http://localhost:10311/api/auth/token-login?token=") {
 		t.Fatalf("expected break-glass login URL in output, got: %s", out.String())
@@ -44,19 +99,22 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	// Verify plist install to file
 	plistPath := filepath.Join(tmpDir, "me.jaewook.nal.security-hub.plist")
 	out.Reset()
-	code = runCLI([]string{"service", "install", "-path", plistPath}, &out)
+	code = runCLI([]string{"hub", "service", "install", "-path", plistPath}, &out)
 	if code != 0 {
-		t.Fatalf("expected exit code 0 for service install, got %d (%s)", code, out.String())
+		t.Fatalf("expected exit code 0 for hub service install, got %d (%s)", code, out.String())
+	}
+	if !strings.Contains(out.String(), "hub mode") {
+		t.Fatalf("expected hub mode message in hub service install output, got: %s", out.String())
 	}
 
 	// Verify CLI node add / list / remove
 	out.Reset()
-	if code := runCLI([]string{"node", "add", "Atlas", "http://192.168.1.50:10247/", "-token", "sec"}, &out); code != 0 {
-		t.Fatalf("expected exit code 0 for node add, got %d (%s)", code, out.String())
+	if code := runCLI([]string{"hub", "node", "add", "Atlas", "http://192.168.1.50:10247/", "-token", "sec"}, &out); code != 0 {
+		t.Fatalf("expected exit code 0 for hub node add, got %d (%s)", code, out.String())
 	}
 	out.Reset()
-	if code := runCLI([]string{"node", "list"}, &out); code != 0 || !strings.Contains(out.String(), "Atlas") {
-		t.Fatalf("expected Atlas in node list output, got code=%d out=%s", code, out.String())
+	if code := runCLI([]string{"hub", "node", "list"}, &out); code != 0 || !strings.Contains(out.String(), "Atlas") {
+		t.Fatalf("expected Atlas in hub node list output, got code=%d out=%s", code, out.String())
 	}
 	// Verify trailing slash was trimmed in node list
 	if strings.Contains(out.String(), "http://192.168.1.50:10247/") {
@@ -65,32 +123,32 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	// Verify node add conflicts with hub name
 	hubName := config.DefaultNodeName()
 	out.Reset()
-	if code := runCLI([]string{"node", "add", hubName, "http://192.168.1.50:10247"}, &out); code != 1 {
+	if code := runCLI([]string{"hub", "node", "add", hubName, "http://192.168.1.50:10247"}, &out); code != 1 {
 		t.Fatalf("expected exit code 1 when node name matches hub name, got %d (%s)", code, out.String())
 	}
 	if !strings.Contains(out.String(), "conflicts with hub node name") {
 		t.Fatalf("expected conflict error message, got: %s", out.String())
 	}
 	out.Reset()
-	if code := runCLI([]string{"node", "remove", "Atlas"}, &out); code != 0 {
-		t.Fatalf("expected exit code 0 for node remove, got %d (%s)", code, out.String())
+	if code := runCLI([]string{"hub", "node", "remove", "Atlas"}, &out); code != 0 {
+		t.Fatalf("expected exit code 0 for hub node remove, got %d (%s)", code, out.String())
 	}
 
 	// Verify CLI node add with un-schemed URL normalizes to http://
 	out.Reset()
-	if code := runCLI([]string{"node", "add", "SchemelessNode", "192.168.1.188:10247", "-token", "sec"}, &out); code != 0 {
+	if code := runCLI([]string{"hub", "node", "add", "SchemelessNode", "192.168.1.188:10247", "-token", "sec"}, &out); code != 0 {
 		t.Fatalf("expected exit code 0 for schemeless node add, got %d (%s)", code, out.String())
 	}
 	out.Reset()
-	if code := runCLI([]string{"node", "list"}, &out); code != 0 || !strings.Contains(out.String(), "http://192.168.1.188:10247") {
+	if code := runCLI([]string{"hub", "node", "list"}, &out); code != 0 || !strings.Contains(out.String(), "http://192.168.1.188:10247") {
 		t.Fatalf("expected http://192.168.1.188:10247 in node list output, got code=%d out=%s", code, out.String())
 	}
 	out.Reset()
-	_ = runCLI([]string{"node", "remove", "SchemelessNode"}, &out)
+	_ = runCLI([]string{"hub", "node", "remove", "SchemelessNode"}, &out)
 
-	// Verify agent requires token
+	// Verify agent run requires token
 	out.Reset()
-	if code := runCLI([]string{"agent", "-hub", "http://hub.lan:10311", "-advertise-url", "http://192.168.1.100:10247"}, &out); code != 1 {
+	if code := runCLI([]string{"agent", "run", "-hub", "http://hub.lan:10311", "-advertise-url", "http://192.168.1.100:10247"}, &out); code != 1 {
 		t.Fatalf("expected exit code 1 when token missing, got %d", code)
 	}
 	if !strings.Contains(out.String(), "agent_token") {
@@ -123,7 +181,7 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read installed agent plist: %v", err)
 	}
-	if !strings.Contains(string(content), "me.jaewook.nal.security-hub-agent") || !strings.Contains(string(content), "sec123") {
+	if !strings.Contains(string(content), "me.jaewook.nal.security-hub-agent") || !strings.Contains(string(content), "sec123") || !strings.Contains(string(content), "<string>run</string>") {
 		t.Fatalf("agent plist missing expected content: %s", string(content))
 	}
 	if strings.Contains(string(content), "<string>-token</string>") {
@@ -133,24 +191,26 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 		t.Fatalf("expected 0600 permissions on agent plist, got err=%v perm=%v", sErr, st)
 	}
 
-	// Verify corrupt config.yml in CWD fails loudly
+	// Verify corrupt config.hub.yml in CWD fails loudly
 	cfgDir := t.TempDir()
-	_ = os.WriteFile(filepath.Join(cfgDir, "config.yml"), []byte("web: [broken\n"), 0600)
+	_ = os.WriteFile(filepath.Join(cfgDir, config.HubConfigFile), []byte("web: [broken\n"), 0600)
 	origWD, _ := os.Getwd()
 	_ = os.Chdir(cfgDir)
-	defer func() { _ = os.Chdir(origWD) }()
-	if _, lErr := loadAppConfig(""); lErr == nil {
-		t.Fatal("expected loadAppConfig to fail on corrupt config.yml")
+	if _, lErr := loadHubConfig(); lErr == nil {
+		t.Fatal("expected loadHubConfig to fail on corrupt config.hub.yml")
 	}
 	_ = os.Chdir(origWD)
 
 	// Verify unknown CLI flags return non-zero
 	out.Reset()
-	if code := runCLI([]string{"service", "install", "-unknown-flag"}, &out); code != 1 {
-		t.Fatalf("expected exit code 1 on unknown service install flag, got %d", code)
+	if code := runCLI([]string{"hub", "service", "install", "-unknown-flag"}, &out); code != 1 {
+		t.Fatalf("expected exit code 1 on unknown hub service install flag, got %d", code)
 	}
 
-	// Verify agent service status runs cleanly (stubbing host service manager for headless CI runners)
+	// Verify hub & agent service status/start messages (stubbing host service manager for headless CI runners)
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	_ = service.InstallPlist(service.DefaultPlistPath(), "/usr/local/bin/security-hub", isoCfgDir)
 	restoreCmd := service.SetCmdRunner(func(name string, args ...string) ([]byte, error) {
 		if name == "systemctl" {
 			return []byte("inactive\n"), nil
@@ -158,18 +218,24 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 		return []byte("PID\tStatus\tLabel\n"), nil
 	})
 	defer restoreCmd()
+
+	out.Reset()
+	if code := runCLI([]string{"hub", "service", "start"}, &out); code != 0 || !strings.Contains(out.String(), "Service started as hub mode.") {
+		t.Fatalf("expected hub service start mode banner, got code=%d out=%s", code, out.String())
+	}
+
 	out.Reset()
 	code = runCLI([]string{"agent", "service", "status"}, &out)
 	if code != 0 {
 		t.Fatalf("expected exit code 0 for agent service status, got %d (%s)", code, out.String())
 	}
-	if !strings.Contains(out.String(), "Agent service") {
+	if !strings.Contains(out.String(), "Agent service") || !strings.Contains(out.String(), "agent mode") {
 		t.Fatalf("expected agent service status in output, got: %s", out.String())
 	}
 
 	// Verify CLI node add rejects non-HTTP URLs and CLI node list does not abort running daemon tasks
 	out.Reset()
-	if code := runCLI([]string{"node", "add", "BadNode", "ftp://files.internal/pkg"}, &out); code != 1 {
+	if code := runCLI([]string{"hub", "node", "add", "BadNode", "ftp://files.internal/pkg"}, &out); code != 1 {
 		t.Fatalf("expected exit code 1 for non-HTTP node URL, got %d (%s)", code, out.String())
 	}
 
@@ -188,8 +254,8 @@ func TestCLI_LoginLinkAndServicePlist(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if code := runCLI([]string{"node", "list"}, &out); code != 0 {
-		t.Fatalf("expected exit code 0 for node list, got %d (%s)", code, out.String())
+	if code := runCLI([]string{"hub", "node", "list"}, &out); code != 0 {
+		t.Fatalf("expected exit code 0 for hub node list, got %d (%s)", code, out.String())
 	}
 	stillRunning, _, err := daemonStore.GetTaskWithLogs(context.Background(), task.ID)
 	if err != nil || stillRunning.Status != "running" {
@@ -208,7 +274,9 @@ func TestCLI_ScanCommand(t *testing.T) {
 
 	isoCfgDir := t.TempDir()
 	cfgYAML := "node_name: AxisHub\ndatabase:\n  container_name: nonexistent-unit-test-pg\nscanner:\n  services_dir: " + emptyServices + "\n  daemons_dir: " + emptyDaemons + "\n  osv_api_url: http://127.0.0.1:0\n  eol_api_url: http://127.0.0.1:0\n"
-	_ = os.WriteFile(filepath.Join(isoCfgDir, "config.yml"), []byte(cfgYAML), 0600)
+	_ = os.WriteFile(filepath.Join(isoCfgDir, config.HubConfigFile), []byte(cfgYAML), 0600)
+	agentYAML := "node_name: AtlasAgent\nscanner:\n  services_dir: " + emptyServices + "\n  daemons_dir: " + emptyDaemons + "\n  osv_api_url: http://127.0.0.1:0\n  eol_api_url: http://127.0.0.1:0\n"
+	_ = os.WriteFile(filepath.Join(isoCfgDir, config.AgentConfigFile), []byte(agentYAML), 0600)
 	startWD, _ := os.Getwd()
 	_ = os.Chdir(isoCfgDir)
 	defer func() { _ = os.Chdir(startWD) }()
@@ -259,16 +327,16 @@ func TestCLI_ScanCommand(t *testing.T) {
 
 	// 1. Positional arg rejected
 	var out bytes.Buffer
-	code := runCLI([]string{"scan", "Atlas"}, &out)
+	code := runCLI([]string{"hub", "scan", "Atlas"}, &out)
 	if code != 1 {
-		t.Fatalf("expected exit code 1 for positional arg on scan, got %d (%s)", code, out.String())
+		t.Fatalf("expected exit code 1 for positional arg on hub scan, got %d (%s)", code, out.String())
 	}
 
 	// 2. Single node scan CLI for local Hub -> prints only AxisHub summary (0 items), not Aegis's 2 items
 	out.Reset()
-	code = runCLI([]string{"scan", "-node", "AxisHub"}, &out)
+	code = runCLI([]string{"hub", "scan", "-node", "AxisHub"}, &out)
 	if code != 0 {
-		t.Fatalf("expected exit code 0 for scan -node AxisHub, got %d (%s)", code, out.String())
+		t.Fatalf("expected exit code 0 for hub scan -node AxisHub, got %d (%s)", code, out.String())
 	}
 	if !strings.Contains(out.String(), "=== NAL Security Hub Scan Summary (Node AxisHub) ===") {
 		t.Fatalf("expected Node AxisHub scan summary, got: %s", out.String())
@@ -279,9 +347,9 @@ func TestCLI_ScanCommand(t *testing.T) {
 
 	// 3. Single node scan CLI for remote Atlas agent -> prints Atlas summary (1 item) while preserving Aegis in store
 	out.Reset()
-	code = runCLI([]string{"scan", "-node", "atlas"}, &out)
+	code = runCLI([]string{"hub", "scan", "-node", "atlas"}, &out)
 	if code != 0 {
-		t.Fatalf("expected exit code 0 for scan -node atlas, got %d (%s)", code, out.String())
+		t.Fatalf("expected exit code 0 for hub scan -node atlas, got %d (%s)", code, out.String())
 	}
 	if !strings.Contains(out.String(), "=== NAL Security Hub Scan Summary (Node Atlas) ===") {
 		t.Fatalf("expected canonical Node Atlas scan summary, got: %s", out.String())
@@ -293,9 +361,9 @@ func TestCLI_ScanCommand(t *testing.T) {
 	// 4. Full scan CLI
 	_ = store.RemoveNode(context.Background(), "Aegis")
 	out.Reset()
-	code = runCLI([]string{"scan"}, &out)
+	code = runCLI([]string{"hub", "scan"}, &out)
 	if code != 0 {
-		t.Fatalf("expected exit code 0 for full scan, got %d (%s)", code, out.String())
+		t.Fatalf("expected exit code 0 for full hub scan, got %d (%s)", code, out.String())
 	}
 	if !strings.Contains(out.String(), "=== NAL Security Hub Scan Summary (All Nodes) ===") {
 		t.Fatalf("expected All Nodes scan summary, got: %s", out.String())
@@ -303,11 +371,25 @@ func TestCLI_ScanCommand(t *testing.T) {
 
 	// 5. Unknown node -> exits 1 with Scan failed
 	out.Reset()
-	code = runCLI([]string{"scan", "-node", "UnknownNodeXYZ"}, &out)
+	code = runCLI([]string{"hub", "scan", "-node", "UnknownNodeXYZ"}, &out)
 	if code != 1 {
 		t.Fatalf("expected exit code 1 for unknown node scan, got %d (%s)", code, out.String())
 	}
 	if !strings.Contains(out.String(), "Scan failed") {
 		t.Fatalf("expected Scan failed error message, got: %s", out.String())
+	}
+
+	// 6. Local-only agent scan CLI
+	out.Reset()
+	code = runCLI([]string{"agent", "scan"}, &out)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 for agent scan, got %d (%s)", code, out.String())
+	}
+	if !strings.Contains(out.String(), "=== NAL Security Hub Agent Scan Summary (Node AtlasAgent) ===") {
+		t.Fatalf("expected Node AtlasAgent local scan summary, got: %s", out.String())
+	}
+	out.Reset()
+	if code := runCLI([]string{"agent", "scan", "extra"}, &out); code != 1 {
+		t.Fatalf("expected exit code 1 for positional arg on agent scan, got %d (%s)", code, out.String())
 	}
 }

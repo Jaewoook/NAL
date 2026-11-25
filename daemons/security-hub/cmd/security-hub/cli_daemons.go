@@ -138,7 +138,7 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 		&bgWG,
 		out,
 		"HTTP server",
-		fmt.Sprintf("NAL Security Hub listening on http://%s", addr),
+		fmt.Sprintf("NAL Security Hub [hub mode] listening on http://%s", addr),
 	)
 }
 
@@ -164,15 +164,37 @@ func runScheduledScan(ctx context.Context, orch *scanner.Orchestrator, alerter *
 	}
 }
 
-func runAgentCommand(rest []string, cfg *config.Config, out io.Writer) int {
-	if len(rest) > 0 && rest[0] == "service" {
-		return runAgentServiceCLI(rest[1:], cfg, out)
+func runAgentCommand(rest []string, out io.Writer) int {
+	if len(rest) == 0 {
+		printAgentUsage(out)
+		return 1
 	}
-	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
+
+	cfg, err := loadAgentConfig()
+	if err != nil {
+		fmt.Fprintf(out, "Failed to load agent configuration: %v\n", err)
+		return 1
+	}
+
+	switch rest[0] {
+	case "run":
+		return runAgentRunCommand(rest[1:], cfg, out)
+	case "service":
+		return runAgentServiceCLI(rest[1:], cfg, out)
+	case "scan":
+		return runAgentScanCommand(rest[1:], cfg, out)
+	default:
+		printAgentUsage(out)
+		return 1
+	}
+}
+
+func runAgentRunCommand(rest []string, cfg *config.Config, out io.Writer) int {
+	fs := flag.NewFlagSet("agent run", flag.ContinueOnError)
 	fs.SetOutput(out)
 	nameFlag := fs.String("name", "", "Node name (defaults to system hostname)")
 	hostFlag := fs.String("host", "", "Bind host (default 0.0.0.0)")
-	portFlag := fs.Int("port", 0, "Agent bind port (overrides config.yml web.port; default 10247)")
+	portFlag := fs.Int("port", 0, "Agent bind port (overrides config.agent.yml web.port; default 10247)")
 	tokenFlag := fs.String("token", "", "Shared X-NAL-Node-Token secret")
 	hubFlag := fs.String("hub", "", "Security Hub URL (e.g. http://hub.lan:10311)")
 	advFlag := fs.String("advertise-url", "", "Advertise URL for this agent reachable by the hub")
@@ -257,6 +279,6 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 		&bgWG,
 		out,
 		"Agent HTTP server",
-		fmt.Sprintf("NAL Security Hub Agent [%s] listening on http://%s", cfg.NodeName, addr),
+		fmt.Sprintf("NAL Security Hub Agent [agent mode | %s] listening on http://%s", cfg.NodeName, addr),
 	)
 }

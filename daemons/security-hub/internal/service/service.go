@@ -92,6 +92,7 @@ func GenerateLaunchdPlist(binaryPath, workingDir string) string {
     <key>ProgramArguments</key>
     <array>
         <string>%s</string>
+        <string>hub</string>
         <string>run</string>
     </array>
     <key>WorkingDirectory</key>
@@ -174,7 +175,7 @@ func startLaunchdService(plist, label, installCmd string) error {
 }
 
 func Start() error {
-	return startLaunchdService(DefaultPlistPath(), LaunchdLabel, "security-hub service install")
+	return startLaunchdService(DefaultPlistPath(), LaunchdLabel, "security-hub hub service install")
 }
 
 func isLaunchctlNotLoaded(err error, out string) bool {

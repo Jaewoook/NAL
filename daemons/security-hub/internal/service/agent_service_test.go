@@ -33,6 +33,7 @@ func TestAgentService_GenerateLaunchdAndSystemd(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"<string>agent</string>",
+		"<string>run</string>",
 		"<string>-host</string>",
 		"<string>0.0.0.0</string>",
 		"<string>-port</string>",
@@ -59,13 +60,13 @@ func TestAgentService_GenerateLaunchdAndSystemd(t *testing.T) {
 
 	// 2. Systemd unit verification (token passed via Environment/EnvironmentFile, NEVER ExecStart -token)
 	unit := service.GenerateAgentSystemdUnit(opts)
-	if strings.Contains(unit, "ExecStart=/usr/local/bin/security-hub agent -host 0.0.0.0 -port 10247 -token") {
+	if strings.Contains(unit, "ExecStart=/usr/local/bin/security-hub agent run -host 0.0.0.0 -port 10247 -token") {
 		t.Fatalf("did not expect -token in ExecStart:\n%s", unit)
 	}
 	for _, expected := range []string{
 		"[Unit]",
 		"[Service]",
-		"ExecStart=/usr/local/bin/security-hub agent",
+		"ExecStart=/usr/local/bin/security-hub agent run",
 		"-host 0.0.0.0",
 		"-port 10247",
 		"Environment=SECURITY_HUB_AGENT_TOKEN=super-secret-token",
@@ -168,7 +169,7 @@ func TestAgentService_SystemdWhitespaceQuoting(t *testing.T) {
 
 	unit := service.GenerateAgentSystemdUnit(opts)
 	for _, expected := range []string{
-		`ExecStart="/opt/My Security Hub/security-hub" agent`,
+		`ExecStart="/opt/My Security Hub/security-hub" agent run`,
 		`-name "Mac Studio M2"`,
 		`Environment="SECURITY_HUB_AGENT_TOKEN=super secret token"`,
 		`-hub http://hub.lan:10311`,

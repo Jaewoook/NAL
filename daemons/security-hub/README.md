@@ -21,16 +21,17 @@ A zero-dependency, single-binary host-level security hub, CVE vulnerability scan
   - **60-Second Automatic Dead-Man's Rollback:** If a critical-path service (`cloudflare-tunnel`, `nginx-proxy`, `auth`, `db`, `dns`) fails health verification after an update, the daemon automatically restores `compose.yml`/`.env` and re-tags the previous working image digest (`sha256:...`).
 - **NAL Account SSO + Local WebAuthn Passkey Fallback:**
   - Authenticates via Authentik OIDC (`https://auth.jaewook.dev`) with a self-contained HMAC-SHA256 session cookie that survives while `auth` or `db` restarts.
-  - Supports local WebAuthn Passkey (TouchID / Hardware Key) registration and offline login, plus a CLI break-glass login link (`./security-hub auth login-link`).
+  - Supports local WebAuthn Passkey (TouchID / Hardware Key) registration and offline login, plus a CLI break-glass login link (`./security-hub hub auth login-link`).
 - **Resilient Task Logs in `services/db` with Local Spooling:**
   - Streams live task logs over SSE and persists all task logs to `services/db` (`security_hub_db` database).
   - Always writes to a local write-ahead spool (`daemons/security-hub/data/`) first—if PostgreSQL is down or upgrading, logs are served from the local spool and flushed to PostgreSQL automatically once `postgresql` is healthy again.
 - **Multi-Server Hub $\rightarrow$ Agent Architecture:**
-  - Manage multiple machines from a single Hub dashboard while running lightweight LAN agents (`./security-hub agent`) on remote compute nodes.
+  - Manage multiple machines from a single Hub dashboard while running lightweight LAN agents (`./security-hub agent run`) on remote compute nodes.
+  - **Strict Hub / Agent Separation:** Hub commands (`./security-hub hub ...`) strictly require `config.hub.yml` and Agent commands (`./security-hub agent ...`) strictly require `config.agent.yml` — preventing accidentally starting Hub mode on an Agent machine or vice versa.
   - **Agent Auto-Discovery & Web Approval:** Remote agents automatically announce themselves to the Hub in the background (`-hub http://hub:10311`); new nodes appear in a top-bar banner and can be approved or dismissed with one click.
   - **Test Connection & Live Feedback:** Test agent connectivity, measure round-trip latency, and inspect remote OS info right from the Web UI before saving.
-  - Node names auto-detect from the host's system hostname (`os.Hostname()`) by default, or can be explicitly set via `node_name` in `config.yml`, `SECURITY_HUB_NODE_NAME`, or `-name <node-name>`.
-  - Dynamically add or remove compute nodes at any time via the Web UI (**⚙ Manage Nodes**) or CLI (`./security-hub node add|list|remove`).
+  - Node names auto-detect from the host's system hostname (`os.Hostname()`) by default, or can be explicitly set via `node_name` in `config.hub.yml` / `config.agent.yml`, `SECURITY_HUB_NODE_NAME`, or `-name <node-name>`.
+  - Dynamically add or remove compute nodes at any time via the Web UI (**⚙ Manage Nodes**) or CLI (`./security-hub hub node add|list|remove`).
   - **Cross-Platform Agent Service Management:** Install, inspect, and run agents as native background services using `./security-hub agent service <install|uninstall|start|stop|restart|status>` for macOS (launchd) and Linux (systemd).
   - **Graceful Component Auto-Detection:** Automatically skips uninstalled or stopped components on each machine (e.g., if Docker is not installed or stopped on a remote node, only Homebrew, `ollama`, and macOS updates are scanned without error).
 - **Asynchronous Live Scan Streaming & Concurrency Guard:**
@@ -41,7 +42,10 @@ A zero-dependency, single-binary host-level security hub, CVE vulnerability scan
 
 ## Configuration & Preparation
 
-`security-hub` reads configuration from `config.yml` in the working directory and supports environment variable overrides (environment variables take precedence).
+`security-hub` uses separate configuration files per mode (with environment variable overrides taking precedence):
+
+- **Hub mode (`./security-hub hub ...`)**: strictly requires `config.hub.yml` (template: `config.hub.example.yml`).
+- **Agent mode (`./security-hub agent ...`)**: strictly requires `config.agent.yml` (template: `config.agent.example.yml`).
 
 ### 1. Preparation & Secret Generation
 
@@ -50,105 +54,43 @@ Before starting the Hub or any remote Agent, prepare the following secrets and p
 1. **Generate the `session_secret` (Hub Cookie Signing Key) & `agent_token` (Shared LAN Agent Secret):**
    Use `openssl` (pre-installed on macOS) to generate cryptographically random 32-byte hex tokens:
    ```bash
-   # Generate session_secret (for Hub config.yml -> auth.session_secret):
+   # Generate session_secret (for Hub config.hub.yml -> auth.session_secret):
    openssl rand -hex 32
 
    # Generate agent_token (shared between Hub and remote Agents via X-NAL-Node-Token):
    openssl rand -hex 32
    ```
 2. **Prepare `services/db` (PostgreSQL on Hub):**
-   - Ensure `services/db/.env` has `SECURITY_HUB_DB_USER` and `SECURITY_HUB_DB_PASS` (matching `database.db_user` and `database.db_pass` in `config.yml`).
+   - Ensure `services/db/.env` has `SECURITY_HUB_DB_USER` and `SECURITY_HUB_DB_PASS` (matching `database.db_user` and `database.db_pass` in `config.hub.yml`).
    - Ensure `services/db/compose.yml` exposes `127.0.0.1:5432:5432` so the host daemon can reach `postgresql`.
 3. **Configure Authentik OIDC Provider (Optional — for NAL Account SSO):**
    - In Authentik (`https://auth.jaewook.dev`), create an **OAuth2/OpenID Provider** and Application named `security-hub`:
      - **Client Type:** `Confidential`
      - **Redirect URI:** `https://securityhub.jaewook.dev/api/auth/oidc/callback` (or `http://localhost:10311/api/auth/oidc/callback` for local access)
-   - Copy the **Client ID** and **Client Secret** into `auth.oidc_client_id` and `auth.oidc_client_secret` in `config.yml`.
-   - *Note:* Even before Authentik is configured, you can sign in immediately using `./security-hub auth login-link` and register a local hardware/TouchID **Passkey**.
+   - Copy the **Client ID** and **Client Secret** into `auth.oidc_client_id` and `auth.oidc_client_secret` in `config.hub.yml`.
+   - *Note:* Even before Authentik is configured, you can sign in immediately using `./security-hub hub auth login-link` and register a local hardware/TouchID **Passkey**.
 4. **Configure SMTP App Password (Optional — for Email Alerts):**
    - If using Gmail SMTP (`smtp.gmail.com:587`), generate a 16-character **Google App Password** under Google Account $\rightarrow$ Security $\rightarrow$ 2-Step Verification $\rightarrow$ App Passwords, and set `notifications.email.enabled: true`.
 5. **LAN Firewall / Static IP Check (For Multi-Node Agents):**
    - Ensure the remote compute node has a static LAN IP (e.g., `192.168.1.x`) and allows incoming TCP connections on port `10247` from the Hub machine on the same subnet.
 
-### 2. Create `config.yml`
+### 2. Create `config.hub.yml` (Hub) or `config.agent.yml` (Agent)
 
-Copy the example configuration and fill in the values generated above:
+Copy the matching example configuration and fill in the values generated above:
 
 ```bash
 cd daemons/security-hub
-cp config.example.yml config.yml
+
+# On the central Hub host:
+cp config.hub.example.yml config.hub.yml
+
+# On each remote Agent host:
+cp config.agent.example.yml config.agent.yml
 ```
 
-### `config.yml` Reference
+### `config.hub.yml` & `config.agent.yml` Reference
 
-```yaml
-# Leave node_name empty to auto-detect from system hostname, or set an explicit name
-node_name: ""
-agent_token: "replace-with-shared-lan-agent-secret"
-# Central Hub URL for Agent auto-announcement (leave empty on central Hub)
-hub_url: ""
-# Agent advertise URL reachable by Hub (leave empty for automatic detection)
-agent_advertise_url: ""
-
-web:
-  host: "0.0.0.0"
-  port: 10311
-  public_url: "https://securityhub.jaewook.dev"
-
-auth:
-  oidc_issuer: "https://auth.jaewook.dev/application/o/security-hub/"
-  oidc_client_id: "security-hub"
-  oidc_client_secret: ""
-  redirect_url: "https://securityhub.jaewook.dev/api/auth/oidc/callback"
-  session_secret: "replace-with-openssl-rand-hex-32"
-  session_ttl_hours: 24
-  rp_id: "securityhub.jaewook.dev"
-
-database:
-  container_name: "postgresql"
-  db_name: "security_hub_db"
-  db_user: "security_hub"
-  db_pass: "security_hub_pass"
-  data_dir: "data"
-
-scanner:
-  interval_hours: 6
-  eol_warning_days: 30
-  services_dir: "../../services"
-  daemons_dir: ".."
-
-updater:
-  batch_dir: "../../batch"
-  deadman_timeout_seconds: 60
-  critical_services:
-    - "cloudflare-tunnel"
-    - "nginx-proxy"
-    - "auth"
-    - "db"
-    - "dns"
-  stateful_volumes:
-    db: "nal_main_db"
-    dns: "nal_dns_config"
-    iot: "nal_ha_config"
-    nginx-proxy: "nginx_proxy_data"
-  git:
-    enabled: true
-    bot_name: "NAL Bot"
-    bot_email: "nal-git-system@jaewook.me"
-    gpg_sign: true
-    gpg_key: "024D4017DFF5360A"
-
-notifications:
-  email:
-    enabled: false
-    smtp_host: "smtp.gmail.com"
-    smtp_port: 587
-    use_tls: true
-    username: ""
-    password: ""
-    from_email: ""
-    to_email: ""
-```
+See [`config.hub.example.yml`](./config.hub.example.yml) for Hub settings and [`config.agent.example.yml`](./config.agent.example.yml) for Agent settings.
 
 ### Environment Variable Overrides
 
@@ -188,40 +130,47 @@ notifications:
 ```bash
 cd daemons/security-hub
 
-# 1. Copy & edit configuration
-cp config.example.yml config.yml
+# 1. Copy & edit Hub configuration
+cp config.hub.example.yml config.hub.yml
 
 # 2. Build binary
 go build -o security-hub ./cmd/security-hub
 
 # 3. Provision database in services/db (if postgresql is running)
-./security-hub db init
+./security-hub hub db init
 
 # 4. Run a one-off CLI scan
-./security-hub scan
+./security-hub hub scan
 
 # 5. Generate a 5-minute break-glass login link for initial setup
-./security-hub auth login-link
+./security-hub hub auth login-link
 
 # 6. Start the web dashboard & background scanner (default port 10311)
-./security-hub run
+./security-hub hub run
+
+# Or install & start as a persistent macOS launchd service:
+./security-hub hub service install
+./security-hub hub service start
 ```
 
 ## Multi-Node Setup (Adding Remote Agents)
 
-`security-hub` supports central aggregation across multiple compute nodes via lightweight LAN agents (`./security-hub agent`). Remote agents can register automatically via auto-announcement or be manually configured with connection testing.
+`security-hub` supports central aggregation across multiple compute nodes via lightweight LAN agents (`./security-hub agent run`). Remote agents require `config.agent.yml` and can register automatically via auto-announcement or be manually configured with connection testing.
 
 ### 1. Agent Auto-Announcement & Web Approval (Zero-Touch Registration)
 
-Remote agents can automatically announce themselves to the Hub and maintain a background heartbeat every 30 seconds:
+Remote agents automatically announce themselves to the Hub and maintain a background heartbeat every 60 seconds:
 
 ```bash
-# On the remote node (auto-detects hostname and network interface):
-./security-hub agent \
+# On the remote node (create config.agent.yml from config.agent.example.yml first):
+cp config.agent.example.yml config.agent.yml
+./security-hub agent run \
   -hub "http://<hub-lan-ip>:10311" \
   -token "<shared-lan-secret>" \
-  -name "<optional-node-name>" \
-  -advertise-url "http://<agent-lan-ip>:10247"
+  -name "<optional-node-name>"
+
+# Local-only CLI scan on an Agent node:
+./security-hub agent scan
 ```
 
 Environment variables `SECURITY_HUB_URL` (or `HUB_URL`) and `SECURITY_HUB_ADVERTISE_URL` (or `AGENT_ADVERTISE_URL`) may also be used.
@@ -247,13 +196,13 @@ You can also manually register compute nodes through the Web UI or CLI:
 - **CLI Management:**
   ```bash
   # Add node manually:
-  ./security-hub node add <node-name> http://<agent-lan-ip>:10247 -token "<shared-lan-secret>"
+  ./security-hub hub node add <node-name> http://<agent-lan-ip>:10247 -token "<shared-lan-secret>"
 
   # List registered nodes:
-  ./security-hub node list
+  ./security-hub hub node list
 
   # Remove node:
-  ./security-hub node remove <node-name>
+  ./security-hub hub node remove <node-name>
   ```
 
 ---

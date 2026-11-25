@@ -18,6 +18,7 @@ const agentLaunchdTemplate = `<?xml version="1.0" encoding="UTF-8"?>
     <array>
         <string>{{ .BinaryPath }}</string>
         <string>agent</string>
+        <string>run</string>
 {{- range .Args }}
         <string>{{ . }}</string>
 {{- end }}
@@ -90,7 +91,7 @@ Type=simple
 User={{ .User }}
 {{- end }}
 WorkingDirectory={{ .WorkingDir }}
-ExecStart={{ .BinaryPath }} agent{{ range .Args }} {{ . }}{{ end }}
+ExecStart={{ .BinaryPath }} agent run{{ range .Args }} {{ . }}{{ end }}
 Restart=always
 RestartSec=5s
 Environment=PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin

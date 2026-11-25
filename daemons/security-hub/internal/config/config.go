@@ -13,6 +13,9 @@ import (
 )
 
 const (
+	HubConfigFile   = "config.hub.yml"
+	AgentConfigFile = "config.agent.yml"
+
 	defaultWebPort         = 10311
 	defaultSessionTTLHours = 24
 	defaultDataDir         = "data"

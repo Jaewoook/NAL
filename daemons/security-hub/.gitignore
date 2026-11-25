@@ -1,6 +1,8 @@
 /security-hub
 config.yaml
 config.yml
+config.hub.yml
+config.agent.yml
 .env
 data/
 *.swp

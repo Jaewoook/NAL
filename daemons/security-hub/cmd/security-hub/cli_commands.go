@@ -24,7 +24,7 @@ import (
 
 func runAuthCommand(rest []string, cfg *config.Config, out io.Writer) int {
 	if len(rest) == 0 || rest[0] != "login-link" {
-		fmt.Fprintln(out, "Usage: security-hub auth login-link")
+		fmt.Fprintln(out, "Usage: security-hub hub auth login-link")
 		return 1
 	}
 	stateFile := filepath.Join(cfg.Database.DataDir, "auth_state.json")
@@ -45,13 +45,13 @@ func runAuthCommand(rest []string, cfg *config.Config, out io.Writer) int {
 
 func runServiceCommand(rest []string, out io.Writer) int {
 	if len(rest) == 0 {
-		fmt.Fprintln(out, "Usage: security-hub service <status|start|stop|restart|install>")
+		fmt.Fprintln(out, "Usage: security-hub hub service <status|start|stop|restart|install>")
 		return 1
 	}
 	sub := rest[0]
 	switch sub {
 	case "install":
-		fs := flag.NewFlagSet("service install", flag.ContinueOnError)
+		fs := flag.NewFlagSet("hub service install", flag.ContinueOnError)
 		fs.SetOutput(out)
 		pathFlag := fs.String("path", "", "Path to write launchd plist")
 		if err := fs.Parse(rest[1:]); err != nil {
@@ -71,46 +71,46 @@ func runServiceCommand(rest []string, out io.Writer) int {
 			fmt.Fprintf(out, "Failed to install plist: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(out, "Installed launchd service plist (%s)\n", service.LaunchdLabel)
+		fmt.Fprintf(out, "Installed hub launchd service plist (%s) (hub mode)\n", service.LaunchdLabel)
 		return 0
 	case "status":
 		st, err := service.Status()
 		if err != nil {
-			fmt.Fprintf(out, "Failed to check service %s status: %v\n", service.LaunchdLabel, err)
+			fmt.Fprintf(out, "Failed to check hub service %s status: %v\n", service.LaunchdLabel, err)
 			return 1
 		}
-		fmt.Fprintf(out, "Service %s: %s\n", service.LaunchdLabel, st)
+		fmt.Fprintf(out, "Hub service %s (hub mode): %s\n", service.LaunchdLabel, st)
 		return 0
 	case "start":
 		if err := service.Start(); err != nil {
-			fmt.Fprintf(out, "Failed to start service: %v\n", err)
+			fmt.Fprintf(out, "Failed to start hub service: %v\n", err)
 			return 1
 		}
-		fmt.Fprintln(out, "Service started.")
+		fmt.Fprintln(out, "Service started as hub mode.")
 		return 0
 	case "stop":
 		if err := service.Stop(); err != nil {
-			fmt.Fprintf(out, "Failed to stop service: %v\n", err)
+			fmt.Fprintf(out, "Failed to stop hub service: %v\n", err)
 			return 1
 		}
-		fmt.Fprintln(out, "Service stopped.")
+		fmt.Fprintln(out, "Hub service stopped (hub mode).")
 		return 0
 	case "restart":
 		if err := service.Restart(); err != nil {
-			fmt.Fprintf(out, "Failed to restart service: %v\n", err)
+			fmt.Fprintf(out, "Failed to restart hub service: %v\n", err)
 			return 1
 		}
-		fmt.Fprintln(out, "Service restarted.")
+		fmt.Fprintln(out, "Service restarted as hub mode.")
 		return 0
 	default:
-		fmt.Fprintf(out, "Unknown service action: %s\n", sub)
+		fmt.Fprintf(out, "Unknown hub service action: %s\n", sub)
 		return 1
 	}
 }
 
 func runDBCommand(rest []string, cfg *config.Config, out io.Writer) int {
 	if len(rest) == 0 || rest[0] != "init" {
-		fmt.Fprintln(out, "Usage: security-hub db init")
+		fmt.Fprintln(out, "Usage: security-hub hub db init")
 		return 1
 	}
 	if err := db.ProvisionDatabase(context.Background(), cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil); err != nil {
@@ -132,14 +132,14 @@ func openCLISpoolStore(cfg *config.Config, withPostgres bool) (*db.SpoolStore, e
 }
 
 func runScanCommand(rest []string, cfg *config.Config, out io.Writer) int {
-	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
+	fs := flag.NewFlagSet("hub scan", flag.ContinueOnError)
 	fs.SetOutput(out)
 	nodeFlag := fs.String("node", "", "Specific compute node to scan (default scans all nodes)")
 	if err := fs.Parse(rest); err != nil {
 		return 1
 	}
 	if fs.NArg() > 0 {
-		fmt.Fprintln(out, "Usage: security-hub scan [-node <name>]")
+		fmt.Fprintln(out, "Usage: security-hub hub scan [-node <name>]")
 		return 1
 	}
 	store, err := openCLISpoolStore(cfg, true)
@@ -185,9 +185,43 @@ func runScanCommand(rest []string, cfg *config.Config, out io.Writer) int {
 	return 0
 }
 
+func runAgentScanCommand(rest []string, cfg *config.Config, out io.Writer) int {
+	fs := flag.NewFlagSet("agent scan", flag.ContinueOnError)
+	fs.SetOutput(out)
+	if err := fs.Parse(rest); err != nil {
+		return 1
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintln(out, "Usage: security-hub agent scan")
+		return 1
+	}
+	cfg.NodeName = service.ResolveAgentNodeName(cfg)
+	store, err := openCLISpoolStore(cfg, false)
+	if err != nil {
+		fmt.Fprintf(out, "Failed to open agent spool store: %v\n", err)
+		return 1
+	}
+	orch := scanner.NewOrchestrator(cfg, store, nil, nil)
+	items, err := orch.ScanLocalNode(context.Background())
+	if err != nil && len(items) == 0 {
+		fmt.Fprintf(out, "Agent scan failed: %v\n", err)
+		return 1
+	}
+	skipped, _ := store.ListSkippedVersions(context.Background())
+	summary := scanner.ApplySkippedAndSummarize(items, skipped)
+	fmt.Fprintf(out, "=== NAL Security Hub Agent Scan Summary (Node %s) ===\n", cfg.NodeName)
+	fmt.Fprintf(out, "Items Scanned:     %d\n", len(summary.Items))
+	fmt.Fprintf(out, "Critical CVEs:     %d\n", summary.TotalCritCVEs)
+	fmt.Fprintf(out, "High CVEs:         %d\n", summary.TotalHighCVEs)
+	fmt.Fprintf(out, "LTS/EoL Warnings:  %d\n", summary.TotalEoLIssues)
+	fmt.Fprintf(out, "Outdated Packages: %d\n", summary.TotalOutdated)
+	fmt.Fprintf(out, "Broken Pkg Links:  %d\n", summary.TotalBrokenBrew)
+	return 0
+}
+
 func runRollbackCommand(rest []string, cfg *config.Config, out io.Writer) int {
 	if len(rest) == 0 {
-		fmt.Fprintln(out, "Usage: security-hub rollback <service-name>")
+		fmt.Fprintln(out, "Usage: security-hub hub rollback <service-name>")
 		return 1
 	}
 	store, err := openCLISpoolStore(cfg, true)
@@ -223,7 +257,7 @@ func runTestAlertCommand(cfg *config.Config, out io.Writer) int {
 
 func runNodeCommand(rest []string, cfg *config.Config, out io.Writer) int {
 	if len(rest) == 0 {
-		fmt.Fprintln(out, "Usage: security-hub node <add|list|remove>")
+		fmt.Fprintln(out, "Usage: security-hub hub node <add|list|remove>")
 		return 1
 	}
 	store, err := openCLISpoolStore(cfg, rest[0] == "add" || rest[0] == "remove")
@@ -234,7 +268,7 @@ func runNodeCommand(rest []string, cfg *config.Config, out io.Writer) int {
 	switch rest[0] {
 	case "add":
 		if len(rest) < 3 {
-			fmt.Fprintln(out, "Usage: security-hub node add <Name> <URL> [-token <secret>]")
+			fmt.Fprintln(out, "Usage: security-hub hub node add <Name> <URL> [-token <secret>]")
 			return 1
 		}
 		nodeName := strings.TrimSpace(rest[1])
@@ -281,7 +315,7 @@ func runNodeCommand(rest []string, cfg *config.Config, out io.Writer) int {
 		return 0
 	case "remove":
 		if len(rest) < 2 {
-			fmt.Fprintln(out, "Usage: security-hub node remove <Name>")
+			fmt.Fprintln(out, "Usage: security-hub hub node remove <Name>")
 			return 1
 		}
 		if err := store.RemoveNode(context.Background(), rest[1]); err != nil {
@@ -291,7 +325,7 @@ func runNodeCommand(rest []string, cfg *config.Config, out io.Writer) int {
 		fmt.Fprintf(out, "Removed node %s\n", rest[1])
 		return 0
 	default:
-		fmt.Fprintln(out, "Usage: security-hub node <add|list|remove>")
+		fmt.Fprintln(out, "Usage: security-hub hub node <add|list|remove>")
 		return 1
 	}
 }
@@ -374,9 +408,9 @@ func runAgentServiceCLI(args []string, cfg *config.Config, out io.Writer) int {
 			return 1
 		}
 		if runtime.GOOS == "darwin" {
-			fmt.Fprintf(out, "Installed agent launchd service plist (%s)\n", service.AgentLaunchdLabel)
+			fmt.Fprintf(out, "Installed agent launchd service plist (%s) (agent mode)\n", service.AgentLaunchdLabel)
 		} else {
-			fmt.Fprintf(out, "Installed agent systemd service (%s)\n", service.AgentSystemdUnit)
+			fmt.Fprintf(out, "Installed agent systemd service (%s) (agent mode)\n", service.AgentSystemdUnit)
 		}
 		return 0
 
@@ -385,7 +419,7 @@ func runAgentServiceCLI(args []string, cfg *config.Config, out io.Writer) int {
 			fmt.Fprintf(out, "Failed to uninstall agent service: %v\n", err)
 			return 1
 		}
-		fmt.Fprintln(out, "Agent service uninstalled.")
+		fmt.Fprintln(out, "Agent service uninstalled (agent mode).")
 		return 0
 
 	case "start":
@@ -393,7 +427,7 @@ func runAgentServiceCLI(args []string, cfg *config.Config, out io.Writer) int {
 			fmt.Fprintf(out, "Failed to start agent service: %v\n", err)
 			return 1
 		}
-		fmt.Fprintln(out, "Agent service started.")
+		fmt.Fprintln(out, "Service started as agent mode.")
 		return 0
 
 	case "stop":
@@ -401,7 +435,7 @@ func runAgentServiceCLI(args []string, cfg *config.Config, out io.Writer) int {
 			fmt.Fprintf(out, "Failed to stop agent service: %v\n", err)
 			return 1
 		}
-		fmt.Fprintln(out, "Agent service stopped.")
+		fmt.Fprintln(out, "Agent service stopped (agent mode).")
 		return 0
 
 	case "restart":
@@ -409,7 +443,7 @@ func runAgentServiceCLI(args []string, cfg *config.Config, out io.Writer) int {
 			fmt.Fprintf(out, "Failed to restart agent service: %v\n", err)
 			return 1
 		}
-		fmt.Fprintln(out, "Agent service restarted.")
+		fmt.Fprintln(out, "Service restarted as agent mode.")
 		return 0
 
 	case "status":
@@ -423,9 +457,9 @@ func runAgentServiceCLI(args []string, cfg *config.Config, out io.Writer) int {
 			return 1
 		}
 		if runtime.GOOS == "darwin" {
-			fmt.Fprintf(out, "Agent service %s: %s\n", service.AgentLaunchdLabel, st)
+			fmt.Fprintf(out, "Agent service %s (agent mode): %s\n", service.AgentLaunchdLabel, st)
 		} else {
-			fmt.Fprintf(out, "Agent service %s: %s\n", service.AgentSystemdUnit, st)
+			fmt.Fprintf(out, "Agent service %s (agent mode): %s\n", service.AgentSystemdUnit, st)
 		}
 		return 0
 

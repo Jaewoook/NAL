@@ -183,6 +183,8 @@ func sendAnnouncement(ctx context.Context, client *http.Client, hubURL string, p
 	return nil
 }
 
+var resolveAdvertiseURLFn = ResolveAgentAdvertiseURL
+
 // StartAnnouncer starts the agent self-introduction loop against the Hub.
 // It sends an immediate announcement upon startup, then runs a periodic heartbeat ticker.
 // If intervals are supplied, the first one overrides the default 60-second ticker.
@@ -201,9 +203,10 @@ func StartAnnouncer(ctx context.Context, cfg *config.Config, httpClient *http.Cl
 			return
 		}
 
+		hasExplicitAdvertiseURL := strings.TrimSpace(cfg.AgentAdvertiseURL) != ""
 		payload := announcePayload{
 			Name:      ResolveAgentNodeName(cfg),
-			URL:       ResolveAgentAdvertiseURL(cfg),
+			URL:       resolveAdvertiseURLFn(cfg),
 			Token:     cfg.AgentToken,
 			OSVersion: runtime.GOOS + "/" + runtime.GOARCH,
 		}
@@ -226,8 +229,8 @@ func StartAnnouncer(ctx context.Context, cfg *config.Config, httpClient *http.Cl
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if strings.Contains(payload.URL, "127.0.0.1") {
-					payload.URL = ResolveAgentAdvertiseURL(cfg)
+				if !hasExplicitAdvertiseURL || strings.Contains(payload.URL, "127.0.0.1") {
+					payload.URL = resolveAdvertiseURLFn(cfg)
 				}
 				if err := sendAnnouncement(ctx, httpClient, cfg.HubURL, payload); err != nil {
 					if ctx.Err() == nil {
