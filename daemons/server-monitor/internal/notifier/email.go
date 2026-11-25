@@ -137,6 +137,9 @@ func buildEmailMessage(from, to string, alert *models.Alert) []byte {
 	if alert.ThresholdValue > 0 {
 		body.WriteString(fmt.Sprintf("Threshold Value: %s\n", alert.FormatValue(alert.ThresholdValue)))
 	}
+	if tempSummary := alert.FormatTemperatures(); tempSummary != "" {
+		body.WriteString(fmt.Sprintf("Temperature:     %s\n", tempSummary))
+	}
 	body.WriteString(fmt.Sprintf("Timestamp:       %s\n", dateStr))
 	body.WriteString(fmt.Sprintf("Message:         %s\n", alert.Message))
 

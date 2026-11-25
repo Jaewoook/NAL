@@ -48,3 +48,19 @@ func FormatProcessesTable(processes []ProcessInfo) string {
 func (a *Alert) FormatValue(val float64) string {
 	return fmt.Sprintf("%.2f%s", val, a.EffectiveUnit())
 }
+
+// FormatTemperatures returns a concise summary of available CPU/GPU temperatures
+// attached to the alert (e.g. "CPU 68.5°C, GPU 54.0°C"), or "" if none are present.
+func (a *Alert) FormatTemperatures() string {
+	if a == nil {
+		return ""
+	}
+	var parts []string
+	if a.HasCPUTemp {
+		parts = append(parts, fmt.Sprintf("CPU %.1f°C", a.CPUTempCelsius))
+	}
+	if a.HasGPUTemp {
+		parts = append(parts, fmt.Sprintf("GPU %.1f°C", a.GPUTempCelsius))
+	}
+	return strings.Join(parts, ", ")
+}

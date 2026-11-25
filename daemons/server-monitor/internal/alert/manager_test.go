@@ -505,3 +505,39 @@ func TestAlertManagerTemperature(t *testing.T) {
 		t.Errorf("expected title '[server-m5] CPU Temperature Resolved', got %q", recoverAlerts[0].Title)
 	}
 }
+
+func TestAlertManagerAttachesTemperaturesToResourceAlerts(t *testing.T) {
+	mgr := NewManager("server-m5", nil, true)
+	t0 := time.Now()
+
+	cpuSpikeEv := models.RawConditionEvent{
+		RuleName:       models.RuleCPUSpike,
+		IsActive:       true,
+		Level:          models.AlertLevelCritical,
+		CurrentValue:   94.0,
+		ThresholdValue: 85.0,
+		Unit:           "%",
+	}
+	metrics := &models.SystemMetrics{
+		Timestamp:      t0,
+		CPUPercent:     94.0,
+		HasCPUTemp:     true,
+		CPUTempCelsius: 68.5,
+		HasGPUTemp:     true,
+		GPUTempCelsius: 54.0,
+	}
+
+	alerts := mgr.ProcessEvents([]models.RawConditionEvent{cpuSpikeEv}, metrics)
+	if len(alerts) != 1 {
+		t.Fatalf("expected 1 alert, got %d", len(alerts))
+	}
+	if !alerts[0].HasCPUTemp || alerts[0].CPUTempCelsius != 68.5 {
+		t.Errorf("expected CPU temp 68.5°C attached, got has=%v temp=%f", alerts[0].HasCPUTemp, alerts[0].CPUTempCelsius)
+	}
+	if !alerts[0].HasGPUTemp || alerts[0].GPUTempCelsius != 54.0 {
+		t.Errorf("expected GPU temp 54.0°C attached, got has=%v temp=%f", alerts[0].HasGPUTemp, alerts[0].GPUTempCelsius)
+	}
+	if got := alerts[0].FormatTemperatures(); got != "CPU 68.5°C, GPU 54.0°C" {
+		t.Errorf("unexpected FormatTemperatures(): %q", got)
+	}
+}

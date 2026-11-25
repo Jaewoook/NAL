@@ -676,3 +676,82 @@ func TestEmailChannelSanitizesCRLFHeaders(t *testing.T) {
 		}
 	}
 }
+
+func TestChannelsIncludeTemperatureOnResourceAlerts(t *testing.T) {
+	cpuAlert := &models.Alert{
+		Title:          "CPU Spike Alert",
+		Message:        "CPU usage high",
+		Level:          models.AlertLevelCritical,
+		MetricName:     models.RuleCPUSpike,
+		CurrentValue:   93.5,
+		ThresholdValue: 85.0,
+		Unit:           "%",
+		HasCPUTemp:     true,
+		CPUTempCelsius: 68.5,
+		HasGPUTemp:     true,
+		GPUTempCelsius: 54.0,
+		Timestamp:      time.Now(),
+		Hostname:       "srv-1",
+	}
+
+	const expectedTemp = "CPU 68.5°C, GPU 54.0°C"
+
+	// Telegram
+	var tgBody string
+	tCh := NewTelegramChannelWithEndpoint("token", "123", "http://localhost/tg")
+	tCh.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		b, _ := io.ReadAll(r.Body)
+		tgBody = string(b)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"ok":true}`)), Header: make(http.Header)}, nil
+	}))
+	if err := tCh.Send(cpuAlert); err != nil {
+		t.Fatalf("telegram send failed: %v", err)
+	}
+	if !strings.Contains(tgBody, expectedTemp) {
+		t.Errorf("expected temperature %q in telegram payload, got: %s", expectedTemp, tgBody)
+	}
+
+	// Discord
+	var discordBody string
+	dCh := NewDiscordChannel("http://localhost/discord")
+	dCh.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		b, _ := io.ReadAll(r.Body)
+		discordBody = string(b)
+		return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+	}))
+	if err := dCh.Send(cpuAlert); err != nil {
+		t.Fatalf("discord send failed: %v", err)
+	}
+	if !strings.Contains(discordBody, expectedTemp) {
+		t.Errorf("expected temperature %q in discord payload, got: %s", expectedTemp, discordBody)
+	}
+
+	// Slack
+	var slackBody string
+	sCh := NewSlackChannel("http://localhost/slack")
+	sCh.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		b, _ := io.ReadAll(r.Body)
+		slackBody = string(b)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
+	}))
+	if err := sCh.Send(cpuAlert); err != nil {
+		t.Fatalf("slack send failed: %v", err)
+	}
+	if !strings.Contains(slackBody, expectedTemp) {
+		t.Errorf("expected temperature %q in slack payload, got: %s", expectedTemp, slackBody)
+	}
+
+	// Email
+	var emailBody string
+	eCh := NewEmailChannel(EmailOptions{SMTPHost: "smtp.example.com", SMTPPort: 587, ToEmail: "ops@example.com"})
+	eCh.sendMailFunc = func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		emailBody = string(msg)
+		return nil
+	}
+	if err := eCh.Send(cpuAlert); err != nil {
+		t.Fatalf("email send failed: %v", err)
+	}
+	if !strings.Contains(emailBody, expectedTemp) {
+		t.Errorf("expected temperature %q in email body, got: %s", expectedTemp, emailBody)
+	}
+}

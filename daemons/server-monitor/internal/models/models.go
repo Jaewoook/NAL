@@ -66,6 +66,10 @@ type Alert struct {
 	CurrentValue   float64       `json:"current_value" yaml:"current_value"`
 	ThresholdValue float64       `json:"threshold_value" yaml:"threshold_value"`
 	Unit           string        `json:"unit,omitempty" yaml:"unit,omitempty"`
+	CPUTempCelsius float64       `json:"cpu_temp_celsius,omitempty" yaml:"cpu_temp_celsius,omitempty"`
+	GPUTempCelsius float64       `json:"gpu_temp_celsius,omitempty" yaml:"gpu_temp_celsius,omitempty"`
+	HasCPUTemp     bool          `json:"has_cpu_temp,omitempty" yaml:"has_cpu_temp,omitempty"`
+	HasGPUTemp     bool          `json:"has_gpu_temp,omitempty" yaml:"has_gpu_temp,omitempty"`
 	Timestamp      time.Time     `json:"timestamp" yaml:"timestamp"`
 	Hostname       string        `json:"hostname" yaml:"hostname"`
 	TopProcesses   []ProcessInfo `json:"top_processes,omitempty" yaml:"top_processes,omitempty"`

@@ -103,6 +103,9 @@ func buildDiscordPayload(alert *models.Alert) discordPayload {
 	if alert.ThresholdValue > 0 {
 		fields = append(fields, discordField{Name: "Threshold", Value: alert.FormatValue(alert.ThresholdValue), Inline: true})
 	}
+	if tempSummary := alert.FormatTemperatures(); tempSummary != "" {
+		fields = append(fields, discordField{Name: "Temperature", Value: tempSummary, Inline: true})
+	}
 
 	if table := models.FormatProcessesTable(alert.TopProcesses); table != "" {
 		if runes := []rune(table); len(runes) > 1000 {

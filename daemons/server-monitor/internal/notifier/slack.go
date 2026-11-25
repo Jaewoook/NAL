@@ -97,6 +97,9 @@ func buildSlackPayload(alert *models.Alert) slackPayload {
 	if alert.ThresholdValue > 0 {
 		fields = append(fields, slackField{Title: "Threshold", Value: alert.FormatValue(alert.ThresholdValue), Short: true})
 	}
+	if tempSummary := alert.FormatTemperatures(); tempSummary != "" {
+		fields = append(fields, slackField{Title: "Temperature", Value: tempSummary, Short: true})
+	}
 
 	desc := alert.Message
 	if table := models.FormatProcessesTable(alert.TopProcesses); table != "" {

@@ -126,6 +126,9 @@ func formatTelegramMessage(alert *models.Alert) string {
 				html.EscapeString(alert.MetricName), alert.FormatValue(alert.CurrentValue)))
 		}
 	}
+	if tempSummary := alert.FormatTemperatures(); tempSummary != "" {
+		buf.WriteString(fmt.Sprintf("<b>Temperature:</b> %s\n", html.EscapeString(tempSummary)))
+	}
 	if !alert.Timestamp.IsZero() {
 		buf.WriteString(fmt.Sprintf("<b>Time:</b> %s\n", alert.Timestamp.UTC().Format("2006-01-02 15:04:05 UTC")))
 	}

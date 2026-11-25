@@ -251,7 +251,7 @@ func (m *Manager) createAlert(ev models.RawConditionEvent, now time.Time, level 
 		}
 	}
 
-	return models.Alert{
+	alert := models.Alert{
 		Title:          m.formatTitle(ev.RuleName, level),
 		Message:        msg,
 		Level:          level,
@@ -263,6 +263,17 @@ func (m *Manager) createAlert(ev models.RawConditionEvent, now time.Time, level 
 		Hostname:       m.hostname,
 		TopProcesses:   topProcs,
 	}
+	if metrics != nil {
+		if metrics.HasCPUTemp {
+			alert.HasCPUTemp = true
+			alert.CPUTempCelsius = metrics.CPUTempCelsius
+		}
+		if metrics.HasGPUTemp {
+			alert.HasGPUTemp = true
+			alert.GPUTempCelsius = metrics.GPUTempCelsius
+		}
+	}
+	return alert
 }
 
 func (m *Manager) formatTitle(ruleName string, level models.AlertLevel) string {
