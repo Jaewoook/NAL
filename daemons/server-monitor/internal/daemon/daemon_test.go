@@ -484,17 +484,24 @@ func TestDaemonResetsCooldownWhenAllChannelsFail(t *testing.T) {
 		t.Fatalf("failed to create daemon: %v", err)
 	}
 
-	// Step 1: all channels fail -> track should reset instead of burning 30m cooldown
+	// Step 1: all channels fail -> track schedules bounded retry (60s) instead of burning 30m cooldown
 	_ = d.Step(context.Background())
 	if len(ch.alerts) != 0 {
 		t.Fatalf("expected 0 delivered alerts on failure, got %d", len(ch.alerts))
 	}
 
-	// Step 2: network recovers 5s later -> alert must be delivered immediately
+	// Step 2: 5s later -> throttled so prolonged outages do not thrash every tick
 	ch.fail = false
 	coll.metrics.Timestamp = coll.metrics.Timestamp.Add(5 * time.Second)
 	_ = d.Step(context.Background())
+	if len(ch.alerts) != 0 {
+		t.Fatalf("expected retry to be throttled before backoff window, got %d", len(ch.alerts))
+	}
+
+	// Step 3: 60s after initial failure (well before 30m cooldown) -> alert is retried and delivered
+	coll.metrics.Timestamp = coll.metrics.Timestamp.Add(55 * time.Second)
+	_ = d.Step(context.Background())
 	if len(ch.alerts) != 1 {
-		t.Fatalf("expected alert to be retried and delivered on next tick, got %d", len(ch.alerts))
+		t.Fatalf("expected alert to be retried and delivered after 60s backoff, got %d", len(ch.alerts))
 	}
 }

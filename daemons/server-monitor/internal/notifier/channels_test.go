@@ -647,3 +647,32 @@ func TestHTTPPosterRetriesAfterSingleAttemptTimeout(t *testing.T) {
 		t.Errorf("expected 2 attempts, got %d", attempts)
 	}
 }
+
+func TestEmailChannelSanitizesCRLFHeaders(t *testing.T) {
+	var rawMsg string
+	ch := NewEmailChannel(EmailOptions{
+		SMTPHost:  "smtp.example.com",
+		SMTPPort:  587,
+		FromEmail: "from@example.com\r\nBcc: evil@example.com",
+		ToEmail:   "to@example.com",
+	})
+	ch.sendMailFunc = func(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+		rawMsg = string(msg)
+		return nil
+	}
+
+	err := ch.Send(&models.Alert{
+		Title:    "CPU High\r\nX-Injected: bad",
+		Hostname: "srv-1\nX-Other: bad",
+		Level:    models.AlertLevelCritical,
+	})
+	if err != nil {
+		t.Fatalf("unexpected send error: %v", err)
+	}
+	headerBlock := strings.SplitN(rawMsg, "\r\n\r\n", 2)[0]
+	for _, line := range strings.Split(headerBlock, "\r\n") {
+		if strings.HasPrefix(line, "Bcc:") || strings.HasPrefix(line, "X-Injected:") || strings.HasPrefix(line, "X-Other:") {
+			t.Errorf("CRLF header injection succeeded; unexpected header line: %q", line)
+		}
+	}
+}

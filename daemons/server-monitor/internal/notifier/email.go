@@ -117,8 +117,14 @@ func (e *EmailChannel) resolveFrom() string {
 	return "server-monitor@localhost"
 }
 
+func sanitizeHeader(s string) string {
+	return strings.NewReplacer("\r", " ", "\n", " ").Replace(s)
+}
+
 func buildEmailMessage(from, to string, alert *models.Alert) []byte {
-	subject := fmt.Sprintf("[%s] %s - %s", alert.Level, alert.Hostname, alert.Title)
+	from = sanitizeHeader(from)
+	to = sanitizeHeader(to)
+	subject := sanitizeHeader(fmt.Sprintf("[%s] %s - %s", alert.Level, alert.Hostname, alert.Title))
 	dateStr := alert.Timestamp.UTC().Format(time.RFC1123Z)
 
 	var body strings.Builder

@@ -2,6 +2,7 @@ package logger
 
 import (
 	"bytes"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -325,6 +326,29 @@ func TestRotatingFile_RotationFailureDoesNotPanic(t *testing.T) {
 	_, writeErr := rf.Write([]byte("exceeds-max-bytes-trigger-rotation"))
 	if writeErr == nil || !strings.Contains(writeErr.Error(), "rotation failed") {
 		t.Errorf("expected write error mentioning 'rotation failed', got: %v", writeErr)
+	}
+}
+
+func TestRotatingFile_WriteAfterCloseReturnsErrClosed(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "closed.log")
+
+	rf, err := NewRotatingFile(logPath, 1024, 2)
+	if err != nil {
+		t.Fatalf("failed to create RotatingFile: %v", err)
+	}
+	if _, err := rf.Write([]byte("before close\n")); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	if err := rf.Close(); err != nil {
+		t.Fatalf("close failed: %v", err)
+	}
+
+	if _, err := rf.Write([]byte("after close\n")); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("expected os.ErrClosed after Close(), got: %v", err)
+	}
+	if _, err := os.Stat(logPath + ".1"); !os.IsNotExist(err) {
+		t.Errorf("expected no backup rotation after Close()")
 	}
 }
 

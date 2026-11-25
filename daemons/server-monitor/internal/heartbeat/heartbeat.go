@@ -275,7 +275,7 @@ func (s *Sender) TickContext(ctx context.Context, now time.Time) bool {
 
 	s.mu.Lock()
 	s.lastErr = err
-	if err != nil {
+	if err != nil && s.lastTick.Equal(now) {
 		s.nextDue = now.Add(retryDelay)
 	}
 	s.mu.Unlock()

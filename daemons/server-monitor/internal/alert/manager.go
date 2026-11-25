@@ -94,6 +94,25 @@ func (m *Manager) Reset(ruleName string) {
 	delete(m.tracks, ruleName)
 }
 
+// ScheduleRetry shortens a rule's cooldown window after a total delivery failure so
+// the alert is retried after retryAfter instead of waiting the full cooldown duration
+// or thrashing on every tick.
+func (m *Manager) ScheduleRetry(ruleName string, retryAfter time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	track, exists := m.tracks[ruleName]
+	if !exists || track.lastAlertTime.IsZero() {
+		return
+	}
+	if retryAfter <= 0 {
+		delete(m.tracks, ruleName)
+		return
+	}
+	if track.cooldown > retryAfter {
+		track.lastAlertTime = track.lastAlertTime.Add(retryAfter - track.cooldown)
+	}
+}
+
 // ProcessEvents processes a batch of raw condition events against independent subsystem
 // tracks, enforcing cooldowns and generating alerts / recoveries.
 func (m *Manager) ProcessEvents(events []models.RawConditionEvent, metrics *models.SystemMetrics) []models.Alert {

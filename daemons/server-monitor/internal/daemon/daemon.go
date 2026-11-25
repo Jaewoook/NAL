@@ -19,7 +19,11 @@ import (
 	"github.com/jaewoook/server-monitor/internal/notifier"
 )
 
-const defaultCollectTimeout = 10 * time.Second
+const (
+	defaultCollectTimeout       = 10 * time.Second
+	defaultDeliveryRetryBackoff = 60 * time.Second
+	maxHeartbeatLoopTick        = 15 * time.Second
+)
 
 // MetricsCollector defines the interface for gathering point-in-time system metrics.
 type MetricsCollector interface {
@@ -199,10 +203,8 @@ func New(cfg *config.Config, opts ...Option) (*Daemon, error) {
 	disp := notifier.NewDispatcherFromConfig(&cfg.Notifications)
 
 	var hb HeartbeatSender
-	var hbConcrete *heartbeat.Sender
 	if cfg.Heartbeat.Enabled && cfg.Heartbeat.URL != "" {
-		hbConcrete = heartbeat.New(cfg.Heartbeat.URL, time.Duration(cfg.Heartbeat.IntervalSeconds)*time.Second)
-		hb = hbConcrete
+		hb = heartbeat.New(cfg.Heartbeat.URL, time.Duration(cfg.Heartbeat.IntervalSeconds)*time.Second)
 	}
 
 	var dig DigestEngine
@@ -228,8 +230,10 @@ func New(cfg *config.Config, opts ...Option) (*Daemon, error) {
 		opt(d)
 	}
 
-	if d.logger != nil && hbConcrete != nil {
-		hbConcrete.SetLogger(d.logger)
+	if d.logger != nil {
+		if loggerSetter, ok := d.heartbeat.(interface{ SetLogger(*log.Logger) }); ok {
+			loggerSetter.SetLogger(d.logger)
+		}
 	}
 
 	return d, nil
@@ -309,12 +313,13 @@ func (d *Daemon) step(ctx context.Context) (metrics *models.SystemMetrics) {
 		alerts := d.alertMgr.ProcessEvents(events, metrics)
 		for _, a := range alerts {
 			alertCopy := a
-			if !d.dispatch(ctx, &alertCopy, fmt.Sprintf("alert %q", alertCopy.Title)) {
-				// All configured channels failed: reset the track so the next tick retries
-				// delivery instead of burning the full cooldown window.
-				if resetter, ok := d.alertMgr.(interface{ Reset(string) }); ok && alertCopy.MetricName != "" {
-					resetter.Reset(alertCopy.MetricName)
-					d.logf("[daemon] all channels failed for %q; resetting track to retry on next tick", alertCopy.MetricName)
+			if !d.dispatch(ctx, &alertCopy, fmt.Sprintf("alert %q", alertCopy.Title)) &&
+				ctx.Err() == nil && alertCopy.Level != models.AlertLevelResolved && alertCopy.MetricName != "" {
+				// All configured channels failed: shorten cooldown to a bounded retry backoff
+				// instead of burning the full cooldown window or thrashing on every tick.
+				if retryScheduler, ok := d.alertMgr.(interface{ ScheduleRetry(string, time.Duration) }); ok {
+					retryScheduler.ScheduleRetry(alertCopy.MetricName, defaultDeliveryRetryBackoff)
+					d.logf("[daemon] all channels failed for %q; scheduling delivery retry in %v", alertCopy.MetricName, defaultDeliveryRetryBackoff)
 				}
 			}
 		}
@@ -375,7 +380,11 @@ func (d *Daemon) runHeartbeatLoop(ctx context.Context) {
 	if hbInterval <= 0 {
 		hbInterval = 60 * time.Second
 	}
-	ticker := time.NewTicker(hbInterval)
+	tickInterval := hbInterval
+	if tickInterval > maxHeartbeatLoopTick {
+		tickInterval = maxHeartbeatLoopTick
+	}
+	ticker := time.NewTicker(tickInterval)
 	defer ticker.Stop()
 
 	for {

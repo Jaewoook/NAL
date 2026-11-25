@@ -31,6 +31,7 @@ type RotatingFile struct {
 	maxBytes         int64
 	maxBackups       int
 	file             *os.File
+	closed           bool
 	currentSize      int64
 	lastRotateErr    time.Time
 	rotateRetryDelay time.Duration
@@ -80,6 +81,10 @@ func NewRotatingFile(filePath string, maxBytes int64, maxBackups int) (*Rotating
 func (rf *RotatingFile) Write(p []byte) (n int, err error) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+
+	if rf.closed {
+		return 0, os.ErrClosed
+	}
 
 	if rf.file == nil {
 		if !rf.lastRotateErr.IsZero() && time.Since(rf.lastRotateErr) < rf.rotateRetryDelay {
@@ -150,11 +155,12 @@ func (rf *RotatingFile) rotate() error {
 	return nil
 }
 
-// Close closes the active log file.
+// Close closes the active log file and prevents future writes from reopening it.
 func (rf *RotatingFile) Close() error {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	rf.closed = true
 	if rf.file != nil {
 		err := rf.file.Close()
 		rf.file = nil
