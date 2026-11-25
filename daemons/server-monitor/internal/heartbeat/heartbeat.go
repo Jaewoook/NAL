@@ -14,28 +14,34 @@ import (
 )
 
 const (
-	defaultMaxRetries     = 2
-	defaultRetryBaseDelay = 250 * time.Millisecond
+	defaultAttemptTimeout    = 5 * time.Second
+	defaultTotalTimeout      = 15 * time.Second
+	defaultMaxRetries        = 2
+	defaultRetryBaseDelay    = 250 * time.Millisecond
+	defaultFailRetryInterval = 15 * time.Second
 )
 
 // Sender manages periodic dead-man's-switch aliveness pings to an external uptime service.
 type Sender struct {
-	mu             sync.Mutex
-	url            string
-	interval       time.Duration
-	lastTick       time.Time
-	lastErr        error
-	method         string
-	client         *http.Client
-	logger         *log.Logger
-	maxRetries     int
-	retryBaseDelay time.Duration
+	mu                sync.Mutex
+	url               string
+	interval          time.Duration
+	lastTick          time.Time
+	nextDue           time.Time
+	lastErr           error
+	method            string
+	client            *http.Client
+	logger            *log.Logger
+	attemptTimeout    time.Duration
+	maxRetries        int
+	retryBaseDelay    time.Duration
+	failRetryInterval time.Duration
 }
 
 // New creates a new Sender with the specified heartbeat ping URL and interval.
 func New(url string, interval time.Duration) *Sender {
 	return NewWithClient(url, interval, &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout: defaultAttemptTimeout,
 	})
 }
 
@@ -46,16 +52,18 @@ func NewWithClient(url string, interval time.Duration, client *http.Client) *Sen
 	}
 	if client == nil {
 		client = &http.Client{
-			Timeout: 5 * time.Second,
+			Timeout: defaultAttemptTimeout,
 		}
 	}
 	return &Sender{
-		url:            url,
-		interval:       interval,
-		client:         client,
-		method:         http.MethodGet,
-		maxRetries:     defaultMaxRetries,
-		retryBaseDelay: defaultRetryBaseDelay,
+		url:               url,
+		interval:          interval,
+		client:            client,
+		method:            http.MethodGet,
+		attemptTimeout:    defaultAttemptTimeout,
+		maxRetries:        defaultMaxRetries,
+		retryBaseDelay:    defaultRetryBaseDelay,
+		failRetryInterval: defaultFailRetryInterval,
 	}
 }
 
@@ -130,22 +138,25 @@ func (s *Sender) SetTransport(rt http.RoundTripper) {
 	}
 }
 
-// Reset clears the last tick timestamp and last error.
+// Reset clears the last tick timestamp, retry schedule, and last error.
 func (s *Sender) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastTick = time.Time{}
+	s.nextDue = time.Time{}
 	s.lastErr = nil
 }
 
 // Ping sends an HTTP request to the configured heartbeat URL with bounded retries
-// on transient network errors, HTTP 429, and 5xx responses.
-// It enforces a 5-second timeout if the provided context lacks a deadline.
+// on transient network errors, timeouts, HTTP 429, and 5xx responses.
+// Each attempt is bounded by attemptTimeout (default 5s) within an overall 15s budget
+// if the provided context lacks a deadline.
 func (s *Sender) Ping(ctx context.Context) error {
 	s.mu.Lock()
 	url := s.url
 	method := s.method
 	client := s.client
+	attemptTimeout := s.attemptTimeout
 	maxRetries := s.maxRetries
 	retryBaseDelay := s.retryBaseDelay
 	s.mu.Unlock()
@@ -157,13 +168,16 @@ func (s *Sender) Ping(ctx context.Context) error {
 	if method == "" {
 		method = http.MethodGet
 	}
+	if attemptTimeout <= 0 {
+		attemptTimeout = defaultAttemptTimeout
+	}
 
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+		ctx, cancel = context.WithTimeout(ctx, defaultTotalTimeout)
 		defer cancel()
 	}
 
@@ -185,14 +199,17 @@ func (s *Sender) Ping(ctx context.Context) error {
 			}
 		}
 
-		req, err := http.NewRequestWithContext(ctx, method, url, nil)
+		attemptCtx, attemptCancel := context.WithTimeout(ctx, attemptTimeout)
+		req, err := http.NewRequestWithContext(attemptCtx, method, url, nil)
 		if err != nil {
+			attemptCancel()
 			return fmt.Errorf("failed to create heartbeat request: %w", err)
 		}
 		req.Header.Set("User-Agent", models.UserAgent)
 
 		resp, err := client.Do(req)
 		if err != nil {
+			attemptCancel()
 			lastErr = fmt.Errorf("heartbeat ping failed: %w", err)
 			if ctx.Err() != nil {
 				return lastErr
@@ -203,6 +220,7 @@ func (s *Sender) Ping(ctx context.Context) error {
 		// Drain up to 64KB to allow connection reuse
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
 		_ = resp.Body.Close()
+		attemptCancel()
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return nil
@@ -221,8 +239,9 @@ func (s *Sender) Tick(now time.Time) bool {
 	return s.TickContext(context.Background(), now)
 }
 
-// TickContext checks whether the interval has elapsed and sends a ping if due,
-// honoring ctx for cancellation and deadlines.
+// TickContext checks whether the next ping is due and sends it, honoring ctx.
+// On ping failure, the next attempt is scheduled sooner (min(interval, failRetryInterval))
+// so transient network blips do not cause a full interval gap.
 func (s *Sender) TickContext(ctx context.Context, now time.Time) bool {
 	if now.IsZero() {
 		now = time.Now()
@@ -237,20 +256,28 @@ func (s *Sender) TickContext(ctx context.Context, now time.Time) bool {
 		s.mu.Unlock()
 		return false
 	}
-	if !s.lastTick.IsZero() && now.Sub(s.lastTick) < s.interval {
+	if !s.nextDue.IsZero() && now.Before(s.nextDue) {
 		s.mu.Unlock()
 		return false
 	}
 	s.lastTick = now
+	s.nextDue = now.Add(s.interval)
+	retryDelay := s.failRetryInterval
+	if retryDelay <= 0 || retryDelay > s.interval {
+		retryDelay = s.interval
+	}
 	s.mu.Unlock()
 
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	pingCtx, cancel := context.WithTimeout(ctx, defaultTotalTimeout)
 	defer cancel()
 
 	err := s.Ping(pingCtx)
 
 	s.mu.Lock()
 	s.lastErr = err
+	if err != nil {
+		s.nextDue = now.Add(retryDelay)
+	}
 	s.mu.Unlock()
 
 	if err != nil {

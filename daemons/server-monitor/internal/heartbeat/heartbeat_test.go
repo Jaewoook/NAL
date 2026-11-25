@@ -271,3 +271,45 @@ func TestHeartbeatPingRetriesTransient5xx(t *testing.T) {
 	}
 }
 
+func TestHeartbeatFailedTickRetriesSoonerThanInterval(t *testing.T) {
+	var failNext atomic.Bool
+	failNext.Store(true)
+	var pings int32
+
+	sender := New("http://example.com/ping", 60*time.Second)
+	sender.maxRetries = 0
+	sender.failRetryInterval = 15 * time.Second
+	sender.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		atomic.AddInt32(&pings, 1)
+		if failNext.Load() {
+			return nil, errors.New("temporary dns failure")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("ok")),
+			Header:     make(http.Header),
+		}, nil
+	}))
+
+	t0 := time.Now()
+	if !sender.Tick(t0) {
+		t.Fatalf("expected initial tick to fire")
+	}
+	// Before 15s backoff -> skipped
+	if sender.Tick(t0.Add(10 * time.Second)) {
+		t.Fatalf("expected tick to be skipped before failRetryInterval")
+	}
+	// At 15s (much sooner than 60s interval) -> retries and succeeds
+	failNext.Store(false)
+	if !sender.Tick(t0.Add(15 * time.Second)) {
+		t.Fatalf("expected failed heartbeat to retry after 15s backoff")
+	}
+	if sender.LastError() != nil {
+		t.Errorf("expected nil error after recovery ping, got %v", sender.LastError())
+	}
+	// After recovery, normal 60s interval resumes
+	if sender.Tick(t0.Add(45 * time.Second)) {
+		t.Fatalf("expected normal 60s interval after successful ping")
+	}
+}
+

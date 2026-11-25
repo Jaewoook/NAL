@@ -68,13 +68,15 @@ func (c *Collector) SetCPUSampleInterval(d time.Duration) {
 	c.cpuSampleInterval = d
 }
 
-// PopulateTopProcesses scans top processes on-demand and attaches them to m
-// if not already present.
+// PopulateTopProcesses scans top processes on-demand with a bounded 5s timeout
+// and attaches them to m if not already present.
 func (c *Collector) PopulateTopProcesses(m *models.SystemMetrics) {
 	if m == nil || c.topProcCount <= 0 || len(m.TopProcesses) > 0 {
 		return
 	}
-	m.TopProcesses = c.collectTopProcesses(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	m.TopProcesses = c.collectTopProcesses(ctx)
 }
 
 // Collect gathers current system metrics using a background context.

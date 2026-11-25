@@ -12,15 +12,17 @@ import (
 
 const (
 	defaultHTTPTimeout    = 5 * time.Second
+	defaultTotalTimeout   = 15 * time.Second
 	maxResponseBodyBytes  = 64 * 1024
 	defaultMaxRetries     = 2
 	defaultRetryBaseDelay = 250 * time.Millisecond
 )
 
 // httpPoster provides shared JSON HTTP POST delivery with bounded retries on
-// transient failures (network errors, HTTP 429, and 5xx) and transport configuration.
+// transient failures (network errors, timeouts, HTTP 429, and 5xx).
 type httpPoster struct {
 	client         *http.Client
+	attemptTimeout time.Duration
 	maxRetries     int
 	retryBaseDelay time.Duration
 }
@@ -30,6 +32,7 @@ func newHTTPPoster() httpPoster {
 		client: &http.Client{
 			Timeout: defaultHTTPTimeout,
 		},
+		attemptTimeout: defaultHTTPTimeout,
 		maxRetries:     defaultMaxRetries,
 		retryBaseDelay: defaultRetryBaseDelay,
 	}
@@ -69,8 +72,13 @@ func (p *httpPoster) postJSON(ctx context.Context, url string, payload any, head
 	}
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, defaultHTTPTimeout)
+		ctx, cancel = context.WithTimeout(ctx, defaultTotalTimeout)
 		defer cancel()
+	}
+
+	attemptTimeout := p.attemptTimeout
+	if attemptTimeout <= 0 {
+		attemptTimeout = defaultHTTPTimeout
 	}
 
 	maxAttempts := 1 + p.maxRetries
@@ -95,8 +103,10 @@ func (p *httpPoster) postJSON(ctx context.Context, url string, payload any, head
 			}
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
+		attemptCtx, attemptCancel := context.WithTimeout(ctx, attemptTimeout)
+		req, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, url, bytes.NewReader(bodyBytes))
 		if err != nil {
+			attemptCancel()
 			return 0, nil, fmt.Errorf("failed to create request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
@@ -106,9 +116,11 @@ func (p *httpPoster) postJSON(ctx context.Context, url string, payload any, head
 
 		resp, err := p.client.Do(req)
 		if err != nil {
+			attemptCancel()
 			lastErr = err
 			lastStatus = 0
 			lastBody = nil
+			// Only stop retrying if the outer context itself is done.
 			if ctx.Err() != nil {
 				return 0, nil, err
 			}
@@ -118,6 +130,7 @@ func (p *httpPoster) postJSON(ctx context.Context, url string, payload any, head
 		// Always drain up to 64KB so HTTP keep-alive connections can be reused.
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes))
 		_ = resp.Body.Close()
+		attemptCancel()
 
 		lastStatus = resp.StatusCode
 		lastBody = respBody

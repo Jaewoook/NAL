@@ -446,3 +446,55 @@ func TestDaemonStepPanicRecovery(t *testing.T) {
 		t.Fatalf("unexpected error after panic recovery: %v", err)
 	}
 }
+
+type flakyChannel struct {
+	name   string
+	fail   bool
+	alerts []*models.Alert
+}
+
+func (f *flakyChannel) Name() string { return f.name }
+func (f *flakyChannel) Send(a *models.Alert) error {
+	if f.fail {
+		return errors.New("network down")
+	}
+	f.alerts = append(f.alerts, a)
+	return nil
+}
+
+func TestDaemonResetsCooldownWhenAllChannelsFail(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.CPU.Spike.Enabled = true
+	cfg.CPU.Spike.ThresholdPercent = 80.0
+	cfg.CPU.Spike.SustainedSeconds = 1
+	cfg.CPU.Spike.CooldownMinutes = 30
+
+	coll := &mockCollector{
+		metrics: &models.SystemMetrics{
+			Timestamp:     time.Now(),
+			CPUPercent:    95.0,
+			MemoryPercent: 30.0,
+			DiskPercent:   40.0,
+		},
+	}
+
+	ch := &flakyChannel{name: "flaky", fail: true}
+	d, err := New(cfg, WithCollector(coll), WithDispatcher(notifier.NewDispatcher(ch)))
+	if err != nil {
+		t.Fatalf("failed to create daemon: %v", err)
+	}
+
+	// Step 1: all channels fail -> track should reset instead of burning 30m cooldown
+	_ = d.Step(context.Background())
+	if len(ch.alerts) != 0 {
+		t.Fatalf("expected 0 delivered alerts on failure, got %d", len(ch.alerts))
+	}
+
+	// Step 2: network recovers 5s later -> alert must be delivered immediately
+	ch.fail = false
+	coll.metrics.Timestamp = coll.metrics.Timestamp.Add(5 * time.Second)
+	_ = d.Step(context.Background())
+	if len(ch.alerts) != 1 {
+		t.Fatalf("expected alert to be retried and delivered on next tick, got %d", len(ch.alerts))
+	}
+}

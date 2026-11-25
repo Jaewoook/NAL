@@ -273,7 +273,7 @@ func (d *Detector) checkCPUPlunge(m *models.SystemMetrics) *models.RawConditionE
 
 	validSamples := d.cpuBuffer[:0]
 	for _, s := range d.cpuBuffer {
-		if !s.timestamp.Before(cutoff) {
+		if !s.timestamp.Before(cutoff) && !s.timestamp.After(ts) {
 			validSamples = append(validSamples, s)
 		}
 	}

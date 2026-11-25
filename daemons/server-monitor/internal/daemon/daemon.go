@@ -309,7 +309,14 @@ func (d *Daemon) step(ctx context.Context) (metrics *models.SystemMetrics) {
 		alerts := d.alertMgr.ProcessEvents(events, metrics)
 		for _, a := range alerts {
 			alertCopy := a
-			d.dispatch(ctx, &alertCopy, fmt.Sprintf("alert %q", alertCopy.Title))
+			if !d.dispatch(ctx, &alertCopy, fmt.Sprintf("alert %q", alertCopy.Title)) {
+				// All configured channels failed: reset the track so the next tick retries
+				// delivery instead of burning the full cooldown window.
+				if resetter, ok := d.alertMgr.(interface{ Reset(string) }); ok && alertCopy.MetricName != "" {
+					resetter.Reset(alertCopy.MetricName)
+					d.logf("[daemon] all channels failed for %q; resetting track to retry on next tick", alertCopy.MetricName)
+				}
+			}
 		}
 
 		// 3. Periodic health digest check
@@ -331,14 +338,24 @@ func (d *Daemon) step(ctx context.Context) (metrics *models.SystemMetrics) {
 	return metrics
 }
 
-func (d *Daemon) dispatch(ctx context.Context, a *models.Alert, label string) {
+func (d *Daemon) dispatch(ctx context.Context, a *models.Alert, label string) bool {
 	if d.dispatcher == nil || a == nil {
-		return
+		return true
 	}
 	errs := d.dispatcher.DispatchContext(ctx, a)
 	for chName, chErr := range errs {
 		d.logf("[daemon] failed to dispatch %s to channel %q: %v", label, chName, chErr)
 	}
+	if len(errs) == 0 {
+		return true
+	}
+	if chProvider, ok := d.dispatcher.(interface{ Channels() []notifier.Channel }); ok {
+		total := len(chProvider.Channels())
+		if total > 0 && len(errs) >= total {
+			return false
+		}
+	}
+	return true
 }
 
 func (d *Daemon) warnIfNoChannels() {

@@ -625,3 +625,25 @@ func TestHTTPPosterRetriesTransientFailures(t *testing.T) {
 		t.Errorf("expected 1 attempt for non-retryable 400, got %d", attempts)
 	}
 }
+
+func TestHTTPPosterRetriesAfterSingleAttemptTimeout(t *testing.T) {
+	var attempts int
+	ch := NewWebhookChannel("http://localhost/webhook")
+	ch.attemptTimeout = 20 * time.Millisecond
+	ch.retryBaseDelay = 1 * time.Millisecond
+	ch.SetTransport(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		attempts++
+		if attempts == 1 {
+			<-r.Context().Done()
+			return nil, r.Context().Err()
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
+	}))
+
+	if err := ch.Send(&models.Alert{Title: "Timeout Retry"}); err != nil {
+		t.Fatalf("expected retry after single-attempt timeout to succeed, got: %v", err)
+	}
+	if attempts != 2 {
+		t.Errorf("expected 2 attempts, got %d", attempts)
+	}
+}

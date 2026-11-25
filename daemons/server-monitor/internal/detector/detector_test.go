@@ -617,3 +617,23 @@ func TestSustainedDurationWallClockUnderSlowTicks(t *testing.T) {
 	}
 }
 
+func TestPlungeDropPrunesFutureTimestampsOnClockJump(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.CPU.PlungeDrop.Enabled = true
+	cfg.CPU.PlungeDrop.FromMinPercent = 50.0
+	cfg.CPU.PlungeDrop.DeltaPercent = 40.0
+	cfg.CPU.PlungeDrop.WindowSeconds = 15
+
+	d := New(cfg)
+	t0 := time.Now()
+
+	// Sample recorded with a future clock before NTP step-back
+	d.Evaluate(makeMetrics(85.0, 20.0, 30.0, t0.Add(time.Hour)))
+
+	// Clock steps back to t0 with low CPU -> future sample must be pruned, no false plunge
+	evs := d.Evaluate(makeMetrics(10.0, 20.0, 30.0, t0))
+	if len(evs) != 0 {
+		t.Fatalf("expected no plunge after backward clock jump, got %+v", evs)
+	}
+}
+
