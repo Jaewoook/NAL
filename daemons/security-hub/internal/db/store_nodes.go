@@ -251,7 +251,8 @@ func (s *SpoolStore) AnnounceNode(ctx context.Context, req models.NodeInfo) (mod
 				return nil
 			}
 			existingURL := strings.TrimRight(existing.URL, "/")
-			if existing.Status == models.NodeStatusApproved && existingURL != "" && existingURL != req.URL && req.URL != "reverse-poll" {
+			isRevPoll := strings.HasPrefix(strings.ToLower(strings.TrimSpace(req.URL)), "reverse-poll")
+			if existing.Status == models.NodeStatusApproved && existingURL != "" && existingURL != req.URL && !isRevPoll {
 				existing.Status = models.NodeStatusPending
 			}
 			existing.URL = req.URL

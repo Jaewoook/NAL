@@ -31,26 +31,26 @@ export const PendingNodesSection: React.FC<PendingNodesSectionProps> = ({
         {pendingNodes.map((node) => (
           <div
             key={node.name}
-            className="flex justify-between items-center py-2 border-b border-slate-700 last:border-b-0"
+            className="flex justify-between items-center gap-4 py-2 border-b border-slate-700 last:border-b-0"
           >
-            <div>
-              <div className="flex items-center gap-1.5">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center flex-wrap gap-1.5">
                 <StatusDot status="amber" />
                 <strong>{node.name}</strong>
-                <Badge tone="warn" className="text-[10px] px-1.5 py-0.25">
+                <Badge tone="warn" className="text-[11px] px-1.5 py-0.5 leading-none">
                   PENDING
                 </Badge>
                 {node.os_version && (
-                  <Badge tone="skip" className="text-[10px] px-1.5 py-0.25">
+                  <Badge tone="skip" className="text-[11px] px-1.5 py-0.5 leading-none">
                     {node.os_version}
                   </Badge>
                 )}
               </div>
-              <div className="text-xs text-slate-400 font-mono break-all mt-0.5">
+              <div className="text-xs text-slate-400 font-mono break-all mt-1.5">
                 {node.url || 'LAN Node'}
               </div>
             </div>
-            <div className="flex gap-1.5">
+            <div className="flex gap-1.5 ml-4 shrink-0">
               <Button variant="primary" onClick={() => onApproveNode(node.name)}>
                 Approve
               </Button>

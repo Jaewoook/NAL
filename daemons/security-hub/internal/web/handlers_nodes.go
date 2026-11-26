@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -106,6 +107,43 @@ type nodeAnnounceRequest struct {
 	OSVersion string `json:"os_version"`
 }
 
+func isReversePollURL(raw string) bool {
+	lower := strings.ToLower(strings.TrimSpace(raw))
+	return lower == "reverse-poll" || strings.HasPrefix(lower, "reverse-poll ") || strings.HasPrefix(lower, "reverse-poll(")
+}
+
+func clientIPFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+		first := strings.TrimSpace(strings.Split(xff, ",")[0])
+		if ip := net.ParseIP(first); ip != nil {
+			return ip.String()
+		}
+	}
+	if xri := strings.TrimSpace(r.Header.Get("X-Real-IP")); xri != "" {
+		if ip := net.ParseIP(xri); ip != nil {
+			return ip.String()
+		}
+	}
+	host := strings.TrimSpace(r.RemoteAddr)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String()
+	}
+	return host
+}
+
+func formatReversePollURL(r *http.Request) string {
+	if ip := clientIPFromRequest(r); ip != "" {
+		return fmt.Sprintf("reverse-poll (%s)", ip)
+	}
+	return "reverse-poll"
+}
+
 func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -135,8 +173,8 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 
 	req.Name = strings.TrimSpace(req.Name)
 	rawURL := strings.TrimSpace(req.URL)
-	if rawURL == "" || strings.EqualFold(rawURL, "reverse-poll") {
-		req.URL = "reverse-poll"
+	if rawURL == "" || isReversePollURL(rawURL) {
+		req.URL = formatReversePollURL(r)
 	} else {
 		req.URL = config.NormalizeURL(rawURL)
 		if !IsValidAgentHTTPURL(req.URL) {
@@ -339,7 +377,7 @@ func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.EqualFold(strings.TrimSpace(req.URL), "reverse-poll") || (strings.TrimSpace(req.URL) == "" && strings.TrimSpace(req.Name) != "") {
+	if isReversePollURL(req.URL) || (strings.TrimSpace(req.URL) == "" && strings.TrimSpace(req.Name) != "") {
 		nodeName := strings.TrimSpace(req.Name)
 		if s.broker != nil && nodeName != "" && s.broker.IsConnected(nodeName) {
 			var info *models.NodeInfo

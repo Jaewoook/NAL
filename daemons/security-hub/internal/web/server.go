@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"io/fs"
 	"net/http"
@@ -222,11 +223,36 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/agent/update", s.requireAgentToken(s.handleAgentUpdate))
 	mux.HandleFunc("/api/agent/rollback", s.requireAgentToken(s.handleAgentRollback))
 
-	// Static dashboard files
+	// Static dashboard files (prevent stale Cloudflare/browser caching of embedded assets)
 	subFS, _ := fs.Sub(staticEmbedFS, "static")
-	mux.Handle("/", http.FileServer(http.FS(subFS)))
+	fileSrv := http.FileServer(http.FS(subFS))
+	assetVersion := embeddedAssetVersion()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			if raw, err := staticEmbedFS.ReadFile("static/index.html"); err == nil {
+				html := strings.ReplaceAll(string(raw), `"/app.js"`, `"/app.js?v=`+assetVersion+`"`)
+				html = strings.ReplaceAll(html, `"/styles.css"`, `"/styles.css?v=`+assetVersion+`"`)
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				_, _ = w.Write([]byte(html))
+				return
+			}
+		}
+		fileSrv.ServeHTTP(w, r)
+	})
 
 	return mux
+}
+
+func embeddedAssetVersion() string {
+	h := sha256.New()
+	if b, err := staticEmbedFS.ReadFile("static/app.js"); err == nil {
+		h.Write(b)
+	}
+	if b, err := staticEmbedFS.ReadFile("static/styles.css"); err == nil {
+		h.Write(b)
+	}
+	return hex.EncodeToString(h.Sum(nil))[:10]
 }
 
 // AgentHandler returns a restricted HTTP handler exposing only authenticated remote agent endpoints.
