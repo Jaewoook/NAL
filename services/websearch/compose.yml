@@ -1,6 +1,6 @@
 services:
-  searxng:
-    image: docker.io/searxng/searxng:latest
+  websearch:
+    image: docker.io/searxng/searxng:2026.11.23-a7163d091
     container_name: searxng
     restart: unless-stopped
     expose:
