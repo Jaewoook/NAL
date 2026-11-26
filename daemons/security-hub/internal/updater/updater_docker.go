@@ -112,8 +112,8 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 		return m.failTask(ctx, taskID, "failed to update compose tag: %v", err)
 	}
 
-	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ docker compose --project-directory %s up -d", composeDir))
-	_, upErr := m.runLoggedCommand(ctx, taskID, "docker", "compose", "--project-directory", composeDir, "up", "-d")
+	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ docker compose --project-directory %s up -d --remove-orphans", composeDir))
+	_, upErr := m.runLoggedCommand(ctx, taskID, "docker", "compose", "--project-directory", composeDir, "up", "-d", "--remove-orphans")
 
 	// Step 5: Post-Update Health Verification & 60s Dead-Man's Rollback
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 5/6: Verifying container health (Dead-Man's Rollback armed=%v, timeout=%ds)...", req.EnableDeadMan, deadManTimeout))
@@ -260,10 +260,7 @@ func (m *Manager) restoreSnapshot(ctx context.Context, taskID string, snap *mode
 			m.logStep(ctx, taskID, "warn", fmt.Sprintf("docker tag warning (continuing compose restore): %v %s", tagErr, strings.TrimSpace(string(tagOut))))
 		}
 	}
-	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ docker compose --project-directory %s up -d", composeDir))
-	out, err := m.runner.Run(ctx, "docker", "compose", "--project-directory", composeDir, "up", "-d")
-	if len(out) > 0 {
-		m.logStep(ctx, taskID, "stdout", strings.TrimSpace(string(out)))
-	}
+	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ docker compose --project-directory %s up -d --remove-orphans", composeDir))
+	_, err := m.runLoggedCommand(ctx, taskID, "docker", "compose", "--project-directory", composeDir, "up", "-d", "--remove-orphans")
 	return err
 }
