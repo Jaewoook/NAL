@@ -25,13 +25,13 @@ A zero-dependency, single-binary host-level security hub, CVE vulnerability scan
 - **Resilient Task Logs in `services/db` with Local Spooling:**
   - Streams live task logs over SSE and persists all task logs to `services/db` (`security_hub_db` database).
   - Always writes to a local write-ahead spool (`daemons/security-hub/data/`) first—if PostgreSQL is down or upgrading, logs are served from the local spool and flushed to PostgreSQL automatically once `postgresql` is healthy again.
-- **Multi-Server Hub $\rightarrow$ Agent Architecture:**
-  - Manage multiple machines from a single Hub dashboard while running lightweight LAN agents (`./security-hub agent run`) on remote compute nodes.
+- **Multi-Server Hub $\rightarrow$ Agent Reverse-Poll Architecture:**
+  - Manage multiple machines from a single Hub dashboard while running lightweight agents (`./security-hub agent run`) on remote compute nodes.
+  - **Outbound-Only HTTP Long-Polling:** Agents initiate all connections outbound to the central Hub (`POST /api/nodes/announce`, `GET /api/nodes/poll`, `POST /api/nodes/result`) — no listening port (`10247`) or advertise IP is required on agent hosts, and the Hub never initiates outbound LAN connections (avoiding macOS 15+ Local Network Privacy blocks and working across NAT/firewalls and any OS).
   - **Strict Hub / Agent Separation:** Hub commands (`./security-hub hub ...`) strictly require `config.hub.yml` and Agent commands (`./security-hub agent ...`) strictly require `config.agent.yml` — preventing accidentally starting Hub mode on an Agent machine or vice versa.
-  - **Agent Auto-Discovery & Web Approval:** Remote agents automatically announce themselves to the Hub in the background (`-hub http://hub:10311`); new nodes appear in a top-bar banner and can be approved or dismissed with one click.
-  - **Test Connection & Live Feedback:** Test agent connectivity, measure round-trip latency, and inspect remote OS info right from the Web UI before saving.
+  - **Agent Auto-Discovery & Web Approval:** Remote agents automatically announce themselves to the Hub in the background (`hub_url`); new nodes appear in a top-bar banner and can be approved or dismissed with one click.
   - Node names auto-detect from the host's system hostname (`os.Hostname()`) by default, or can be explicitly set via `node_name` in `config.hub.yml` / `config.agent.yml`, `SECURITY_HUB_NODE_NAME`, or `-name <node-name>`.
-  - Dynamically add or remove compute nodes at any time via the Web UI (**⚙ Manage Nodes**) or CLI (`./security-hub hub node add|list|remove`).
+  - Dynamically manage compute nodes via the Web UI (**⚙ Manage Nodes**) or CLI (`./security-hub hub node list|remove`).
   - **Cross-Platform Agent Service Management:** Install, inspect, and run agents as native background services using `./security-hub agent service <install|uninstall|start|stop|restart|status>` for macOS (launchd) and Linux (systemd).
   - **Graceful Component Auto-Detection:** Automatically skips uninstalled or stopped components on each machine (e.g., if Docker is not installed or stopped on a remote node, only Homebrew, `ollama`, and macOS updates are scanned without error).
 - **Asynchronous Live Scan Streaming & Concurrency Guard:**
@@ -148,14 +148,12 @@ go build -o security-hub ./cmd/security-hub
 # 6. Start the web dashboard & background scanner (default port 10311)
 ./security-hub hub run
 
-# Or install & manage as a persistent macOS LaunchDaemon (prompts for sudo password
-# automatically on macOS, migrates any legacy user LaunchAgent, and avoids macOS 15+
-# Local Network Privacy blocking outbound LAN scans to remote agents):
-./security-hub hub service install   # Installs /Library/LaunchDaemons/me.jaewook.nal.security-hub.plist
-./security-hub hub service start     # Starts Hub LaunchDaemon (hub mode)
-./security-hub hub service restart   # Restarts Hub LaunchDaemon (hub mode)
-./security-hub hub service stop      # Stops Hub LaunchDaemon (hub mode)
-./security-hub hub service status    # Checks status without sudo
+# Or install & manage as a persistent macOS user LaunchAgent:
+./security-hub hub service install   # Installs ~/Library/LaunchAgents/me.jaewook.nal.security-hub.plist
+./security-hub hub service start     # Starts Hub LaunchAgent (hub mode)
+./security-hub hub service restart   # Restarts Hub LaunchAgent (hub mode)
+./security-hub hub service stop      # Stops Hub LaunchAgent (hub mode)
+./security-hub hub service status    # Checks status
 ```
 
 ## Multi-Node Setup (Adding Remote Agents)

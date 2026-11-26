@@ -235,8 +235,11 @@ func (s *SpoolStore) UpdateNodeHealth(ctx context.Context, name string, online b
 // AnnounceNode atomically handles agent registration/heartbeat announcements under lock,
 // respecting concurrent operator rejections/removals and demoting URL changes to pending.
 func (s *SpoolStore) AnnounceNode(ctx context.Context, req models.NodeInfo) (models.NodeStatus, error) {
-	if req.Name == "" || req.URL == "" {
-		return "", fmt.Errorf("node name and url are required")
+	if req.Name == "" {
+		return "", fmt.Errorf("node name is required")
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		req.URL = "reverse-poll"
 	}
 	var status models.NodeStatus
 	var rejected bool
@@ -248,7 +251,7 @@ func (s *SpoolStore) AnnounceNode(ctx context.Context, req models.NodeInfo) (mod
 				return nil
 			}
 			existingURL := strings.TrimRight(existing.URL, "/")
-			if existing.Status == models.NodeStatusApproved && existingURL != "" && existingURL != req.URL {
+			if existing.Status == models.NodeStatusApproved && existingURL != "" && existingURL != req.URL && req.URL != "reverse-poll" {
 				existing.Status = models.NodeStatusPending
 			}
 			existing.URL = req.URL

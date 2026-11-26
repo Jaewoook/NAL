@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaewoook/security-hub/internal/broker"
 	"github.com/jaewoook/security-hub/internal/httputil"
 	"github.com/jaewoook/security-hub/internal/models"
 )
@@ -26,6 +27,10 @@ func (m *Manager) SetHTTPClient(c *http.Client) {
 	if c != nil {
 		m.httpClient = c
 	}
+}
+
+func (m *Manager) SetBroker(b *broker.Broker) {
+	m.broker = b
 }
 
 func (m *Manager) safeHTTPClient() *http.Client {
@@ -60,6 +65,28 @@ func (m *Manager) runRemoteAgentUpdate(ctx context.Context, taskID string, req U
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("Forwarding update for %s (%s -> %s) to remote agent %s (%s)...", req.TargetName, req.TargetType, req.TargetVersion, nodeInfo.Name, nodeInfo.URL))
 	agentReq := req
 	agentReq.Node = nodeInfo.Name
+	if m.broker != nil {
+		res, bErr := m.broker.Dispatch(ctx, nodeInfo.Name, broker.ActionUpdate, agentReq)
+		if bErr != nil {
+			return m.failTask(ctx, taskID, "failed to dispatch update to remote agent %s: %v", nodeInfo.Name, bErr)
+		}
+		for _, l := range res.Logs {
+			m.logStep(ctx, taskID, l.Stream, fmt.Sprintf("[%s] %s", nodeInfo.Name, l.Line))
+		}
+		status := res.Status
+		if status == "" {
+			status = "succeeded"
+		}
+		errMsg := res.ErrorMsg
+		if status != "succeeded" && errMsg == "" {
+			errMsg = fmt.Sprintf("remote agent %s task finished with status %s", nodeInfo.Name, status)
+		}
+		m.finishTask(ctx, taskID, status, errMsg)
+		if status != "succeeded" {
+			return fmt.Errorf("remote agent %s task finished with status %s: %s", nodeInfo.Name, status, errMsg)
+		}
+		return nil
+	}
 	body, _ := json.Marshal(agentReq)
 	endpoint := strings.TrimRight(nodeInfo.URL, "/") + "/api/agent/update"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
@@ -164,10 +191,36 @@ func (m *Manager) runRemoteAgentRollback(execCtx context.Context, nodeName, serv
 	if err != nil {
 		return nil, err
 	}
-	body, _ := json.Marshal(map[string]string{
+	reqPayload := map[string]string{
 		"service_name": serviceName,
 		"triggered_by": triggeredBy,
-	})
+	}
+	if m.broker != nil {
+		res, bErr := m.broker.Dispatch(execCtx, nodeName, broker.ActionRollback, reqPayload)
+		if bErr != nil {
+			m.finishTask(execCtx, task.ID, "failed", bErr.Error())
+			return task, bErr
+		}
+		for _, l := range res.Logs {
+			m.logStep(execCtx, task.ID, l.Stream, fmt.Sprintf("[%s] %s", nodeName, l.Line))
+		}
+		status := res.Status
+		if status == "" {
+			status = "succeeded"
+		}
+		if status != "succeeded" {
+			errMsg := res.ErrorMsg
+			if errMsg == "" {
+				errMsg = fmt.Sprintf("remote rollback on %s ended with status %q", nodeName, status)
+			}
+			m.logStep(execCtx, task.ID, "error", errMsg)
+			m.finishTask(execCtx, task.ID, status, errMsg)
+			return task, fmt.Errorf("remote rollback on %s ended with status %q: %s", nodeName, status, errMsg)
+		}
+		m.finishTask(execCtx, task.ID, status, res.ErrorMsg)
+		return task, nil
+	}
+	body, _ := json.Marshal(reqPayload)
 	endpoint := strings.TrimRight(nodeInfo.URL, "/") + "/api/agent/rollback"
 	httpReq, err := http.NewRequestWithContext(execCtx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {

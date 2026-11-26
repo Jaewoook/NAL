@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,13 +11,16 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/jaewoook/security-hub/internal/auth"
+	"github.com/jaewoook/security-hub/internal/broker"
 	"github.com/jaewoook/security-hub/internal/config"
 	"github.com/jaewoook/security-hub/internal/db"
+	"github.com/jaewoook/security-hub/internal/models"
 	"github.com/jaewoook/security-hub/internal/notifier"
 	"github.com/jaewoook/security-hub/internal/scanner"
 	"github.com/jaewoook/security-hub/internal/service"
@@ -78,9 +82,13 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 		return 1
 	}
 	alerter := notifier.NewAlerter(cfg.Notifications.Email, store)
+	cmdBroker := broker.New()
 	orch := scanner.NewOrchestrator(cfg, store, nil, nil)
+	orch.SetBroker(cmdBroker)
 	updMgr := updater.NewManager(cfg, store, nil, alerter)
+	updMgr.SetBroker(cmdBroker)
 	srv := web.NewServer(cfg, store, orch, updMgr, authMgr, alerter)
+	srv.SetBroker(cmdBroker)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -230,6 +238,96 @@ func runAgentRunCommand(rest []string, cfg *config.Config, out io.Writer) int {
 	return runAgentDaemon(cfg, out)
 }
 
+func executeAgentJob(ctx context.Context, nodeName string, store db.Store, orch *scanner.Orchestrator, updMgr *updater.Manager, job broker.Job) broker.JobResult {
+	switch job.Action {
+	case broker.ActionScan:
+		items, err := orch.ScanLocalNode(ctx)
+		if err != nil && len(items) == 0 {
+			return broker.JobResult{Status: "failed", ErrorMsg: err.Error()}
+		}
+		if store != nil {
+			if snapshots, sErr := store.ListSnapshots(ctx); sErr == nil {
+				for i := range items {
+					if items[i].TargetType != models.TargetDocker {
+						continue
+					}
+					if snap, ok := snapshots[items[i].Name]; ok {
+						items[i].HasRollback = true
+						items[i].RollbackVersion = snap.PreviousVersion
+					} else if snap, ok := snapshots[nodeName+":"+items[i].Name]; ok {
+						items[i].HasRollback = true
+						items[i].RollbackVersion = snap.PreviousVersion
+					}
+				}
+			}
+		}
+		return broker.JobResult{Status: "succeeded", Items: items}
+
+	case broker.ActionUpdate:
+		var req updater.UpdateRequest
+		if err := json.Unmarshal(job.Payload, &req); err != nil {
+			return broker.JobResult{Status: "failed", ErrorMsg: fmt.Sprintf("invalid update payload: %v", err)}
+		}
+		req.Node = nodeName
+		req.TargetType = strings.TrimSpace(req.TargetType)
+		if req.TargetType == "" {
+			req.TargetType = string(models.TargetDocker)
+		}
+		req.TargetName = strings.TrimSpace(req.TargetName)
+		req.TargetVersion = strings.TrimSpace(req.TargetVersion)
+		if err := updater.ValidateUpdateRequest(req); err != nil {
+			return broker.JobResult{Status: "failed", ErrorMsg: err.Error()}
+		}
+		updCtx, updCancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Minute)
+		defer updCancel()
+		task, err := store.CreateTask(updCtx, &models.Task{
+			Node:        nodeName,
+			TaskType:    "agent_update",
+			TargetType:  req.TargetType,
+			TargetName:  req.TargetName,
+			ToVersion:   req.TargetVersion,
+			TriggeredBy: req.TriggeredBy,
+			Status:      "running",
+		})
+		if err != nil {
+			return broker.JobResult{Status: "failed", ErrorMsg: err.Error()}
+		}
+		_ = updMgr.RunUpdateSync(updCtx, task.ID, req)
+		finalTask, logs, _ := store.GetTaskWithLogs(updCtx, task.ID)
+		status, errMsg := task.Status, task.ErrorMsg
+		if finalTask != nil {
+			status = finalTask.Status
+			errMsg = finalTask.ErrorMsg
+		}
+		return broker.JobResult{Status: status, ErrorMsg: errMsg, Logs: logs}
+
+	case broker.ActionRollback:
+		var req struct {
+			ServiceName string `json:"service_name"`
+			TriggeredBy string `json:"triggered_by"`
+		}
+		if err := json.Unmarshal(job.Payload, &req); err != nil || strings.TrimSpace(req.ServiceName) == "" {
+			return broker.JobResult{Status: "failed", ErrorMsg: "service_name required"}
+		}
+		rbCtx, rbCancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Minute)
+		defer rbCancel()
+		task, err := updMgr.RollbackService(rbCtx, req.ServiceName, req.TriggeredBy)
+		if err != nil && task == nil {
+			return broker.JobResult{Status: "failed", ErrorMsg: err.Error()}
+		}
+		finalTask, logs, _ := store.GetTaskWithLogs(rbCtx, task.ID)
+		status, errMsg := task.Status, task.ErrorMsg
+		if finalTask != nil {
+			status = finalTask.Status
+			errMsg = finalTask.ErrorMsg
+		}
+		return broker.JobResult{Status: status, ErrorMsg: errMsg, Logs: logs}
+
+	default:
+		return broker.JobResult{Status: "failed", ErrorMsg: fmt.Sprintf("unsupported job action %q", job.Action)}
+	}
+}
+
 func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 	if err := loadAgentTokenFromFile(cfg); err != nil {
 		fmt.Fprintf(out, "Error loading agent token: %v\n", err)
@@ -239,7 +337,14 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 		fmt.Fprintln(out, "Error: agent_token (or -token / SECURITY_HUB_AGENT_TOKEN) is required in agent mode")
 		return 1
 	}
+	if strings.TrimSpace(cfg.HubURL) == "" {
+		fmt.Fprintln(out, "Error: hub_url (or -hub / SECURITY_HUB_URL) is required in agent mode")
+		return 1
+	}
 	cfg.NodeName = service.ResolveAgentNodeName(cfg)
+	if strings.TrimSpace(cfg.AgentAdvertiseURL) == "" {
+		cfg.AgentAdvertiseURL = "reverse-poll"
+	}
 	store, err := db.NewSpoolStore(cfg.Database.DataDir, nil)
 	if err != nil {
 		fmt.Fprintf(out, "Failed to initialize agent spool store: %v\n", err)
@@ -247,38 +352,42 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 	}
 	orch := scanner.NewOrchestrator(cfg, store, nil, nil)
 	updMgr := updater.NewManager(cfg, store, nil, nil)
-	srv := web.NewServer(cfg, store, orch, updMgr, nil, nil)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	var bgWG sync.WaitGroup
-	if cfg.HubURL != "" {
-		errCh := service.StartAnnouncer(ctx, cfg, nil)
-		bgWG.Add(1)
-		go func() {
-			defer bgWG.Done()
-			for err := range errCh {
-				if err != nil {
-					fmt.Fprintf(out, "[Agent Announcer] Warning: %v\n", err)
-				}
-			}
-		}()
-	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.Web.Host, cfg.Web.Port)
-	return serveHTTPWithGracefulShutdown(
-		ctx,
-		stop,
-		addr,
-		srv.AgentHandler(),
-		srv.NotifyShutdown,
-		func(drainCtx context.Context) {
-			_ = updMgr.Wait(drainCtx)
-		},
-		&bgWG,
-		out,
-		"Agent HTTP server",
-		fmt.Sprintf("NAL Security Hub Agent [agent mode | %s] listening on http://%s", cfg.NodeName, addr),
-	)
+	errCh := service.StartAnnouncer(ctx, cfg, nil)
+	bgWG.Add(1)
+	go func() {
+		defer bgWG.Done()
+		for err := range errCh {
+			if err != nil {
+				fmt.Fprintf(out, "[Agent Announcer] Warning: %v\n", err)
+			}
+		}
+	}()
+
+	pollErrCh := service.StartAgentPoller(ctx, cfg, nil, func(jobCtx context.Context, job broker.Job) broker.JobResult {
+		return executeAgentJob(jobCtx, cfg.NodeName, store, orch, updMgr, job)
+	})
+	bgWG.Add(1)
+	go func() {
+		defer bgWG.Done()
+		for err := range pollErrCh {
+			if err != nil {
+				fmt.Fprintf(out, "[Agent Poller] Warning: %v\n", err)
+			}
+		}
+	}()
+
+	fmt.Fprintf(out, "NAL Security Hub Agent [agent mode | %s] connected to %s (reverse-poll)\n", cfg.NodeName, config.NormalizeURL(cfg.HubURL))
+	<-ctx.Done()
+
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer drainCancel()
+	_ = updMgr.Wait(drainCtx)
+	bgWG.Wait()
+	return 0
 }

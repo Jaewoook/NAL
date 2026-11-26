@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jaewoook/security-hub/internal/broker"
 	"github.com/jaewoook/security-hub/internal/httputil"
 	"github.com/jaewoook/security-hub/internal/models"
 )
@@ -86,7 +87,34 @@ func ApplyDockerSnapshots(items []models.ManagedItem, snapshots map[string]model
 	}
 }
 
+func sanitizeAgentScanItems(nodeName string, items []models.ManagedItem) []models.ManagedItem {
+	for i := range items {
+		items[i].Node = nodeName
+		u := strings.TrimSpace(items[i].ReleaseNotesURL)
+		lower := strings.ToLower(u)
+		if u != "" && !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
+			items[i].ReleaseNotesURL = ""
+		}
+	}
+	return items
+}
+
 func (o *Orchestrator) fetchRemoteAgentScan(ctx context.Context, node models.NodeInfo) ([]models.ManagedItem, error) {
+	if o.broker != nil {
+		res, err := o.broker.Dispatch(ctx, node.Name, broker.ActionScan, nil)
+		if err != nil {
+			return nil, err
+		}
+		if res.Status != "" && res.Status != "succeeded" {
+			errMsg := res.ErrorMsg
+			if errMsg == "" {
+				errMsg = fmt.Sprintf("agent %s scan failed with status %q", node.Name, res.Status)
+			}
+			return nil, fmt.Errorf("%s", errMsg)
+		}
+		return sanitizeAgentScanItems(node.Name, res.Items), nil
+	}
+
 	endpoint := strings.TrimRight(node.URL, "/") + "/api/agent/scan"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
 	if err != nil {
@@ -114,15 +142,7 @@ func (o *Orchestrator) fetchRemoteAgentScan(ctx context.Context, node models.Nod
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(&payload); err != nil {
 		return nil, err
 	}
-	for i := range payload.Items {
-		payload.Items[i].Node = node.Name
-		u := strings.TrimSpace(payload.Items[i].ReleaseNotesURL)
-		lower := strings.ToLower(u)
-		if u != "" && !strings.HasPrefix(lower, "https://") && !strings.HasPrefix(lower, "http://") {
-			payload.Items[i].ReleaseNotesURL = ""
-		}
-	}
-	return payload.Items, nil
+	return sanitizeAgentScanItems(node.Name, payload.Items), nil
 }
 
 func (o *Orchestrator) finalizeScanResult(ctx context.Context, lockID, taskID, hubName string, allItems []models.ManagedItem, nodesList []models.NodeInfo) (*models.ScanResult, error) {

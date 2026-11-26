@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jaewoook/security-hub/internal/broker"
 	"github.com/jaewoook/security-hub/internal/config"
 	"github.com/jaewoook/security-hub/internal/db"
 	"github.com/jaewoook/security-hub/internal/httputil"
@@ -34,6 +35,7 @@ type UpdateRequest struct {
 type Manager struct {
 	cfg           *config.Config
 	store         db.Store
+	broker        *broker.Broker
 	runner        scanner.CommandRunner
 	alerter       *notifier.Alerter
 	httpClient    *http.Client

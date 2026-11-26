@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jaewoook/security-hub/internal/auth"
+	"github.com/jaewoook/security-hub/internal/broker"
 	"github.com/jaewoook/security-hub/internal/config"
 	"github.com/jaewoook/security-hub/internal/httputil"
 	"github.com/jaewoook/security-hub/internal/models"
@@ -133,13 +134,18 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Name = strings.TrimSpace(req.Name)
-	req.URL = config.NormalizeURL(req.URL)
-	if req.Name == "" || req.URL == "" {
-		auth.WriteJSONError(w, http.StatusBadRequest, "name and url required")
-		return
+	rawURL := strings.TrimSpace(req.URL)
+	if rawURL == "" || strings.EqualFold(rawURL, "reverse-poll") {
+		req.URL = "reverse-poll"
+	} else {
+		req.URL = config.NormalizeURL(rawURL)
+		if !IsValidAgentHTTPURL(req.URL) {
+			auth.WriteJSONError(w, http.StatusBadRequest, "invalid agent url: must use http:// or https:// with a valid host")
+			return
+		}
 	}
-	if !IsValidAgentHTTPURL(req.URL) {
-		auth.WriteJSONError(w, http.StatusBadRequest, "invalid agent url: must use http:// or https:// with a valid host")
+	if req.Name == "" {
+		auth.WriteJSONError(w, http.StatusBadRequest, "name required")
 		return
 	}
 
@@ -164,6 +170,77 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": string(status)})
+}
+
+func (s *Server) handleNodePoll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.broker == nil {
+		auth.WriteJSONError(w, http.StatusServiceUnavailable, "agent broker is not configured")
+		return
+	}
+	nodeName := strings.TrimSpace(r.URL.Query().Get("name"))
+	if nodeName == "" {
+		auth.WriteJSONError(w, http.StatusBadRequest, "name query parameter required")
+		return
+	}
+	if s.store != nil {
+		if node, err := s.store.GetNode(r.Context(), nodeName); err == nil {
+			if node.Status == models.NodeStatusRejected {
+				auth.WriteJSONError(w, http.StatusForbidden, "node rejected")
+				return
+			}
+			if node.Status == models.NodeStatusApproved {
+				_ = s.store.UpdateNodeHealth(r.Context(), node.Name, true, time.Now().UTC(), "")
+			}
+		}
+	}
+
+	pollCtx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	if ch := s.shutdownChan(); ch != nil {
+		go func() {
+			select {
+			case <-ch:
+				cancel()
+			case <-pollCtx.Done():
+			}
+		}()
+	}
+
+	job, ok := s.broker.Poll(pollCtx, nodeName, broker.DefaultPollWait)
+	if !ok || job == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
+func (s *Server) handleNodeResult(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.broker == nil {
+		auth.WriteJSONError(w, http.StatusServiceUnavailable, "agent broker is not configured")
+		return
+	}
+	var res broker.JobResult
+	if err := json.NewDecoder(io.LimitReader(r.Body, 32<<20)).Decode(&res); err != nil {
+		auth.WriteJSONError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if strings.TrimSpace(res.JobID) == "" {
+		auth.WriteJSONError(w, http.StatusBadRequest, "job_id required")
+		return
+	}
+	if !s.broker.Complete(res) {
+		auth.WriteJSONError(w, http.StatusNotFound, "unknown or expired job_id")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 }
 
 func parseNodeNameParam(r *http.Request) string {
@@ -233,6 +310,7 @@ func (s *Server) handleNodeReject(w http.ResponseWriter, r *http.Request) {
 }
 
 type nodeTestRequest struct {
+	Name  string `json:"name,omitempty"`
 	URL   string `json:"url"`
 	Token string `json:"token"`
 }
@@ -252,11 +330,37 @@ func (s *Server) handleNodeTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req nodeTestRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil || (strings.TrimSpace(req.URL) == "" && strings.TrimSpace(req.Name) == "") {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(nodeTestResponse{
 			OK:    false,
-			Error: "url is required",
+			Error: "url or name is required",
+		})
+		return
+	}
+
+	if strings.EqualFold(strings.TrimSpace(req.URL), "reverse-poll") || (strings.TrimSpace(req.URL) == "" && strings.TrimSpace(req.Name) != "") {
+		nodeName := strings.TrimSpace(req.Name)
+		if s.broker != nil && nodeName != "" && s.broker.IsConnected(nodeName) {
+			var info *models.NodeInfo
+			osVer := ""
+			if s.store != nil {
+				if n, nErr := s.store.GetNode(r.Context(), nodeName); nErr == nil {
+					n.Token = ""
+					info = n
+					osVer = n.OSVersion
+				}
+			}
+			_ = json.NewEncoder(w).Encode(nodeTestResponse{
+				OK:        true,
+				OSVersion: osVer,
+				Info:      info,
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(nodeTestResponse{
+			OK:    false,
+			Error: "reverse-poll agent is not currently connected",
 		})
 		return
 	}

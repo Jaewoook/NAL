@@ -31,6 +31,9 @@ type announcePayload struct {
 // or formats "http://<detected-ip-or-host>:<port>".
 func ResolveAgentAdvertiseURL(cfg *config.Config) string {
 	if cfg != nil && strings.TrimSpace(cfg.AgentAdvertiseURL) != "" {
+		if strings.EqualFold(strings.TrimSpace(cfg.AgentAdvertiseURL), "reverse-poll") {
+			return "reverse-poll"
+		}
 		return config.NormalizeURL(cfg.AgentAdvertiseURL)
 	}
 

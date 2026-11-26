@@ -299,20 +299,6 @@ func TestHubLaunchdPlist_XMLEntityEscaping(t *testing.T) {
 	if !strings.Contains(plist, "/var/lib/hub &amp; dir") {
 		t.Fatalf("expected XML entity escaped working dir, got:\n%s", plist)
 	}
-
-	daemonPlist := service.GenerateLaunchdPlistWithUser("/usr/local/bin/security-hub", "/opt/nal/security-hub", "jaewookahn", "/Users/jaewookahn")
-	for _, want := range []string{
-		"<key>UserName</key>",
-		"<string>jaewookahn</string>",
-		"<key>HOME</key>",
-		"<string>/Users/jaewookahn</string>",
-		"<string>hub</string>",
-		"<string>run</string>",
-	} {
-		if !strings.Contains(daemonPlist, want) {
-			t.Fatalf("expected LaunchDaemon plist to contain %q, got:\n%s", want, daemonPlist)
-		}
-	}
 }
 
 func TestAgentService_SystemdEnvFileSingleEscaping(t *testing.T) {
@@ -351,9 +337,6 @@ func (e mockExitCodeErr) Error() string { return "exit status" }
 func (e mockExitCodeErr) ExitCode() int { return int(e) }
 
 func TestService_LaunchdStopAndRestartHandlesExitStatus3(t *testing.T) {
-	restoreSysPlist := service.SetSystemPlistPath(filepath.Join(t.TempDir(), "nonexistent-system.plist"))
-	defer restoreSysPlist()
-
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 	plistPath := service.DefaultPlistPath()

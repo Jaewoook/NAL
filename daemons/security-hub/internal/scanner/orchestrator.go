@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jaewoook/security-hub/internal/broker"
 	"github.com/jaewoook/security-hub/internal/config"
 	"github.com/jaewoook/security-hub/internal/db"
 	"github.com/jaewoook/security-hub/internal/models"
@@ -17,6 +18,7 @@ import (
 type Orchestrator struct {
 	cfg           *config.Config
 	store         db.Store
+	broker        *broker.Broker
 	httpClient    *http.Client
 	dockerScanner *DockerScanner
 	brewScanner   *BrewScanner
@@ -59,6 +61,10 @@ func NewOrchestrator(cfg *config.Config, store db.Store, runner CommandRunner, h
 		vulnScanner:   NewVulnScanner(cfg.Scanner.OSVAPIURL, httpClient, runner),
 		eolChecker:    NewEoLChecker(cfg.Scanner.EoLAPIURL, httpClient),
 	}
+}
+
+func (o *Orchestrator) SetBroker(b *broker.Broker) {
+	o.broker = b
 }
 
 func (o *Orchestrator) hubNodeName() string {
@@ -230,7 +236,7 @@ func (o *Orchestrator) RunFullScanWithTask(ctx context.Context, taskID string) (
 			wg.Add(1)
 			go func(idx int, node models.NodeInfo) {
 				defer wg.Done()
-				scanCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+				scanCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 				defer cancel()
 				items, err := o.fetchRemoteAgentScan(scanCtx, node)
 				results[idx] = nodeScanResult{node: node, items: items, err: err}
@@ -363,7 +369,7 @@ func (o *Orchestrator) RunNodeScanWithTask(ctx context.Context, nodeName string,
 		o.logTask(ctx, taskID, "info", fmt.Sprintf("[Hub] Scanned %d local components...", len(nodeItems)))
 	} else {
 		o.logTask(ctx, taskID, "info", fmt.Sprintf("[%s] Starting single-node scan on remote agent (%s)...", targetNode.Name, targetNode.URL))
-		scanCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		scanCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		defer cancel()
 		fetchedItems, fetchErr := o.fetchRemoteAgentScan(scanCtx, targetNode)
 		if fetchErr != nil {

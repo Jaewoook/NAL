@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/jaewoook/security-hub/internal/auth"
+	"github.com/jaewoook/security-hub/internal/broker"
 	"github.com/jaewoook/security-hub/internal/config"
 	"github.com/jaewoook/security-hub/internal/db"
 	"github.com/jaewoook/security-hub/internal/notifier"
@@ -26,6 +27,7 @@ var staticEmbedFS embed.FS
 type Server struct {
 	cfg          *config.Config
 	store        db.Store
+	broker       *broker.Broker
 	orch         *scanner.Orchestrator
 	updMgr       *updater.Manager
 	authMgr      *auth.Manager
@@ -96,6 +98,10 @@ func (s *Server) shutdownChan() <-chan struct{} {
 
 func (s *Server) SetHTTPClient(client *http.Client) {
 	s.httpClient = client
+}
+
+func (s *Server) SetBroker(b *broker.Broker) {
+	s.broker = b
 }
 
 func (s *Server) localNodeName() string {
@@ -192,8 +198,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/auth/passkey/login/begin", s.requireAuthMgr(func(w http.ResponseWriter, r *http.Request) { s.authMgr.BeginPasskeyLogin(w, r) }))
 	mux.HandleFunc("/api/auth/passkey/login/finish", s.requireAuthMgr(func(w http.ResponseWriter, r *http.Request) { s.authMgr.FinishPasskeyLogin(w, r) }))
 
-	// Agent announcement (authenticated via AgentToken in payload)
+	// Agent announcement & reverse-poll endpoints (authenticated via AgentToken / X-NAL-Node-Token)
 	mux.HandleFunc("/api/nodes/announce", s.handleNodeAnnounce)
+	mux.HandleFunc("/api/nodes/poll", s.requireAgentToken(s.handleNodePoll))
+	mux.HandleFunc("/api/nodes/result", s.requireAgentToken(s.handleNodeResult))
 
 	// Protected API endpoints (read routes require session; mutations also enforce CSRF)
 	mux.HandleFunc("/api/dashboard", s.requireAuth(s.handleDashboard))
