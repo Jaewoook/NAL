@@ -256,6 +256,31 @@ func (s *Server) handleNodePoll(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, job)
 }
 
+func (s *Server) handleNodeLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if s.broker == nil {
+		auth.WriteJSONError(w, http.StatusServiceUnavailable, "agent broker is not configured")
+		return
+	}
+	var entry broker.JobLogLine
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&entry); err != nil {
+		auth.WriteJSONError(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if strings.TrimSpace(entry.JobID) == "" {
+		auth.WriteJSONError(w, http.StatusBadRequest, "job_id required")
+		return
+	}
+	if !s.broker.EmitLog(entry) {
+		auth.WriteJSONError(w, http.StatusNotFound, "unknown or expired job_id")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
+}
+
 func (s *Server) handleNodeResult(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		auth.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")

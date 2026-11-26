@@ -39,10 +39,19 @@ type JobResult struct {
 	Logs     []models.TaskLogLine `json:"logs,omitempty"`
 }
 
+// JobLogLine represents a single real-time log line streamed by an agent while executing a Job.
+type JobLogLine struct {
+	JobID  string `json:"job_id"`
+	Node   string `json:"node"`
+	Stream string `json:"stream"`
+	Line   string `json:"line"`
+}
+
 type pendingJob struct {
 	nodeLower string
 	job       Job
 	resultCh  chan JobResult
+	onLog     func(stream, line string)
 }
 
 type nodeQueue struct {
@@ -150,6 +159,11 @@ func (b *Broker) Poll(ctx context.Context, nodeName string, wait time.Duration) 
 
 // Dispatch enqueues a job for nodeName and blocks until the agent submits its result or ctx expires.
 func (b *Broker) Dispatch(ctx context.Context, nodeName, action string, payload any) (*JobResult, error) {
+	return b.DispatchWithLogs(ctx, nodeName, action, payload, nil)
+}
+
+// DispatchWithLogs enqueues a job for nodeName, streaming live agent log lines to onLog as they arrive.
+func (b *Broker) DispatchWithLogs(ctx context.Context, nodeName, action string, payload any, onLog func(stream, line string)) (*JobResult, error) {
 	key := normalizeNodeKey(nodeName)
 	if key == "" {
 		return nil, fmt.Errorf("node name is required")
@@ -173,6 +187,7 @@ func (b *Broker) Dispatch(ctx context.Context, nodeName, action string, payload 
 		nodeLower: key,
 		job:       job,
 		resultCh:  make(chan JobResult, 1),
+		onLog:     onLog,
 	}
 
 	b.mu.Lock()
@@ -203,6 +218,33 @@ func (b *Broker) Dispatch(ctx context.Context, nodeName, action string, payload 
 		b.mu.Unlock()
 		return nil, fmt.Errorf("remote agent %s did not respond to %s job (%w)", nodeName, action, ctx.Err())
 	}
+}
+
+// EmitLog forwards a live log line from an agent to the waiting DispatchWithLogs callback.
+func (b *Broker) EmitLog(entry JobLogLine) bool {
+	if strings.TrimSpace(entry.JobID) == "" {
+		return false
+	}
+	b.mu.Lock()
+	pj, ok := b.pending[entry.JobID]
+	if !ok {
+		b.mu.Unlock()
+		return false
+	}
+	if entry.Node != "" && normalizeNodeKey(entry.Node) != pj.nodeLower {
+		b.mu.Unlock()
+		return false
+	}
+	cb := pj.onLog
+	if q, exists := b.queues[pj.nodeLower]; exists {
+		q.lastSeen = time.Now().UTC()
+	}
+	b.mu.Unlock()
+
+	if cb != nil {
+		cb(entry.Stream, entry.Line)
+	}
+	return true
 }
 
 // Complete delivers an agent's JobResult to the waiting Dispatch call.

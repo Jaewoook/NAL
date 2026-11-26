@@ -24,10 +24,23 @@ const (
 // JobExecutor handles a single reverse-polled Job on an agent node.
 type JobExecutor func(ctx context.Context, job broker.Job) broker.JobResult
 
+// StreamingJobExecutor handles a reverse-polled Job with a live log callback that streams lines to the Hub.
+type StreamingJobExecutor func(ctx context.Context, job broker.Job, emitLog func(stream, line string)) broker.JobResult
+
 // StartAgentPoller runs the outbound HTTP long-polling loop against the central Hub.
 // When the Hub queues a scan/update/rollback job for this agent, the poller executes it
 // via execFn and posts the JobResult back to POST /api/nodes/result.
 func StartAgentPoller(ctx context.Context, cfg *config.Config, httpClient *http.Client, execFn JobExecutor, retryDelays ...time.Duration) <-chan error {
+	if execFn == nil {
+		return StartAgentPollerStreaming(ctx, cfg, httpClient, nil, retryDelays...)
+	}
+	return StartAgentPollerStreaming(ctx, cfg, httpClient, func(ctx context.Context, job broker.Job, _ func(string, string)) broker.JobResult {
+		return execFn(ctx, job)
+	}, retryDelays...)
+}
+
+// StartAgentPollerStreaming runs the outbound HTTP long-polling loop with real-time log streaming to POST /api/nodes/log.
+func StartAgentPollerStreaming(ctx context.Context, cfg *config.Config, httpClient *http.Client, execFn StreamingJobExecutor, retryDelays ...time.Duration) <-chan error {
 	retryDelay := defaultPollRetryDelay
 	if len(retryDelays) > 0 && retryDelays[0] > 0 {
 		retryDelay = retryDelays[0]
@@ -45,6 +58,7 @@ func StartAgentPoller(ctx context.Context, cfg *config.Config, httpClient *http.
 		hubURL := strings.TrimRight(config.NormalizeURL(cfg.HubURL), "/")
 		nodeName := ResolveAgentNodeName(cfg)
 		pollEndpoint := hubURL + "/api/nodes/poll?name=" + url.QueryEscape(nodeName)
+		logEndpoint := hubURL + "/api/nodes/log"
 		resultEndpoint := hubURL + "/api/nodes/result"
 
 		pollClient := httputil.NoRedirectClient(httpClient, defaultPollHTTPWait)
@@ -52,6 +66,7 @@ func StartAgentPoller(ctx context.Context, cfg *config.Config, httpClient *http.
 			pollClient.Timeout = defaultPollHTTPWait
 		}
 		resultClient := httputil.NoRedirectClient(httpClient, 30*time.Second)
+		logClient := httputil.NoRedirectClient(httpClient, 5*time.Second)
 
 		emitErr := func(err error) {
 			if err != nil && ctx.Err() == nil {
@@ -126,7 +141,16 @@ func StartAgentPoller(ctx context.Context, cfg *config.Config, httpClient *http.
 				continue
 			}
 
-			res := execFn(ctx, job)
+			emitJobLog := func(stream, line string) {
+				_ = postJobLog(ctx, logClient, logEndpoint, cfg.AgentToken, broker.JobLogLine{
+					JobID:  job.ID,
+					Node:   nodeName,
+					Stream: stream,
+					Line:   line,
+				})
+			}
+
+			res := execFn(ctx, job, emitJobLog)
 			res.JobID = job.ID
 			res.Node = nodeName
 
@@ -137,6 +161,28 @@ func StartAgentPoller(ctx context.Context, cfg *config.Config, httpClient *http.
 	}()
 
 	return errCh
+}
+
+func postJobLog(ctx context.Context, client *http.Client, endpoint, token string, entry broker.JobLogLine) error {
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("X-NAL-Node-Token", token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 512))
+	resp.Body.Close()
+	return nil
 }
 
 func postJobResult(ctx context.Context, client *http.Client, endpoint, token string, res broker.JobResult) error {

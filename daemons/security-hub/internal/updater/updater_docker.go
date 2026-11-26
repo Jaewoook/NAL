@@ -101,10 +101,7 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	targetImage := ref.ImageRepo + ":" + targetTag
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 3/6: Pre-pulling target image %s before stopping container...", targetImage))
 	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ docker pull %s", targetImage))
-	pullOut, pullErr := m.runner.Run(ctx, "docker", "pull", targetImage)
-	if len(pullOut) > 0 {
-		m.logStep(ctx, taskID, "stdout", strings.TrimSpace(string(pullOut)))
-	}
+	_, pullErr := m.runLoggedCommand(ctx, taskID, "docker", "pull", targetImage)
 	if pullErr != nil {
 		return m.failTask(ctx, taskID, "docker pull failed for %s: %v", targetImage, pullErr)
 	}
@@ -116,10 +113,7 @@ func (m *Manager) runDockerUpdate(ctx context.Context, taskID string, req Update
 	}
 
 	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ docker compose --project-directory %s up -d", composeDir))
-	upOut, upErr := m.runner.Run(ctx, "docker", "compose", "--project-directory", composeDir, "up", "-d")
-	if len(upOut) > 0 {
-		m.logStep(ctx, taskID, "stdout", strings.TrimSpace(string(upOut)))
-	}
+	_, upErr := m.runLoggedCommand(ctx, taskID, "docker", "compose", "--project-directory", composeDir, "up", "-d")
 
 	// Step 5: Post-Update Health Verification & 60s Dead-Man's Rollback
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 5/6: Verifying container health (Dead-Man's Rollback armed=%v, timeout=%ds)...", req.EnableDeadMan, deadManTimeout))
@@ -174,10 +168,7 @@ func (m *Manager) runPreUpdateBackup(ctx context.Context, taskID string, runBack
 		args = append(args, volName)
 	}
 	m.logStep(ctx, taskID, "info", fmt.Sprintf("STEP 2/6: Running pre-update volume backup (%s %s)...", backupScript, volName))
-	out, bErr := m.runner.Run(ctx, backupScript, args...)
-	if len(out) > 0 {
-		m.logStep(ctx, taskID, "stdout", strings.TrimSpace(string(out)))
-	}
+	_, bErr := m.runLoggedCommand(ctx, taskID, backupScript, args...)
 	if bErr != nil {
 		return m.failTask(ctx, taskID, "pre-update volume backup failed, aborting update: %v", bErr)
 	}

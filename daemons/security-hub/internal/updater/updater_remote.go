@@ -66,12 +66,18 @@ func (m *Manager) runRemoteAgentUpdate(ctx context.Context, taskID string, req U
 	agentReq := req
 	agentReq.Node = nodeInfo.Name
 	if m.broker != nil {
-		res, bErr := m.broker.Dispatch(ctx, nodeInfo.Name, broker.ActionUpdate, agentReq)
+		streamed := false
+		res, bErr := m.broker.DispatchWithLogs(ctx, nodeInfo.Name, broker.ActionUpdate, agentReq, func(stream, line string) {
+			streamed = true
+			m.logStep(ctx, taskID, stream, fmt.Sprintf("[%s] %s", nodeInfo.Name, line))
+		})
 		if bErr != nil {
 			return m.failTask(ctx, taskID, "failed to dispatch update to remote agent %s: %v", nodeInfo.Name, bErr)
 		}
-		for _, l := range res.Logs {
-			m.logStep(ctx, taskID, l.Stream, fmt.Sprintf("[%s] %s", nodeInfo.Name, l.Line))
+		if !streamed {
+			for _, l := range res.Logs {
+				m.logStep(ctx, taskID, l.Stream, fmt.Sprintf("[%s] %s", nodeInfo.Name, l.Line))
+			}
 		}
 		status := res.Status
 		if status == "" {
@@ -196,13 +202,19 @@ func (m *Manager) runRemoteAgentRollback(execCtx context.Context, nodeName, serv
 		"triggered_by": triggeredBy,
 	}
 	if m.broker != nil {
-		res, bErr := m.broker.Dispatch(execCtx, nodeName, broker.ActionRollback, reqPayload)
+		streamed := false
+		res, bErr := m.broker.DispatchWithLogs(execCtx, nodeName, broker.ActionRollback, reqPayload, func(stream, line string) {
+			streamed = true
+			m.logStep(execCtx, task.ID, stream, fmt.Sprintf("[%s] %s", nodeName, line))
+		})
 		if bErr != nil {
 			m.finishTask(execCtx, task.ID, "failed", bErr.Error())
 			return task, bErr
 		}
-		for _, l := range res.Logs {
-			m.logStep(execCtx, task.ID, l.Stream, fmt.Sprintf("[%s] %s", nodeName, l.Line))
+		if !streamed {
+			for _, l := range res.Logs {
+				m.logStep(execCtx, task.ID, l.Stream, fmt.Sprintf("[%s] %s", nodeName, l.Line))
+			}
 		}
 		status := res.Status
 		if status == "" {

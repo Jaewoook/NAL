@@ -69,6 +69,23 @@ func (m *Manager) localNodeName() string {
 	return config.DefaultNodeName()
 }
 
+func (m *Manager) runLoggedCommand(ctx context.Context, taskID, name string, args ...string) ([]byte, error) {
+	if sr, ok := m.runner.(scanner.StreamingCommandRunner); ok {
+		return sr.RunStreaming(ctx, func(stream, line string) {
+			m.logStep(ctx, taskID, stream, line)
+		}, name, args...)
+	}
+	out, err := m.runner.Run(ctx, name, args...)
+	if len(out) > 0 {
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if strings.TrimSpace(line) != "" {
+				m.logStep(ctx, taskID, "stdout", line)
+			}
+		}
+	}
+	return out, err
+}
+
 func (m *Manager) isLocalNode(node string) bool {
 	n := strings.TrimSpace(node)
 	return n == "" || strings.EqualFold(n, "local") || strings.EqualFold(n, m.localNodeName())

@@ -24,12 +24,7 @@ func (m *Manager) runBrewUpgrade(ctx context.Context, taskID string, req UpdateR
 		action = "reinstall"
 	}
 	m.logStep(ctx, taskID, "cmd", fmt.Sprintf("$ brew %s %s", action, pkgName))
-	out, err := m.runner.Run(ctx, "brew", action, pkgName)
-	if len(out) > 0 {
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			m.logStep(ctx, taskID, "stdout", line)
-		}
-	}
+	_, err := m.runLoggedCommand(ctx, taskID, "brew", action, pkgName)
 	if err != nil {
 		m.logStep(ctx, taskID, "error", fmt.Sprintf("Homebrew %s failed: %v", action, err))
 		m.finishTask(ctx, taskID, "failed", err.Error())
@@ -95,18 +90,13 @@ func (m *Manager) runAptUpgrade(ctx context.Context, taskID string, req UpdateRe
 	}
 
 	m.logStep(ctx, taskID, "cmd", "$ apt-get "+strings.Join(aptArgs, " "))
-	out, err := m.runner.Run(ctx, "apt-get", aptArgs...)
+	out, err := m.runLoggedCommand(ctx, taskID, "apt-get", aptArgs...)
 	if err != nil {
 		outStr := string(out)
 		if strings.Contains(outStr, "Permission denied") || strings.Contains(outStr, "are you root") {
 			sudoArgs := append([]string{"-n", "env", "DEBIAN_FRONTEND=noninteractive", "apt-get"}, aptArgs...)
 			m.logStep(ctx, taskID, "cmd", "$ sudo "+strings.Join(sudoArgs, " "))
-			out, err = m.runner.Run(ctx, "sudo", sudoArgs...)
-		}
-	}
-	if len(out) > 0 {
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			m.logStep(ctx, taskID, "stdout", line)
+			_, err = m.runLoggedCommand(ctx, taskID, "sudo", sudoArgs...)
 		}
 	}
 	if err != nil {

@@ -238,7 +238,7 @@ func runAgentRunCommand(rest []string, cfg *config.Config, out io.Writer) int {
 	return runAgentDaemon(cfg, out)
 }
 
-func executeAgentJob(ctx context.Context, nodeName string, store db.Store, orch *scanner.Orchestrator, updMgr *updater.Manager, job broker.Job) broker.JobResult {
+func executeAgentJob(ctx context.Context, nodeName string, store db.Store, orch *scanner.Orchestrator, updMgr *updater.Manager, job broker.Job, emitLog func(stream, line string)) broker.JobResult {
 	switch job.Action {
 	case broker.ActionScan:
 		items, err := orch.ScanLocalNode(ctx)
@@ -292,7 +292,20 @@ func executeAgentJob(ctx context.Context, nodeName string, store db.Store, orch 
 		if err != nil {
 			return broker.JobResult{Status: "failed", ErrorMsg: err.Error()}
 		}
+		var logWG sync.WaitGroup
+		if emitLog != nil {
+			logCh, unsub := store.SubscribeTaskLogs(task.ID)
+			logWG.Add(1)
+			go func() {
+				defer logWG.Done()
+				defer unsub()
+				for line := range logCh {
+					emitLog(line.Stream, line.Line)
+				}
+			}()
+		}
 		_ = updMgr.RunUpdateSync(updCtx, task.ID, req)
+		logWG.Wait()
 		finalTask, logs, _ := store.GetTaskWithLogs(updCtx, task.ID)
 		status, errMsg := task.Status, task.ErrorMsg
 		if finalTask != nil {
@@ -369,8 +382,8 @@ func runAgentDaemon(cfg *config.Config, out io.Writer) int {
 		}
 	}()
 
-	pollErrCh := service.StartAgentPoller(ctx, cfg, nil, func(jobCtx context.Context, job broker.Job) broker.JobResult {
-		return executeAgentJob(jobCtx, cfg.NodeName, store, orch, updMgr, job)
+	pollErrCh := service.StartAgentPollerStreaming(ctx, cfg, nil, func(jobCtx context.Context, job broker.Job, emitLog func(string, string)) broker.JobResult {
+		return executeAgentJob(jobCtx, cfg.NodeName, store, orch, updMgr, job, emitLog)
 	})
 	bgWG.Add(1)
 	go func() {

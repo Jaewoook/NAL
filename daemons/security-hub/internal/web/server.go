@@ -202,6 +202,7 @@ func (s *Server) Handler() http.Handler {
 	// Agent announcement & reverse-poll endpoints (authenticated via AgentToken / X-NAL-Node-Token)
 	mux.HandleFunc("/api/nodes/announce", s.handleNodeAnnounce)
 	mux.HandleFunc("/api/nodes/poll", s.requireAgentToken(s.handleNodePoll))
+	mux.HandleFunc("/api/nodes/log", s.requireAgentToken(s.handleNodeLog))
 	mux.HandleFunc("/api/nodes/result", s.requireAgentToken(s.handleNodeResult))
 
 	// Protected API endpoints (read routes require session; mutations also enforce CSRF)

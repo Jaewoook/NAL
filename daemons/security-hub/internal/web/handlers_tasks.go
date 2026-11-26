@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jaewoook/security-hub/internal/auth"
 )
@@ -87,8 +88,9 @@ func (s *Server) streamTaskLogsSSE(w http.ResponseWriter, r *http.Request, taskI
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 
 	lastSentSeq := 0
 	for _, line := range existingLogs {
@@ -107,12 +109,17 @@ func (s *Server) streamTaskLogsSSE(w http.ResponseWriter, r *http.Request, taskI
 	}
 
 	shutCh := s.shutdownChan()
+	keepalive := time.NewTicker(15 * time.Second)
+	defer keepalive.Stop()
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 		case <-shutCh:
 			return
+		case <-keepalive.C:
+			_, _ = fmt.Fprint(w, ": keepalive\n\n")
+			flusher.Flush()
 		case line, ok := <-ch:
 			if !ok {
 				curTask, _, _ := s.store.GetTaskWithLogs(r.Context(), taskID)
