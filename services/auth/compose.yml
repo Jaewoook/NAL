@@ -1,6 +1,6 @@
 services:
   server:
-    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.8.7}
     container_name: authentik-server
     command: server
     restart: unless-stopped
@@ -44,7 +44,7 @@ services:
       - ./assets/icons/apps/litellm.svg:/data/media/public/apps/litellm.svg:ro
 
   worker:
-    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.3}
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.8.7}
     container_name: authentik-worker
     command: worker
     restart: unless-stopped
