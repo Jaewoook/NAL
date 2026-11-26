@@ -83,35 +83,37 @@ export const ScanNodeModal: React.FC<ScanNodeModalProps> = ({
         ) : (
           approvedNodes.map((node, idx) => {
             const dot: DotStatus = node.online ? 'green' : 'amber';
-            const roleTag = node.role === 'hub' ? 'Hub' : 'Agent';
             const scanning = isNodeScanningName(scanningNodes, node.name);
             const inputId = `scan-node-radio-${idx}`;
 
             return (
               <label key={node.name} className="scan-node-option" htmlFor={inputId}>
-                <div className="flex items-center gap-2.5 cursor-pointer flex-1">
-                  <input
-                    type="radio"
-                    id={inputId}
-                    name="scan-target-node"
-                    value={node.name}
-                    checked={selectedNode === node.name}
-                    onChange={() => setSelectedNode(node.name)}
-                  />
-                  <StatusDot status={scanning ? 'scanning' : dot} />
-                  <strong>{node.name}</strong>
-                  <span className="text-[10px] uppercase px-1.5 py-0.25 rounded bg-slate-700 text-slate-300">
-                    {roleTag}
-                  </span>
-                  {node.os_version && (
-                    <Badge tone="skip" className="text-[10px] px-1.5 py-0.25">
-                      {node.os_version}
+                <input
+                  type="radio"
+                  id={inputId}
+                  name="scan-target-node"
+                  value={node.name}
+                  className="shrink-0"
+                  checked={selectedNode === node.name}
+                  onChange={() => setSelectedNode(node.name)}
+                />
+                <div className="min-w-0 flex-1">
+                  <span className="inline-flex items-center flex-wrap gap-1.5">
+                    <StatusDot status={scanning ? 'scanning' : dot} />
+                    <strong>{node.name}</strong>
+                    <Badge tone="skip" className="text-[11px] px-1.5 py-0.5 leading-none">
+                      {node.role}
                     </Badge>
-                  )}
-                  {scanning && <span className="node-scan-status">⟳ Scanning</span>}
-                </div>
-                <div className="text-xs text-slate-400 font-mono break-all">
-                  {node.url || 'Local Hub Host'}
+                    {node.os_version && (
+                      <Badge tone="skip" className="text-[11px] px-1.5 py-0.5 leading-none">
+                        {node.os_version}
+                      </Badge>
+                    )}
+                    {scanning && <span className="node-scan-status">⟳ Scanning</span>}
+                  </span>
+                  <div className="text-xs text-slate-400 font-mono break-all mt-1.5">
+                    {node.url || 'Local Hub Host'}
+                  </div>
                 </div>
               </label>
             );
