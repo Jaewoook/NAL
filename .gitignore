@@ -29,3 +29,6 @@ docs/
 
 # Worktrees
 .worktrees/
+
+# Generated frontend bundles (built via daemons/security-hub/Makefile)
+daemons/security-hub/internal/web/static/

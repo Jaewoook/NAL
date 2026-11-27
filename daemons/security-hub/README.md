@@ -133,8 +133,10 @@ cd daemons/security-hub
 # 1. Copy & edit Hub configuration
 cp config.hub.example.yml config.hub.yml
 
-# 2. Build binary (stamps YYYY-MM-DD.HH.MM build version; use `make all` to also rebuild frontend)
-make build
+# 2. Build frontend bundle & binary (stamps YYYY-MM-DD.HH.MM build version)
+make build       # Builds both frontend and Go binary
+# make frontend  # Frontend bundle only
+# make daemon    # Go binary only (works without Node.js on remote agent nodes)
 ./security-hub version
 
 # 3. Provision database in services/db (if postgresql is running)
