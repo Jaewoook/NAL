@@ -318,13 +318,15 @@ func TestRaspberryPiAgent_AptScanAndRemoteUpgrade(t *testing.T) {
 	}
 
 	// 5. Verify Web UI assets include shared System Packages tab, security checks, and node-scoped skip
-	appBytes, _ := staticEmbedFS.ReadFile("static/app.js")
-	appText := string(appBytes)
-	if !strings.Contains(appText, "System Packages (`brew` / `apt`)") {
-		t.Error("expected app.js bundle to display shared System Packages (`brew` / `apt`) tab")
-	}
-	if !strings.Contains(appText, `target_type==="apt"`) || !strings.Contains(appText, `/^https?:\/\//i`) {
-		t.Error("expected app.js bundle to handle item.target_type === 'apt' and validate safe HTTP URLs")
+	if HasEmbeddedUI {
+		appBytes, _ := staticEmbedFS.ReadFile("static/app.js")
+		appText := string(appBytes)
+		if !strings.Contains(appText, "System Packages (`brew` / `apt`)") {
+			t.Error("expected app.js bundle to display shared System Packages (`brew` / `apt`) tab")
+		}
+		if !strings.Contains(appText, `target_type==="apt"`) || !strings.Contains(appText, `/^https?:\/\//i`) {
+			t.Error("expected app.js bundle to handle item.target_type === 'apt' and validate safe HTTP URLs")
+		}
 	}
 
 	// 6. Verify node-scoped POST/DELETE /api/skip isolates RPi-01 from RPi-02

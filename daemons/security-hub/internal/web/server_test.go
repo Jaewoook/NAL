@@ -131,6 +131,9 @@ func TestWebAssets_PendingNodesAndScanProgress(t *testing.T) {
 	h := srv.Handler()
 
 	// 1. Verify index.html via direct embed and via HTTP server
+	if !HasEmbeddedUI {
+		t.Skip("skipping embedded UI asset verification in agent-only build")
+	}
 	indexBytes, err := staticEmbedFS.ReadFile("static/index.html")
 	if err != nil {
 		t.Fatalf("failed to read embedded index.html: %v", err)

@@ -70,6 +70,10 @@ func serveHTTPWithGracefulShutdown(ctx context.Context, stop context.CancelFunc,
 }
 
 func runDaemon(cfg *config.Config, out io.Writer) int {
+	if !web.HasEmbeddedUI {
+		fmt.Fprintln(out, "Error: this binary was built in agent-only mode without the embedded web UI (rebuild with 'make build' to run in hub mode)")
+		return 1
+	}
 	pg := db.NewPostgresBackendWithPassword(cfg.Database.ContainerName, cfg.Database.DBName, cfg.Database.DBUser, cfg.Database.DBPass, nil)
 	store, err := db.NewSpoolStore(cfg.Database.DataDir, pg)
 	if err != nil {

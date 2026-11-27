@@ -11,6 +11,10 @@ frontend:
 	cd frontend && ([ -d node_modules ] || yarn install --frozen-lockfile) && yarn build
 
 daemon:
+	@if [ ! -f internal/web/static/index.html ]; then \
+		echo "Error: frontend bundle not found in internal/web/static/. Run 'make build' (Hub) or 'make agent' (Agent-only)." >&2; \
+		exit 1; \
+	fi
 	go build $(LDFLAGS) -o security-hub ./cmd/security-hub
 
 agent:
