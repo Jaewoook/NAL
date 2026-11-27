@@ -38,6 +38,7 @@ export interface NodeInfo {
   last_seen_at?: string;
   last_error?: string;
   os_version?: string;
+  version?: string;
 }
 
 export interface ManagedItem {
@@ -66,6 +67,7 @@ export interface ManagedItem {
   med_count?: number;
   low_count?: number;
   eol?: EoLInfo;
+  service_status?: 'running' | 'stopped' | string;
   has_rollback?: boolean;
   rollback_version?: string;
   last_checked_at?: string;
@@ -109,6 +111,7 @@ export interface TaskLogLine {
 
 export interface DashboardResponse {
   hub_node: string;
+  hub_version?: string;
   nodes: NodeInfo[] | null;
   scan: ScanResult | null;
   recent_tasks: Task[] | null;

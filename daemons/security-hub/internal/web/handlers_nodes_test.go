@@ -545,3 +545,62 @@ func TestNodeAnnounce_BodyLimitAndSchemeNormalization(t *testing.T) {
 		t.Errorf("expected 400 Bad Request for body exceeding 1MB limit, got %d", largeW.Code)
 	}
 }
+
+func TestServer_NodeVersionReportingAndDashboardHubVersion(t *testing.T) {
+	srv, sessionCookie, store, cfg := setupTestHubServer(t)
+	h := srv.Handler()
+
+	// 1. Agent announces with build version
+	payload, _ := json.Marshal(map[string]string{
+		"name":       "VersionedAgent",
+		"url":        "reverse-poll",
+		"token":      cfg.AgentToken,
+		"os_version": "linux/arm64",
+		"version":    "2026-11-27.16.17",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/nodes/announce", bytes.NewReader(payload))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on announce, got %d: %s", w.Code, w.Body.String())
+	}
+
+	stored, err := store.GetNode(context.Background(), "VersionedAgent")
+	if err != nil {
+		t.Fatalf("GetNode failed: %v", err)
+	}
+	if stored.Version != "2026-11-27.16.17" {
+		t.Fatalf("expected stored agent version '2026-11-27.16.17', got %q", stored.Version)
+	}
+
+	// 2. Dashboard response includes hub_version and node versions
+	dashReq := httptest.NewRequest(http.MethodGet, "/api/dashboard", nil)
+	dashReq.AddCookie(sessionCookie)
+	dashW := httptest.NewRecorder()
+	h.ServeHTTP(dashW, dashReq)
+	if dashW.Code != http.StatusOK {
+		t.Fatalf("expected 200 on /api/dashboard, got %d: %s", dashW.Code, dashW.Body.String())
+	}
+	var dash struct {
+		HubVersion string            `json:"hub_version"`
+		Nodes      []models.NodeInfo `json:"nodes"`
+	}
+	if err := json.Unmarshal(dashW.Body.Bytes(), &dash); err != nil {
+		t.Fatalf("failed to decode /api/dashboard: %v", err)
+	}
+	if dash.HubVersion == "" {
+		t.Fatal("expected non-empty hub_version in /api/dashboard")
+	}
+	var foundHub, foundAgent bool
+	for _, n := range dash.Nodes {
+		if n.Role == "hub" && n.Version == dash.HubVersion {
+			foundHub = true
+		}
+		if n.Name == "VersionedAgent" && n.Version == "2026-11-27.16.17" {
+			foundAgent = true
+		}
+	}
+	if !foundHub || !foundAgent {
+		t.Fatalf("expected hub and agent versions in dashboard nodes, got %+v", dash.Nodes)
+	}
+}

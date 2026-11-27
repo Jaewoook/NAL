@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/jaewoook/server-monitor/internal/config"
+	"github.com/jaewoook/server-monitor/internal/version"
 )
 
 const usageText = `Usage: server-monitor <command> [options]
@@ -17,6 +18,7 @@ Commands:
   test-alert   Send a test notification to verify channel credentials and connectivity
   run          Start the continuous background monitoring daemon
   service      Manage OS background service lifecycle
+  version      Print the build version of this binary
   help         Display this help message
 
 Options for check:
@@ -94,6 +96,9 @@ func runApp(args []string, stdout, stderr io.Writer, opts ...AppOption) int {
 	switch cmd := args[0]; cmd {
 	case "help", "-h", "--help":
 		fmt.Fprint(stdout, usageText)
+		return 0
+	case "version", "-v", "--version":
+		fmt.Fprintln(stdout, version.Current())
 		return 0
 	case "check":
 		return runCheck(args[1:], stdout, stderr)

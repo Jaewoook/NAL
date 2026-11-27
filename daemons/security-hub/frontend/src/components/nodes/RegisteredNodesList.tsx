@@ -42,6 +42,11 @@ export const RegisteredNodesList: React.FC<RegisteredNodesListProps> = ({
                     {node.os_version}
                   </Badge>
                 )}
+                {node.version && (
+                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-mono font-semibold leading-none bg-sky-500/15 text-sky-300 border border-sky-500/35">
+                    {node.version}
+                  </span>
+                )}
               </span>
               <div className="text-xs text-slate-400 font-mono break-all mt-1.5">
                 {node.url || 'Local Hub Host'} {node.last_error ? `· ${node.last_error}` : ''}
@@ -76,6 +81,11 @@ export const RegisteredNodesList: React.FC<RegisteredNodesListProps> = ({
                     <Badge tone="warn" className="text-[11px] px-1.5 py-0.5 leading-none">
                       REJECTED
                     </Badge>
+                    {node.version && (
+                      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-mono font-semibold leading-none bg-sky-500/15 text-sky-300 border border-sky-500/35">
+                        {node.version}
+                      </span>
+                    )}
                   </span>
                   <div className="text-xs text-slate-400 font-mono break-all mt-1.5">
                     {node.url || 'LAN Node'}

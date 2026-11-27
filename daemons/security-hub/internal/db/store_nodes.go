@@ -185,6 +185,9 @@ func (s *SpoolStore) UpsertNode(ctx context.Context, node models.NodeInfo) error
 			if node.OSVersion == "" {
 				node.OSVersion = existing.OSVersion
 			}
+			if node.Version == "" {
+				node.Version = existing.Version
+			}
 			wasZeroSeen := node.LastSeenAt.IsZero()
 			if wasZeroSeen {
 				node.LastSeenAt = existing.LastSeenAt
@@ -261,6 +264,9 @@ func (s *SpoolStore) AnnounceNode(ctx context.Context, req models.NodeInfo) (mod
 			if req.OSVersion != "" {
 				existing.OSVersion = req.OSVersion
 			}
+			if req.Version != "" {
+				existing.Version = req.Version
+			}
 			if req.Token != "" {
 				existing.Token = req.Token
 			}
@@ -282,6 +288,7 @@ func (s *SpoolStore) AnnounceNode(ctx context.Context, req models.NodeInfo) (mod
 			Online:     true,
 			LastSeenAt: time.Now().UTC(),
 			OSVersion:  req.OSVersion,
+			Version:    req.Version,
 		}
 		delete(s.state.DeletedNodes, req.Name)
 		status = models.NodeStatusPending

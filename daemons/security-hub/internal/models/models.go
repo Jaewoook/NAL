@@ -65,6 +65,7 @@ type NodeInfo struct {
 	LastSeenAt time.Time  `json:"last_seen_at,omitempty"`
 	LastError  string     `json:"last_error,omitempty"`
 	OSVersion  string     `json:"os_version,omitempty"`
+	Version    string     `json:"version,omitempty"`
 }
 
 type ManagedItem struct {
@@ -93,6 +94,7 @@ type ManagedItem struct {
 	MedCount         int             `json:"med_count"`
 	LowCount         int             `json:"low_count"`
 	EoL              EoLInfo         `json:"eol"`
+	ServiceStatus    string          `json:"service_status,omitempty"`
 	HasRollback      bool            `json:"has_rollback"`
 	RollbackVersion  string          `json:"rollback_version,omitempty"`
 	LastCheckedAt    time.Time       `json:"last_checked_at"`

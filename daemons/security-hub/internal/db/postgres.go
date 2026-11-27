@@ -168,9 +168,11 @@ CREATE TABLE IF NOT EXISTS nodes (
 	online BOOLEAN NOT NULL DEFAULT true,
 	last_seen_at TIMESTAMPTZ,
 	last_error TEXT,
-	os_version TEXT
+	os_version TEXT,
+	version TEXT
 );
-ALTER TABLE nodes ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved';`
+ALTER TABLE nodes ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved';
+ALTER TABLE nodes ADD COLUMN IF NOT EXISTS version TEXT;`
 	return p.runPSQL(ctx, schema)
 }
 
@@ -285,8 +287,8 @@ func (p *PostgresBackend) UpsertNode(ctx context.Context, node models.NodeInfo) 
 	if status == "" {
 		status = string(models.NodeStatusApproved)
 	}
-	sql := fmt.Sprintf(`INSERT INTO nodes (name, url, token, role, status, online, last_seen_at, last_error, os_version)
-VALUES (%s, %s, %s, %s, %s, %t, %s, %s, %s)
+	sql := fmt.Sprintf(`INSERT INTO nodes (name, url, token, role, status, online, last_seen_at, last_error, os_version, version)
+VALUES (%s, %s, %s, %s, %s, %t, %s, %s, %s, %s)
 ON CONFLICT (name) DO UPDATE SET
 url = EXCLUDED.url,
 token = CASE WHEN EXCLUDED.token <> '' THEN EXCLUDED.token ELSE nodes.token END,
@@ -295,10 +297,11 @@ status = EXCLUDED.status,
 online = EXCLUDED.online,
 last_seen_at = EXCLUDED.last_seen_at,
 last_error = EXCLUDED.last_error,
-os_version = EXCLUDED.os_version;`,
+os_version = EXCLUDED.os_version,
+version = CASE WHEN EXCLUDED.version <> '' THEN EXCLUDED.version ELSE nodes.version END;`,
 		quoteLiteral(node.Name), quoteLiteral(node.URL), quoteLiteral(node.Token),
 		quoteLiteral(node.Role), quoteLiteral(status), node.Online,
-		lastSeen, quoteLiteral(node.LastError), quoteLiteral(node.OSVersion))
+		lastSeen, quoteLiteral(node.LastError), quoteLiteral(node.OSVersion), quoteLiteral(node.Version))
 	return p.execSQL(ctx, sql)
 }
 

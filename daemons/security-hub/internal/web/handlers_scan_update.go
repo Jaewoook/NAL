@@ -14,6 +14,7 @@ import (
 	"github.com/jaewoook/security-hub/internal/models"
 	"github.com/jaewoook/security-hub/internal/scanner"
 	"github.com/jaewoook/security-hub/internal/updater"
+	"github.com/jaewoook/security-hub/internal/version"
 )
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +56,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"hub_node":            hubName,
+		"hub_version":         version.Current(),
 		"nodes":               nodes,
 		"scan":                summarized,
 		"recent_tasks":        tasks,

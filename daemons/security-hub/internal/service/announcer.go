@@ -16,6 +16,7 @@ import (
 
 	"github.com/jaewoook/security-hub/internal/config"
 	"github.com/jaewoook/security-hub/internal/httputil"
+	"github.com/jaewoook/security-hub/internal/version"
 )
 
 const DefaultHeartbeatInterval = 60 * time.Second
@@ -25,6 +26,7 @@ type announcePayload struct {
 	URL       string `json:"url"`
 	Token     string `json:"token"`
 	OSVersion string `json:"os_version"`
+	Version   string `json:"version,omitempty"`
 }
 
 // ResolveAgentAdvertiseURL returns cfg.AgentAdvertiseURL if set,
@@ -212,6 +214,7 @@ func StartAnnouncer(ctx context.Context, cfg *config.Config, httpClient *http.Cl
 			URL:       resolveAdvertiseURLFn(cfg),
 			Token:     cfg.AgentToken,
 			OSVersion: runtime.GOOS + "/" + runtime.GOARCH,
+			Version:   version.Current(),
 		}
 
 		// Immediate announcement on startup

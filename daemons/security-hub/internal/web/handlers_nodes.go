@@ -20,6 +20,7 @@ import (
 	"github.com/jaewoook/security-hub/internal/config"
 	"github.com/jaewoook/security-hub/internal/httputil"
 	"github.com/jaewoook/security-hub/internal/models"
+	"github.com/jaewoook/security-hub/internal/version"
 )
 
 func (s *Server) buildNodesOverview(ctx context.Context) []models.NodeInfo {
@@ -31,6 +32,7 @@ func (s *Server) buildNodesOverview(ctx context.Context) []models.NodeInfo {
 			Status:     models.NodeStatusApproved,
 			Online:     true,
 			LastSeenAt: time.Now().UTC(),
+			Version:    version.Current(),
 		},
 	}
 	if s.store != nil {
@@ -105,6 +107,7 @@ type nodeAnnounceRequest struct {
 	URL       string `json:"url"`
 	Token     string `json:"token"`
 	OSVersion string `json:"os_version"`
+	Version   string `json:"version,omitempty"`
 }
 
 func isReversePollURL(raw string) bool {
@@ -142,6 +145,17 @@ func formatReversePollURL(r *http.Request) string {
 		return fmt.Sprintf("reverse-poll (%s)", ip)
 	}
 	return "reverse-poll"
+}
+
+const maxNodeVersionLen = 64
+
+func sanitizeNodeVersion(raw string) string {
+	v := strings.TrimSpace(raw)
+	runes := []rune(v)
+	if len(runes) > maxNodeVersionLen {
+		return string(runes[:maxNodeVersionLen])
+	}
+	return v
 }
 
 func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
@@ -198,6 +212,7 @@ func (s *Server) handleNodeAnnounce(w http.ResponseWriter, r *http.Request) {
 		URL:       req.URL,
 		Token:     req.Token,
 		OSVersion: req.OSVersion,
+		Version:   sanitizeNodeVersion(req.Version),
 	})
 	if err != nil {
 		auth.WriteJSONError(w, http.StatusInternalServerError, err.Error())

@@ -217,6 +217,17 @@ export const App: React.FC = () => {
           onCancel={confirm.cancelConfirm}
         />
       </div>
+
+      {auth.authenticated && (
+        <footer className="max-w-[1320px] mx-auto mt-10 px-6 pt-4 border-t border-slate-800 flex flex-wrap justify-between items-center gap-2 text-xs text-slate-500">
+          <span>NAL Security Hub</span>
+          {dashboard.hubVersion && (
+            <span id="site-footer-version" className="font-mono text-slate-400">
+              Build {dashboard.hubVersion}
+            </span>
+          )}
+        </footer>
+      )}
     </>
   );
 };

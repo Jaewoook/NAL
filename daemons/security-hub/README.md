@@ -133,8 +133,9 @@ cd daemons/security-hub
 # 1. Copy & edit Hub configuration
 cp config.hub.example.yml config.hub.yml
 
-# 2. Build binary
-go build -o security-hub ./cmd/security-hub
+# 2. Build binary (stamps YYYY-MM-DD.HH.MM build version; use `make all` to also rebuild frontend)
+make build
+./security-hub version
 
 # 3. Provision database in services/db (if postgresql is running)
 ./security-hub hub db init

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jaewoook/security-hub/internal/config"
+	"github.com/jaewoook/security-hub/internal/version"
 )
 
 func main() {
@@ -59,6 +60,9 @@ func runCLI(args []string, out io.Writer) int {
 		return runHubCommand(args[1:], out)
 	case "agent":
 		return runAgentCommand(args[1:], out)
+	case "version", "-v", "--version":
+		fmt.Fprintln(out, version.Current())
+		return 0
 	default:
 		printUsage(out)
 		return 1
@@ -106,6 +110,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, `Usage:
   security-hub hub <command> [flags]    (requires config.hub.yml)
   security-hub agent <command> [flags]  (requires config.agent.yml)
+  security-hub version                  Print the build version of this binary
 
 Hub Commands:
   hub run                      Run the Hub scanner, spool syncer, and web dashboard

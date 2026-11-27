@@ -13,6 +13,7 @@ import (
 	"github.com/jaewoook/security-hub/internal/config"
 	"github.com/jaewoook/security-hub/internal/db"
 	"github.com/jaewoook/security-hub/internal/models"
+	"github.com/jaewoook/security-hub/internal/version"
 )
 
 type Orchestrator struct {
@@ -100,6 +101,7 @@ func (o *Orchestrator) newHubNodeInfo(hubName string) models.NodeInfo {
 		Status:     models.NodeStatusApproved,
 		Online:     true,
 		LastSeenAt: time.Now().UTC(),
+		Version:    version.Current(),
 	}
 }
 

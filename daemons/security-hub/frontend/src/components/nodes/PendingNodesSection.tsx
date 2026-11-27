@@ -45,6 +45,11 @@ export const PendingNodesSection: React.FC<PendingNodesSectionProps> = ({
                     {node.os_version}
                   </Badge>
                 )}
+                {node.version && (
+                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-mono font-semibold leading-none bg-sky-500/15 text-sky-300 border border-sky-500/35">
+                    {node.version}
+                  </span>
+                )}
               </div>
               <div className="text-xs text-slate-400 font-mono break-all mt-1.5">
                 {node.url || 'LAN Node'}

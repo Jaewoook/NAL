@@ -72,11 +72,12 @@ Alerts are dispatched across multiple channels including **Telegram**, **Discord
 ### 1. Build the Binary
 
 ```bash
-# Build locally
-go build -o server-monitor ./cmd/server-monitor
+# Build locally (stamps YYYY-MM-DD.HH.MM build version)
+make build
+./server-monitor version
 
 # Or cross-compile for a Linux server from macOS:
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o server-monitor ./cmd/server-monitor
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 make build
 ```
 
 ### 2. Quick One-Off Health Check

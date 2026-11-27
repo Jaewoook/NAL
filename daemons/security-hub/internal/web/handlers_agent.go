@@ -12,6 +12,7 @@ import (
 	"github.com/jaewoook/security-hub/internal/auth"
 	"github.com/jaewoook/security-hub/internal/models"
 	"github.com/jaewoook/security-hub/internal/updater"
+	"github.com/jaewoook/security-hub/internal/version"
 )
 
 func (s *Server) handleAgentInfo(w http.ResponseWriter, r *http.Request) {
@@ -21,6 +22,7 @@ func (s *Server) handleAgentInfo(w http.ResponseWriter, r *http.Request) {
 		Online:     true,
 		LastSeenAt: time.Now().UTC(),
 		OSVersion:  runtime.GOOS + "/" + runtime.GOARCH,
+		Version:    version.Current(),
 	})
 }
 

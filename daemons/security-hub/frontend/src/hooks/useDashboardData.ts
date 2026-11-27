@@ -47,6 +47,7 @@ export function useDashboardData({
 
   const dashboardData = dashboardQuery.data ?? null;
   const hubNode = dashboardData?.hub_node || 'local';
+  const hubVersion = dashboardData?.hub_version || '';
 
   const allNodes: NodeInfo[] = useMemo(() => {
     if (dashboardData?.nodes) return dashboardData.nodes;
@@ -104,6 +105,7 @@ export function useDashboardData({
   return {
     dashboardData,
     hubNode,
+    hubVersion,
     allNodes,
     approvedNodes,
     pendingNodesCount,
