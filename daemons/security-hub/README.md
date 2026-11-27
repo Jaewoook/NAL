@@ -134,9 +134,10 @@ cd daemons/security-hub
 cp config.hub.example.yml config.hub.yml
 
 # 2. Build frontend bundle & binary (stamps YYYY-MM-DD.HH.MM build version)
-make build       # Builds both frontend and Go binary
+make build       # Builds both frontend and Go binary (Hub)
+# make agent     # Agent-only Go binary without embedded frontend (no Node.js required)
 # make frontend  # Frontend bundle only
-# make daemon    # Go binary only (works without Node.js on remote agent nodes)
+# make daemon    # Go binary only (uses existing built frontend bundle)
 ./security-hub version
 
 # 3. Provision database in services/db (if postgresql is running)
@@ -168,7 +169,10 @@ make build       # Builds both frontend and Go binary
 Remote agents automatically announce themselves to the Hub and maintain a background heartbeat every 60 seconds:
 
 ```bash
-# On the remote node (create config.agent.yml from config.agent.example.yml first):
+# On the remote node: build the agent-only binary (no Node.js/frontend build needed)
+make agent
+
+# Create config.agent.yml from config.agent.example.yml and start the agent:
 cp config.agent.example.yml config.agent.yml
 ./security-hub agent run \
   -hub "http://<hub-lan-ip>:10311" \

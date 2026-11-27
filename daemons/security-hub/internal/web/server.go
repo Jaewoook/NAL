@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
-	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"io/fs"
@@ -21,9 +20,6 @@ import (
 	"github.com/jaewoook/security-hub/internal/scanner"
 	"github.com/jaewoook/security-hub/internal/updater"
 )
-
-//go:embed static/*
-var staticEmbedFS embed.FS
 
 type Server struct {
 	cfg          *config.Config
