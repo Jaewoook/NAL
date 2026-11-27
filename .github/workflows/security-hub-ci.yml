@@ -55,19 +55,22 @@ jobs:
       - name: Build production bundle
         run: yarn build
 
-      - name: Verify embedded static assets are up to date
+      - name: Verify generated static assets
         run: |
           test -s ../internal/web/static/index.html
           test -s ../internal/web/static/app.js
           test -s ../internal/web/static/styles.css
-          if [ -n "$(git status --porcelain -- ../internal/web/static)" ]; then
-            echo "Embedded static assets in internal/web/static are out of date. Run 'yarn build' and commit the updated files."
-            git diff --stat -- ../internal/web/static
-            exit 1
-          fi
+
+      - name: Upload frontend static bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-hub-static
+          path: daemons/security-hub/internal/web/static
+          retention-days: 1
 
   go:
     name: Go Verify & Test
+    needs: frontend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -75,6 +78,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Download frontend static bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: security-hub-static
+          path: daemons/security-hub/internal/web/static
 
       - name: Set up Go
         uses: actions/setup-go@v5
