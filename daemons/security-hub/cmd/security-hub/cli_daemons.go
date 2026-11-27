@@ -115,7 +115,6 @@ func runDaemon(cfg *config.Config, out io.Writer) int {
 	bgWG.Add(1)
 	go func() {
 		defer bgWG.Done()
-		runScheduledScan(ctx, orch, alerter)
 		interval := time.Duration(cfg.Scanner.IntervalHours) * time.Hour
 		if interval <= 0 {
 			interval = 6 * time.Hour
