@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jaewoook/server-monitor/internal/models"
+	"github.com/jaewoook/server-monitor/internal/version"
 )
 
 func sampleMetrics() *models.SystemMetrics {
@@ -125,6 +126,7 @@ func TestDigestContentFormatting(t *testing.T) {
 	// Verify required content sections in message
 	msg := alert.Message
 	expectedFragments := []string{
+		"• Version: " + version.Current(),
 		"CPU: 15.5%",
 		"Memory: 42.3%",
 		"Disk: 68.7%",

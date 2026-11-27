@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jaewoook/server-monitor/internal/models"
+	"github.com/jaewoook/server-monitor/internal/version"
 )
 
 // Engine generates periodic aliveness health summary alerts.
@@ -91,6 +92,7 @@ func (e *Engine) BuildDigest(now time.Time, m *models.SystemMetrics) (*models.Al
 
 	msg := fmt.Sprintf(
 		"Periodic System Health Digest\n"+
+			"• Version: %s\n"+
 			"• CPU: %.1f%%\n"+
 			tempLines+
 			"• Memory: %.1f%%\n"+
@@ -98,6 +100,7 @@ func (e *Engine) BuildDigest(now time.Time, m *models.SystemMetrics) (*models.Al
 			"• Load Averages: %.2f (1m), %.2f (5m), %.2f (15m)\n"+
 			"• Uptime: %s\n"+
 			"• Status: All systems operational",
+		version.Current(),
 		m.CPUPercent,
 		m.MemoryPercent,
 		m.DiskPercent,

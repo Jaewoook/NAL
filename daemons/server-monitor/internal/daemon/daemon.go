@@ -17,6 +17,7 @@ import (
 	"github.com/jaewoook/server-monitor/internal/heartbeat"
 	"github.com/jaewoook/server-monitor/internal/models"
 	"github.com/jaewoook/server-monitor/internal/notifier"
+	"github.com/jaewoook/server-monitor/internal/version"
 )
 
 const (
@@ -400,7 +401,7 @@ func (d *Daemon) runHeartbeatLoop(ctx context.Context) {
 // Run starts the continuous monitoring daemon loop. It runs Step on each ticker tick
 // and terminates cleanly when ctx is canceled.
 func (d *Daemon) Run(ctx context.Context) error {
-	d.logf("[daemon] starting server-monitor daemon for %q (check interval: %v)", d.cfg.Server.Name, d.interval)
+	d.logf("[daemon] starting server-monitor daemon for %q (version: %s, check interval: %v)", d.cfg.Server.Name, version.Current(), d.interval)
 	d.warnIfNoChannels()
 
 	// Run heartbeat on an independent goroutine so slow collection or alert dispatch
@@ -451,10 +452,11 @@ func (d *Daemon) sendLifecycleNotification(ctx context.Context, isStartup bool, 
 		title = fmt.Sprintf("[%s] Server Monitor Online", d.cfg.Server.Name)
 		label = "startup notification"
 		level = models.AlertLevelResolved
-		msg = fmt.Sprintf("Daemon online and monitoring %s (check interval: %v).", d.cfg.Server.Name, d.interval)
+		msg = fmt.Sprintf("Daemon online and monitoring %s.\nVersion: %s | Check Interval: %v",
+			d.cfg.Server.Name, version.Current(), d.interval)
 		if m != nil {
-			msg = fmt.Sprintf("Daemon online and monitoring %s.\nCheck Interval: %v | %s",
-				d.cfg.Server.Name, d.interval, formatMetricsSummary(m))
+			msg = fmt.Sprintf("Daemon online and monitoring %s.\nVersion: %s | Check Interval: %v | %s",
+				d.cfg.Server.Name, version.Current(), d.interval, formatMetricsSummary(m))
 		}
 	} else {
 		title = fmt.Sprintf("[%s] Server Monitor Shutting Down", d.cfg.Server.Name)

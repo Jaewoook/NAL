@@ -17,6 +17,7 @@ import (
 	"github.com/jaewoook/server-monitor/internal/heartbeat"
 	"github.com/jaewoook/server-monitor/internal/models"
 	"github.com/jaewoook/server-monitor/internal/notifier"
+	"github.com/jaewoook/server-monitor/internal/version"
 )
 
 type mockCollector struct {
@@ -319,6 +320,9 @@ func TestDaemonStartupAndShutdownNotifications(t *testing.T) {
 	startupAlert := ch.alerts[0]
 	if !strings.Contains(startupAlert.Title, "Server Monitor Online") {
 		t.Errorf("expected startup alert title, got: %s", startupAlert.Title)
+	}
+	if !strings.Contains(startupAlert.Message, "Version: "+version.Current()) {
+		t.Errorf("expected version in startup message, got: %s", startupAlert.Message)
 	}
 	if !strings.Contains(startupAlert.Message, "Uptime: 2h 0m 0s") {
 		t.Errorf("expected uptime in startup message, got: %s", startupAlert.Message)
